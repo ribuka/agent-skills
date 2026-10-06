@@ -209,9 +209,12 @@ export_review_environment() {
 # The reviewer runs in its own process group (via job control) so that a kill
 # also reaches the tool/shell processes it spawns, before they can post a late
 # comment.
+# stdin is /dev/null: with job control on, bash does not redirect a background
+# job's stdin, and `codex exec` waits for EOF on a non-terminal stdin even when
+# the prompt is passed as an argument -- an open pipe would hang it forever.
 start_reviewer() {
     set -m
-    "$@" &
+    "$@" </dev/null &
     REVIEWER_PID=$!
     set +m
 }
