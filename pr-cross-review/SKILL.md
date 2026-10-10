@@ -1,6 +1,7 @@
 ---
 name: pr-cross-review
 description: Have the other coding agent review a GitHub pull request and post the review as a PR comment. Use after opening or updating a pull request when a cross-review is wanted - Claude Code launches a Codex reviewer, Codex launches a Claude reviewer. Handles re-reviews (only commits since the previous review), a per-PR review limit, timeouts, and confirms that the comment was actually posted.
+disable-model-invocation: true
 ---
 
 # PR cross-review
