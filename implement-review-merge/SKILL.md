@@ -6,8 +6,32 @@ disable-model-invocation: true
 
 # Implement, review, merge
 
-Carry a task through the full pull-request cycle. Stop and ask the user
+- Carry a task through the full pull-request cycle. Stop and ask the user
 whenever a step below says so; never merge on a guess.
+- Respond in Japanese.
+
+## Execution modes
+
+- **Standalone (default):** Always use Standalone mode unless
+  Orchestration worker mode is explicitly requested.
+  Execute steps 1–10, including merge.
+- **Orchestration worker:** Only when explicitly instructed by an ORCA
+  Coordinator, execute the assigned phase:
+  - **Implementation:** Execute steps 1–7, then report the PR URL,
+    review status, review count, and any blockers. Do not merge.
+  - **Merge preparation:** Execute steps 8–9 only after the Coordinator
+    requests it. Report the synced commit, test/CI results, review
+    status, total review count, and any blockers. Do not merge.
+- In worker mode:
+  - The Coordinator alone decides when and in what order to merge PRs.
+  - Report blockers to the Coordinator instead of asking the user directly.
+  - Preserve the **3-review limit per PR** across all phases and dispatches.
+  - Report completion or failure using the ORCA Orchestration protocol.
+  - Stop after the assigned phase; never proceed to the next phase
+    without an explicit dispatch.
+- Running inside ORCA does not implicitly enable worker mode.
+  If the execution mode or assigned phase is unspecified, use
+  Standalone mode.
 
 ## Workflow
 
