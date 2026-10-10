@@ -13,6 +13,9 @@
 #   - refuses to run unless the target PR actually exists in this repo;
 #   - appends a fixed provenance footer itself, so the footer cannot be
 #     omitted or altered by whatever produced the comment body;
+#   - when REVIEW_BODY_PATH_ENFORCED=true (config.env), only accepts the body
+#     file the parent review wrapper assigned (PR_CROSS_REVIEW_BODY_FILE), so
+#     the body cannot end up somewhere git would pick it up;
 #   - records the PR head commit captured by the parent review wrapper
 #     (PR_CROSS_REVIEW_REVIEWED_COMMIT), which the wrapper later reads back to
 #     count reviews and narrow re-reviews.
@@ -21,9 +24,15 @@
 #   post_pr_comment.sh <pr-number> <body-file> <codex|claude>
 #
 # <body-file> is the path to a text file containing the Markdown comment
-# body. Use "-" to read the body from stdin instead.
+# body. Use "-" to read the body from stdin instead (rejected while
+# REVIEW_BODY_PATH_ENFORCED=true).
 
 set -euo pipefail
+
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+source "${script_dir}/common.sh"
+load_config REVIEW_BODY_PATH_ENFORCED
+require_choice REVIEW_BODY_PATH_ENFORCED "$REVIEW_BODY_PATH_ENFORCED" true false
 
 if [ "$#" -ne 3 ]; then
     echo "usage: $0 <pr-number> <body-file> <codex|claude>" >&2
@@ -42,6 +51,20 @@ fi
 if [ "$body_file" != "-" ] && [ ! -f "$body_file" ]; then
     echo "error: body file not found: $body_file" >&2
     exit 1
+fi
+
+if [ "$REVIEW_BODY_PATH_ENFORCED" = "true" ]; then
+    expected_body_file=${PR_CROSS_REVIEW_BODY_FILE:-}
+    if [ -z "$expected_body_file" ]; then
+        echo "error: PR_CROSS_REVIEW_BODY_FILE must be set while REVIEW_BODY_PATH_ENFORCED=true" >&2
+        exit 1
+    fi
+    # -ef compares the files themselves, so C:/..., /c/... and relative
+    # spellings of the same path all match.
+    if [ "$body_file" = "-" ] || ! [ "$body_file" -ef "$expected_body_file" ]; then
+        echo "error: the body file must be ${expected_body_file}, got: ${body_file}" >&2
+        exit 1
+    fi
 fi
 
 case "$agent" in

@@ -176,11 +176,63 @@ prepare_review_context() {
     )
 }
 
+require_choice() {
+    local name=$1
+    local value=$2
+    shift 2
+    local choice
+    for choice in "$@"; do
+        if [ "$value" = "$choice" ]; then
+            return 0
+        fi
+    done
+    die "${name} must be one of: $*; got: ${value}"
+}
+
+# prepare_body_file <pr-number> <agent> -- sets REVIEW_BODY_FILE.
+# Resolves REVIEW_BODY_DIR from the repository root, checks that the body file
+# would be ignored by git (REVIEW_BODY_NOT_IGNORED decides error or warning),
+# creates the directory and removes a stale body file from an earlier run.
+prepare_body_file() {
+    local pr_number=$1
+    local agent=$2
+    local repo_root
+    local body_dir
+
+    require_choice REVIEW_BODY_NOT_IGNORED "$REVIEW_BODY_NOT_IGNORED" error warn
+    repo_root=$(git rev-parse --show-toplevel) || die "not inside a git repository"
+
+    case "$REVIEW_BODY_DIR" in
+        /* | [A-Za-z]:[/\\]*) body_dir=$REVIEW_BODY_DIR ;;
+        *) body_dir="${repo_root}/${REVIEW_BODY_DIR}" ;;
+    esac
+    REVIEW_BODY_FILE="${body_dir%/}/pr-${pr_number}-review-${agent}.md"
+
+    # Exit status 0: ignored, 1: not ignored, 128: e.g. outside the repository,
+    # where git cannot commit it anyway.
+    local ignore_status=0
+    git -C "$repo_root" check-ignore -q -- "$REVIEW_BODY_FILE" 2>/dev/null || ignore_status=$?
+    if [ "$ignore_status" -eq 1 ]; then
+        if [ "$REVIEW_BODY_NOT_IGNORED" = "error" ]; then
+            die "review body file is not ignored by git: ${REVIEW_BODY_FILE} (add ${REVIEW_BODY_DIR}/ to .gitignore, or set REVIEW_BODY_NOT_IGNORED=warn)"
+        fi
+        echo "warning: review body file is not ignored by git: ${REVIEW_BODY_FILE}" >&2
+    fi
+
+    mkdir -p -- "$body_dir"
+    rm -f -- "$REVIEW_BODY_FILE"
+}
+
+remove_body_file() {
+    rm -f -- "$REVIEW_BODY_FILE"
+}
+
 # build_review_prompt <pr-number> <agent> <extra-instructions> -- sets REVIEW_PROMPT.
 build_review_prompt() {
     local pr_number=$1
     local agent=$2
     local extra_instructions=$3
+    local body_file
     local post_command
 
     if [ "$REVIEW_COUNT" -eq 0 ]; then
@@ -190,8 +242,10 @@ build_review_prompt() {
     fi
     REVIEW_PROMPT+=" Write the review comment in ${REVIEW_LANGUAGE}."
 
-    post_command="bash \"$(native_path "$post_script")\" ${pr_number} <body-file> ${agent}"
-    REVIEW_PROMPT+=$'\n'"When the review is done, write the comment body to a file and post it with exactly this command (do not use \`gh pr comment\` directly): ${post_command}"
+    body_file=$(native_path "$REVIEW_BODY_FILE")
+    post_command="bash \"$(native_path "$post_script")\" ${pr_number} \"${body_file}\" ${agent}"
+    REVIEW_PROMPT+=$'\n'"When the review is done, write the comment body to exactly this file (its directory already exists; do not write it anywhere else): ${body_file}"
+    REVIEW_PROMPT+=$'\n'"Then post it with exactly this command (do not use \`gh pr comment\` directly): ${post_command}"
 
     if [ -n "$extra_instructions" ]; then
         REVIEW_PROMPT+=$'\n\n'"Additional instructions: ${extra_instructions}"
@@ -199,10 +253,11 @@ build_review_prompt() {
 }
 
 # Marks the environment the reviewer inherits: blocks nested reviews and tells
-# post_pr_comment.sh which commit was reviewed.
+# post_pr_comment.sh which commit was reviewed and where the body file must be.
 export_review_environment() {
     export "${in_progress_variable}=1"
     export PR_CROSS_REVIEW_REVIEWED_COMMIT="$REVIEW_HEAD_COMMIT"
+    export PR_CROSS_REVIEW_BODY_FILE="$REVIEW_BODY_FILE"
 }
 
 # start_reviewer <command> [args...] -- sets REVIEWER_PID.

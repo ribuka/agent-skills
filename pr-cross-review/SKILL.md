@@ -35,6 +35,10 @@ to focus on). Model, effort and other options can be overridden per run; see
 - The reviewer must post through `scripts/post_pr_comment.sh`, which adds the
   footer the scripts use to count reviews. Do not post review comments by hand
   with that footer.
+- The reviewer writes the comment body to `<REVIEW_BODY_DIR>/pr-<number>-review-<agent>.md`
+  (default `tmp/`, from the repository root). The run stops if git would not
+  ignore that file, and `post_pr_comment.sh` rejects any other body file
+  (both configurable in config.env).
 
 The run can take several minutes (Codex has a 30 minute hard timeout by
 default), so run it in the background if your tooling supports that.

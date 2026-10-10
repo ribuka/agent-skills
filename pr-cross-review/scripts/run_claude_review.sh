@@ -27,7 +27,7 @@ pr_number=$1
 shift
 require_positive_int "<pr-number>" "$pr_number"
 
-load_config REVIEW_LANGUAGE MAX_REVIEWS CLAUDE_MODEL CLAUDE_EFFORT CLAUDE_PERMISSION_MODE
+load_config REVIEW_LANGUAGE MAX_REVIEWS REVIEW_BODY_DIR REVIEW_BODY_NOT_IGNORED CLAUDE_MODEL CLAUDE_EFFORT CLAUDE_PERMISSION_MODE
 
 model=$CLAUDE_MODEL
 effort=$CLAUDE_EFFORT
@@ -66,6 +66,7 @@ command -v claude >/dev/null 2>&1 || die "claude command not found in PATH"
 
 repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
 prepare_review_context "$repo" "$pr_number" claude
+prepare_body_file "$pr_number" claude
 build_review_prompt "$pr_number" claude "$extra_instructions"
 export_review_environment
 
@@ -82,4 +83,11 @@ if [ "$exit_code" -ne 0 ]; then
     exit "$exit_code"
 fi
 
+set +e
 report_posted_review "$repo" "$pr_number" claude
+status=$?
+set -e
+if [ "$status" -eq 0 ]; then
+    remove_body_file
+fi
+exit "$status"

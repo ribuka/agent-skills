@@ -32,7 +32,7 @@ pr_number=$1
 shift
 require_positive_int "<pr-number>" "$pr_number"
 
-load_config REVIEW_LANGUAGE MAX_REVIEWS CODEX_MODEL CODEX_EFFORT CODEX_SANDBOX \
+load_config REVIEW_LANGUAGE MAX_REVIEWS REVIEW_BODY_DIR REVIEW_BODY_NOT_IGNORED CODEX_MODEL CODEX_EFFORT CODEX_SANDBOX \
     CODEX_NETWORK_ACCESS CODEX_TIMEOUT_SECONDS CODEX_HEARTBEAT_TIMEOUT_SECONDS
 
 model=$CODEX_MODEL
@@ -98,6 +98,7 @@ command -v codex >/dev/null 2>&1 || die "codex command not found in PATH"
 
 repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
 prepare_review_context "$repo" "$pr_number" codex
+prepare_body_file "$pr_number" codex
 build_review_prompt "$pr_number" codex "$extra_instructions"
 export_review_environment
 
@@ -179,7 +180,9 @@ set +e
 report_posted_review "$repo" "$pr_number" codex
 status=$?
 set -e
-if [ "$status" -ne 0 ]; then
+if [ "$status" -eq 0 ]; then
+    remove_body_file
+else
     dump_log_tail
 fi
 exit "$status"

@@ -63,6 +63,7 @@ fake_reviewer() {
     printf 'reviewed-commit: %s\n' "$PR_CROSS_REVIEW_REVIEWED_COMMIT" >>"$REVIEW_CAPTURE_FILE"
     printf 'args: %s\n' "$*" >>"$REVIEW_CAPTURE_FILE"
     if [ "$REVIEW_POST_COMMENT" = "true" ]; then
+        printf 'review body\n' >"$PR_CROSS_REVIEW_BODY_FILE"
         : >"$REVIEW_STATE_FILE"
     fi
 }
@@ -91,8 +92,12 @@ def run_review_script(
     head_commit: str = HEAD_COMMIT,
     api_failure_after_review: bool = False,
     extra_args: tuple[str, ...] = (),
+    ignore_body_dir: bool = True,
 ) -> subprocess.CompletedProcess[str]:
     """Run a review script with deterministic fake CLI and GitHub commands."""
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    if ignore_body_dir:
+        (tmp_path / ".gitignore").write_text("tmp/\n", encoding="utf-8")
     api_file = tmp_path / "api"
     api_file.touch()
     environment = {
@@ -131,7 +136,7 @@ def test_review_script_reports_new_comment_url(tmp_path: Path, script_name: str)
     assert "review-posted: https://github.com/owner/repo/pull/123#issuecomment-1001\n" in result.stdout
     assert f"reviewed-commit: {HEAD_COMMIT}" in result.stdout
     assert "Examine the whole diff" in result.stdout
-    assert "post_pr_comment.sh\" 123 <body-file>" in result.stdout
+    assert "post_pr_comment.sh\" 123 \"" in result.stdout
     assert "api-calls: 2" in result.stdout
 
 
@@ -147,6 +152,31 @@ def test_review_script_uses_config_language(tmp_path: Path, script_name: str) ->
         if line.startswith("REVIEW_LANGUAGE=")
     )
     assert f"Write the review comment in {language}." in result.stdout
+
+
+@pytest.mark.parametrize("script_name", SCRIPT_NAMES)
+def test_review_script_assigns_body_file(tmp_path: Path, script_name: str) -> None:
+    """The prompt names the body file under REVIEW_BODY_DIR; it is removed after posting."""
+    agent = "claude" if script_name == "run_claude_review.sh" else "codex"
+    body_file = tmp_path / "tmp" / f"pr-123-review-{agent}.md"
+
+    result = run_review_script(tmp_path, script_name, post_comment=True)
+
+    assert result.returncode == 0, result.stderr
+    assert "write the comment body to exactly this file" in result.stdout
+    assert f"tmp/pr-123-review-{agent}.md" in result.stdout
+    assert (tmp_path / "tmp").is_dir()
+    assert not body_file.exists()
+
+
+@pytest.mark.parametrize("script_name", SCRIPT_NAMES)
+def test_review_script_rejects_unignored_body_dir(tmp_path: Path, script_name: str) -> None:
+    """With REVIEW_BODY_NOT_IGNORED=error, an unignored body file stops the run before launch."""
+    result = run_review_script(tmp_path, script_name, post_comment=True, ignore_body_dir=False)
+
+    assert result.returncode == 1
+    assert "review body file is not ignored by git" in result.stderr
+    assert "prompt:" not in result.stdout
 
 
 @pytest.mark.parametrize(
@@ -308,20 +338,28 @@ gh() {
 }
 
 export -f gh
-bash "$POST_SCRIPT" 123 "$REVIEW_BODY_FILE" claude
+bash "$POST_SCRIPT" 123 "$REVIEW_BODY_FILE" claude <<<"stdin body"
 """
 
 
 def run_post_comment_script(
-    tmp_path: Path, reviewed_commit: str | None
+    tmp_path: Path,
+    reviewed_commit: str | None,
+    *,
+    body_arg: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    """Run post_pr_comment.sh with a fake GitHub CLI."""
+    """Run post_pr_comment.sh with a fake GitHub CLI.
+
+    The assigned body file is tmp_path/body.md; body_arg overrides the path
+    passed to the script.
+    """
     body_file = tmp_path / "body.md"
     body_file.write_text("review body", encoding="utf-8")
     environment = {
         **os.environ,
         "POST_SCRIPT": (SCRIPTS_DIR / "post_pr_comment.sh").as_posix(),
-        "REVIEW_BODY_FILE": body_file.as_posix(),
+        "REVIEW_BODY_FILE": body_arg if body_arg is not None else body_file.as_posix(),
+        "PR_CROSS_REVIEW_BODY_FILE": body_file.as_posix(),
     }
     if reviewed_commit is None:
         environment.pop("PR_CROSS_REVIEW_REVIEWED_COMMIT", None)
@@ -357,3 +395,22 @@ def test_post_comment_requires_reviewed_commit(
 
     assert result.returncode == 1
     assert "PR_CROSS_REVIEW_REVIEWED_COMMIT must be set" in result.stderr
+
+
+def test_post_comment_accepts_relative_spelling_of_body_file(tmp_path: Path) -> None:
+    """The assigned body file is matched as a file, not as a string."""
+    result = run_post_comment_script(tmp_path, HEAD_COMMIT, body_arg="./body.md")
+
+    assert result.returncode == 0, result.stderr
+    assert "review body" in result.stdout
+
+
+@pytest.mark.parametrize("body_arg", ["other.md", "-"])
+def test_post_comment_rejects_unassigned_body_file(tmp_path: Path, body_arg: str) -> None:
+    """With REVIEW_BODY_PATH_ENFORCED=true, only the assigned body file is posted."""
+    (tmp_path / "other.md").write_text("other body", encoding="utf-8")
+    result = run_post_comment_script(tmp_path, HEAD_COMMIT, body_arg=body_arg)
+
+    assert result.returncode == 1
+    assert "the body file must be" in result.stderr
+    assert "body" not in result.stdout
