@@ -1,7 +1,7 @@
 ---
 name: implement-review-merge
 description: Take a task from implementation to merge - implement, commit, push, open (or update) a pull request, get it cross-reviewed with the pr-cross-review skill, iterate on findings, sync with the latest main, confirm tests and CI pass, then merge. Use when asked to implement a task and see it through to merge, or to continue the work on the current branch until it is merged.
-disable-model-invocation: true
+disable-model-invocation: false
 ---
 
 # Implement, review, merge
