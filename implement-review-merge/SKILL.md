@@ -18,10 +18,15 @@ whenever a step below says so; never merge on a guess.
 - **Orchestration worker:** Only when explicitly instructed by an ORCA
   Coordinator, execute the assigned phase:
   - **Implementation:** Execute steps 1–7, then report the PR URL,
-    review status, review count, and any blockers. Do not merge.
+    branch, review status, review count, open findings, and any
+    blockers, so a fresh worker can take over. Do not merge.
   - **Merge preparation:** Execute steps 8–9 only after the Coordinator
-    requests it. Report the synced commit, test/CI results, review
-    status, total review count, and any blockers. Do not merge.
+    requests it. This usually starts in a new conversation: rebuild the
+    state from the Coordinator's handoff and `gh pr view` (including the
+    cross-review comments) before step 8, and use the larger of the
+    handed-off review count and the review comments on the PR. Report the
+    synced commit, test/CI results, review status, total review count,
+    and any blockers. Do not merge.
 - In worker mode:
   - The Coordinator alone decides when and in what order to merge PRs.
   - Report blockers to the Coordinator instead of asking the user directly.

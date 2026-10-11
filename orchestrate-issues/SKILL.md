@@ -10,53 +10,127 @@ disable-model-invocation: true
   exclusive responsibility for merging pull requests.
 - Use ORCA Orchestration to manage tasks, dependencies, workers, and results.
 - Respond in Japanese.
+- Keep the Coordinator's context small: every turn re-reads it. Follow
+  **Token budget** below throughout the run.
+
+`<skill-dir>` below is the directory containing this file.
+
+## 0. Resolve worker settings
+
+Run once at the start, passing through any `--impl-model`, `--impl-effort`,
+`--merge-model`, or `--merge-effort` flags the user gave:
+
+```bash
+python <skill-dir>/scripts/resolve_config.py --project-dir <repo-root> [user flags]
+```
+
+It prints the `--model` / `--effort` pair for each phase and where each value
+came from (argument > `<repo-root>/.orchestrate-issues.env` >
+`<skill-dir>/config.env` > defaults: implementation `opus`/`medium`, merge
+preparation `sonnet`/`medium`). Use these values on every `worker-start`.
 
 ## 1. Plan and dispatch
 
-1. Read `orca skills get orchestration --full` and follow the
-   version-matched ORCA instructions.
-2. Inspect the requested Issues, existing PRs, and completed work.
-   Avoid duplicating or overwriting existing changes.
-3. Identify dependencies, overlapping files, and potential conflicts.
+1. Read the compact guide: `orca skills get orchestration`. Do **not** use
+   `--full`; load a bundled reference only when the guide's action gate needs
+   it: `orca skills get orchestration --reference <name>`.
+2. Inspect only what planning needs: Issue number, title, labels, and stated
+   dependencies (e.g. `gh issue list --json number,title,labels` or
+   `gh issue view <n> --json number,title,labels`), plus existing PRs and
+   branches. Do not read full Issue bodies or investigate code; workers do
+   that. Avoid duplicating or overwriting existing changes.
+3. Identify dependencies, overlapping areas, and potential conflicts from that
+   summary. Open an Issue body only when a dependency cannot be decided
+   otherwise.
 4. Create one Orchestration Run, with one Task per Issue by default.
 5. Represent actual dependencies in the task DAG.
 6. Dispatch independent tasks to separate worktrees, with at most
-   **3 workers running concurrently**.
+   **3 workers running concurrently**. Always pass the implementation
+   `--model` and `--effort` from step 0, and confirm `launch.effective` in the
+   receipt.
 
 ## 2. Parallel implementation
 
 7. Instruct each worker to run `implement-review-merge` explicitly in
    **Orchestration worker / Implementation** mode (steps 1–7).
-   - Provide the Issue, scope, acceptance criteria, and dependencies.
+   - Provide the Issue number, scope, acceptance criteria, and dependencies.
+     Tell the worker to read the Issue itself.
    - Require implementation, tests, commit, push, PR creation,
      and `pr-cross-review` with findings addressed.
+   - Require the handoff fields in its `worker_done` report (see the
+     implement-review-merge skill).
    - Workers must not merge.
 8. Fill available worker slots before waiting for completions.
    Dispatch additional ready tasks as slots become available.
-9. Track each Task's worktree, PR URL, review status, review count,
-   and blockers. Verify reports rather than treating `worker_done`
-   as proof of completion.
+9. Wait with the bundled script (see **Waiting**), never with a hand-rolled
+   `check` loop.
+10. Track each Task's worktree, branch, PR URL, review status, review count,
+    and blockers. Verify reports rather than treating `worker_done`
+    as proof of completion.
+11. After verifying an Implementation `worker_done`, release that worker's
+    terminal (`worker-release`); merge preparation starts a fresh worker.
 
 ## 3. Sequential merge
 
-10. Select the next PR based on dependencies and readiness.
-11. Dispatch **Orchestration worker / Merge preparation** mode
-    (steps 8–9) to the PR's worktree.
-    - Fetch and rebase onto the latest `origin/main` as needed.
-    - Re-run tests and CI after synchronization.
-    - Repeat cross-review if substantive changes require it.
-12. Independently verify:
+12. Select the next PR based on dependencies and readiness.
+13. Start a **new** worker for **Orchestration worker / Merge preparation**
+    mode (steps 8–9) in the PR's existing worktree
+    (`worker-start --task <task_id> --worktree <selector>`), with the
+    merge-preparation `--model` / `--effort` from step 0. Do not reuse the
+    implementation worker's conversation. Give it a short handoff:
+    - Issue number, PR URL, branch, and worktree.
+    - Cross-reviews used so far (out of 3) and any open findings or blockers.
+    - The tasks: fetch and rebase onto the latest `origin/main` as needed;
+      re-run tests and CI; repeat cross-review only if substantive changes
+      require it.
+14. Independently verify:
     - No outstanding review findings.
     - No more than 3 cross-reviews for the PR.
     - The PR branch includes the latest `origin/main`.
     - Required tests and CI have passed on the current PR commit.
     - GitHub merge requirements are satisfied.
-13. Merge the PR yourself only when all conditions are met.
-14. After each merge, fetch the latest `origin/main` and repeat
+15. Merge the PR yourself only when all conditions are met.
+16. After each merge, fetch the latest `origin/main` and repeat
     merge preparation for the next PR. If `main` changes before
     merging, revalidate the affected PR.
-15. Mark only confirmed merged Issues as complete. Report the
+17. Mark only confirmed merged Issues as complete. Report the
     outcome and PR URL for each Issue.
+
+## Waiting
+
+Run the bundled waiter as a **background** command whenever you are waiting
+for workers:
+
+```bash
+python <skill-dir>/scripts/wait_actionable.py [--terminal <handle>] [--run <run_id>]
+```
+
+- It loops `check --wait --types "worker_done,escalation,question"`,
+  acknowledges heartbeat-only batches itself, and runs `worker-list` after
+  repeated empty waits.
+- It exits only when something needs the Coordinator, printing a compact
+  summary:
+  - `0`: actionable messages; the Delivery is left **unacknowledged**.
+    Process every row, then `check --ack <delivery_id>`.
+  - `3`: a worker requires action (per `worker-list`).
+  - `4`: no in-progress worker remains; check `task-list` and `worker-list`.
+  - `5`: `--max-minutes` (default 240) elapsed; restart the waiter.
+  - `2`: an `orca` call failed; inspect before retrying.
+- Use `worker-read` or `check --peek` only after the waiter has exited and
+  the summary is insufficient.
+
+## Token budget
+
+- **Ignore heartbeat nudges.** While the waiter is running, ORCA still types
+  `You have N orchestration message(s). Run orca orchestration check ...` into
+  this terminal on every heartbeat. Do not call any tool for it. Reply with
+  one short line (e.g. `待機中`) and end the turn. Act only when the waiter
+  exits.
+- Report to the user only when state changes (dispatch, worker_done, merge,
+  blocker, question). Never post "no news yet" updates.
+- Keep reports short: Issue, PR URL, state, next step.
+- Do not re-read large outputs (full guides, Issue bodies, full worker
+  transcripts, raw JSON) that the summaries already cover.
 
 ## Rules
 
@@ -65,7 +139,7 @@ disable-model-invocation: true
 - Preserve the existing `implement-review-merge` workflow,
   `pr-cross-review` requirements, and GitHub authentication conventions.
 - Never exceed **3 cross-reviews per PR**, counting all phases and
-  dispatches. Track this across worker restarts.
+  dispatches. Track this across worker restarts and pass it in every handoff.
 - If a review fails, the limit is reached, or a conflict cannot be
   resolved safely, block that PR and ask the user.
 - Continue other independent Tasks whenever possible.
@@ -81,5 +155,5 @@ disable-model-invocation: true
 - Resolve routine technical decisions autonomously; ask the user
   only when a safe decision cannot be made.
 
-Briefly present the execution plan, then start orchestration
-without waiting for additional approval.
+Briefly present the execution plan (including the resolved worker model and
+effort), then start orchestration without waiting for additional approval.
