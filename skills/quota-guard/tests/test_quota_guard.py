@@ -159,3 +159,18 @@ def test_windows_shell_uses_hidden_process(tmp_path, monkeypatch):
     assert calls[0][1]["shell"] is False
     assert calls[0][1]["input"] == "raw"
     assert calls[0][1]["creationflags"] == 0x08000000
+
+
+@pytest.mark.parametrize("used", [None, 42, 96])
+def test_check_reports_checkpoint_dir(tmp_path, used):
+    if used is not None:
+        guard.record(tmp_path, payload("a", used, 1800005000), 1800001000)
+    result = guard.check(tmp_path, 1800001002)
+    assert result["checkpoint_dir"] == str(tmp_path / "checkpoints")
+
+
+def test_unknown_reports_local_retry_wait(tmp_path):
+    result = guard.check(tmp_path, 1800001002)
+    assert result["state"] == "UNKNOWN"
+    assert result["local_retry_seconds"] == guard.LOCAL_RETRY_SECONDS
+    assert "cron" in result

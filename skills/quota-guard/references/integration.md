@@ -51,6 +51,10 @@ compatibility from a successful synthetic shell test.
 
 - `statusline`: accept Claude Code JSON on stdin; print a terminal status line.
 - `check`: print one JSON decision; exit 0 / 10 / 20 for READY / PAUSED / UNKNOWN.
+  It includes `checkpoint_dir` (where callers save their checkpoint) and,
+  when not READY, `wake_at` / `wake_local` / `cron` for the resumption wake-up.
+  An UNKNOWN result also includes `local_retry_seconds`, the wait before one
+  local re-check.
 - `configure`: perform initial environment configuration, preserve settings,
   wrap the old statusLine, and enable the timer. Return `changed: false` on a no-op.
 - `check --threshold 95 --max-age 180 --state-dir "<path>"`: override policy.
@@ -77,46 +81,21 @@ expired slightly earlier timestamp cannot bypass the latch. A low reading in the
 by a prior high reading. The guard covers the 5-hour window; it does not enforce
 7-day limits, API billing limits, or Codex usage limits.
 
-## Add to orca-issue-coordinator or another caller
+## Caller contract
 
-Invoke `quota-guard` once at the start; let it configure the environment
-autonomously, then call its `check` helper at the boundaries
-without reloading the skill or reading snapshot history. The coordinator must
-own the run checkpoint and wake-up; workers can check the same helper without
-scheduling competing wake-ups for the same run.
-
-Suggested caller addition (`orca-issue-coordinator` already contains the full
-version in its `## Quota control` section; keep the two consistent):
-
-```markdown
-## Quota control
-
-- Right after creating the Run, before any dispatch, load `quota-guard` once;
-  perform its setup (`configure`) and the first `check`. Afterwards only run
-  `check`.
-- Check before every Task dispatch, merge-preparation dispatch, and merge,
-  after processing each worker completion, and before starting a background
-  waiter. Continue only on READY; PAUSED_QUOTA and UNKNOWN block new work.
-- The Coordinator alone owns the Run checkpoint and the resumption wake-up;
-  workers never create wake-ups.
-- On PAUSED_QUOTA or UNKNOWN: write the checkpoint, ask active workers to
-  stop at safe boundaries and verify their states (never kill processes),
-  ensure exactly one one-shot wake-up marked `quota-guard:<run-id>`, and end
-  the turn.
-- While paused, whatever wakes the Coordinator (worker message, waiter exit,
-  heartbeat nudge), first run `CronList` for `quota-guard:<run-id>`; if it
-  exists, only record delivered worker states, reply briefly, and end the
-  turn. Never create a second wake-up for one Run.
-- While paused, do not start or restart the waiter, and do not apply the
-  normal rule to continue other independent Tasks.
-- On a READY wake-up, reconcile the checkpoint with live state, tell stopped
-  workers with unfinished phases to continue (or replace an unavailable one
-  with one fresh worker), and never duplicate a dispatch.
-```
-
-This does not relax `orca-issue-coordinator`' own `disable-model-invocation: true` or
-any approval/review rules. The saved authorized run may be reconciled on wake-up;
-a denied skill call must not be reproduced through its text as a workaround.
+- Load `quota-guard` and run `configure` once per caller operation; afterwards
+  only call the `check` helper at the caller's boundaries, without reloading
+  the skill or reading snapshot history.
+- Continue only on READY; PAUSED_QUOTA and UNKNOWN block new work.
+- One owner per operation writes the checkpoint (under `checkpoint_dir` from
+  the `check` result) and creates the resumption wake-up: at most one one-shot
+  wake-up per operation, marked `quota-guard:<operation-id>`, at the result's
+  `cron`. Other participants may run `check` but never schedule competing
+  wake-ups for the same operation.
+- A wake-up does not relax the caller's own invocation restrictions or any
+  approval/review rules. The saved authorized operation may be reconciled on
+  wake-up; a refused skill call must not be reproduced through a wake-up's text
+  as a workaround.
 
 ## Official sources (verified 2026-10-12)
 
@@ -130,6 +109,7 @@ a denied skill call must not be reproduced through its text as a workaround.
 `check` provides a minute-rounded date-specific cron expression in the machine's
 local timezone, skipping :00/:30. Cron tools must still be verified in the user's
 ORCA-hosted session. Immediately after setup or wake-up, an UNKNOWN result may
-race a pending statusLine callback. Wait 2 seconds and check once more locally
+race a pending statusLine callback. Wait the result's `local_retry_seconds` and
+check once more locally
 without requesting another model response; if it remains UNKNOWN, follow the
 15-minute one-shot retry protocol.

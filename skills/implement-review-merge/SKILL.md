@@ -18,8 +18,9 @@ whenever a step below says so; never merge on a guess.
 - **Orchestration worker:** Only when explicitly instructed by an ORCA
   Coordinator, execute the assigned phase:
   - **Implementation:** Execute steps 1–7, then report the PR URL,
-    branch, review status, review count, open findings, and any
-    blockers, so a fresh worker can take over. Do not merge.
+    branch, review status, review count (the latest
+    `review-count: <count>/<max>` from `pr-cross-review`), open findings,
+    and any blockers, so a fresh worker can take over. Do not merge.
   - **Merge preparation:** Execute steps 8–9 only after the Coordinator
     requests it. This usually starts in a new conversation: rebuild the
     state from the Coordinator's handoff and `gh pr view` (including the
@@ -30,8 +31,8 @@ whenever a step below says so; never merge on a guess.
 - In worker mode:
   - The Coordinator alone decides when and in what order to merge PRs.
   - Report blockers to the Coordinator instead of asking the user directly.
-  - Preserve the per-PR review limit (`MAX_REVIEWS` in the `pr-cross-review`
-    `config.conf`) across all phases and dispatches.
+  - Preserve the `pr-cross-review` per-PR review limit (`MAX_REVIEWS`)
+    across all phases and dispatches.
   - Report completion or failure using the ORCA Orchestration protocol.
   - Stop after the assigned phase; never proceed to the next phase
     without an explicit dispatch.
@@ -69,14 +70,15 @@ Push the branch to `origin`.
 Run the `pr-cross-review` skill for the pull request.
 
 - Wait for the script to finish; do not continue while it is running.
-- On success it prints `review-posted: <comment-url>`. Read that comment.
+- On success it prints `review-posted: <comment-url>` and
+  `review-count: <count>/<max>`. Read that comment and keep the count.
 
 ### 7. Iterate on findings
 
 If the review has findings, go back to step 2.
 
-- At most `MAX_REVIEWS` reviews per pull request (`pr-cross-review`
-  `config.conf`); the script rejects further runs.
+- `pr-cross-review` allows at most `MAX_REVIEWS` reviews per pull request;
+  the script rejects further runs.
 - If the limit is reached, or the script exits with an error, do **not**
   merge. Report the situation and ask the user how to proceed.
 

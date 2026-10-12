@@ -73,7 +73,7 @@ came from (argument > `<skill-dir>/config.conf` > defaults: implementation
 ## 2. Parallel implementation
 
 7. Instruct each worker to run `implement-review-merge` explicitly in
-   **Orchestration worker / Implementation** mode (steps 1–7).
+   **Orchestration worker / Implementation** mode.
    - Provide the Issue number, scope, acceptance criteria, and dependencies.
      Tell the worker to read the Issue itself.
    - Require implementation, tests, commit, push, PR creation,
@@ -97,19 +97,22 @@ came from (argument > `<skill-dir>/config.conf` > defaults: implementation
 
 12. Select the next PR based on dependencies and readiness.
 13. After a READY quota `check`, start a **new** worker for
-    **Orchestration worker / Merge preparation** mode (steps 8–9) in the
-    PR's existing worktree (`worker-start --task <task_id> --worktree <selector>`), with the
+    **Orchestration worker / Merge preparation** mode in the PR's existing
+    worktree (`worker-start --task <task_id> --worktree <selector>`), with the
     merge-preparation `--model` / `--effort` from step 0. Do not reuse the
     implementation worker's conversation. Give it a short handoff:
     - Issue number, PR URL, branch, and worktree.
-    - Cross-reviews used so far (out of `MAX_REVIEWS`) and any open findings or blockers.
+    - Cross-reviews used so far (the latest `review-count: <count>/<max>`)
+      and any open findings or blockers.
     - The tasks: fetch and rebase onto the latest `origin/main` as needed;
       re-run tests and CI; repeat cross-review only if substantive changes
       require it.
 14. Independently verify:
     - No outstanding review findings.
-    - No more than `MAX_REVIEWS` cross-reviews for the PR (`pr-cross-review`
-      `config.conf`).
+    - No more than `<max>` cross-reviews on the PR: count the cross-review
+      comments on the PR and compare with `<max>` from the latest
+      `review-count: <count>/<max>` that `pr-cross-review` printed (as
+      reported in the worker handoff).
     - The PR branch includes the latest `origin/main`.
     - Required tests and CI have passed on the current PR commit.
     - GitHub merge requirements are satisfied.
@@ -194,9 +197,9 @@ python <skill-dir>/scripts/wait_actionable.py [--terminal <handle>] [--run <run_
   assigned phase and report through ORCA Orchestration.
 - Preserve the existing `implement-review-merge` workflow,
   `pr-cross-review` requirements, and GitHub authentication conventions.
-- Never exceed `MAX_REVIEWS` cross-reviews per PR (`pr-cross-review`
-  `config.conf`), counting all phases and
-  dispatches. Track this across worker restarts and pass it in every handoff.
+- Never exceed the `pr-cross-review` per-PR review limit (`MAX_REVIEWS`),
+  counting all phases and dispatches. Track this across worker restarts and
+  pass it in every handoff.
 - If a review fails, the limit is reached, or a conflict cannot be
   resolved safely, block that PR and ask the user.
 - Continue other independent Tasks whenever possible, except while the quota
