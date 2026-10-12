@@ -44,3 +44,12 @@ def test_merge_prep_skipped_when_pr_is_already_ready() -> None:
     assert "Skip step 13 and go straight to step 14" in skill
     assert "git merge-base --is-ancestor origin/main origin/<branch>" in skill
     assert "gh pr checks <pr> --required" in skill
+
+
+def test_worker_messages_go_to_terminal_handle() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    assert "## Messaging workers" in skill
+    assert "orca orchestration send --to <terminalHandle>" in skill
+    assert "worker-show --dispatch <dispatch_id> --json" in skill
+    reference = QUOTA_PAUSE.read_text(encoding="utf-8")
+    assert reference.count("send --to <terminalHandle>") == 2

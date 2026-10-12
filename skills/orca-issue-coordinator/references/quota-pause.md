@@ -14,11 +14,12 @@ continue other independent Tasks does not apply.
    and pending actions, plus the quota helper path and state directory.
    For each worker asked to stop, record the dispatch it was running and
    the work left in that phase.
-2. Ask every active worker, through ORCA Orchestration messages, to stop
-   at a safe boundary (after a commit/push or a finished review, never
-   mid-rebase) and report its state. Verify the reported states with
-   `worker-list`. Never kill worker processes or claim that all work has
-   stopped.
+2. Ask every active worker, through ORCA Orchestration messages sent to its
+   terminal handle (`send --to <terminalHandle>`, see `SKILL.md`
+   **Messaging workers**), to stop at a safe boundary (after a commit/push
+   or a finished review, never mid-rebase) and report its state. Verify the
+   reported states with `worker-list`. Never kill worker processes or claim
+   that all work has stopped.
 3. Ensure exactly one wake-up (see **While paused**): if none exists,
    create one one-shot (`recurring: false`) wake-up at the result's
    `cron`, containing the marker `quota-guard:<run-id>`, the checkpoint
@@ -57,8 +58,8 @@ the turn. On READY, reconcile the checkpoint with live `task-list`,
 phases or duplicating dispatches:
 
 - A stopped worker whose phase is unfinished and whose terminal is still
-  available: send it an ORCA message to continue the remaining work of its
-  phase and report `worker_done` as before.
+  available: send it an ORCA message (`send --to <terminalHandle>`) to
+  continue the remaining work of its phase and report `worker_done` as before.
 - A stopped worker that is no longer available: confirm from its branch and
   PR what was already done, then start one fresh worker for the same phase
   with a handoff of that state and the review count. Never run two workers on

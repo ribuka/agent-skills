@@ -169,6 +169,16 @@ new work near the 5-hour limit. `<quota-check>` below means
   follow that same reference before doing anything else, even if this
   conversation's context has been compacted.
 
+## Messaging workers
+
+Send every message to a worker (follow-ups, stop requests, resume requests)
+to its terminal handle (`term_…`):
+`orca orchestration send --to <terminalHandle> ...`. Never address a worker by
+its dispatch ID (`ctx_…`); that fails with `terminal_not_found`. Take the
+handle from the `worker-start` receipt and record it with the Task; if it is
+missing, read `terminalHandle` from
+`orca orchestration worker-show --dispatch <dispatch_id> --json`.
+
 ## Waiting
 
 Run the bundled waiter as a **background** command whenever you are waiting
