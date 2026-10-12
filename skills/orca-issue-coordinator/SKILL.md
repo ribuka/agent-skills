@@ -231,13 +231,15 @@ other exit code, handle the pause as in **Quota control** instead.
 - It exits only when something needs the Coordinator, printing a compact
   summary:
   - `0`: actionable messages; the Delivery is left **unacknowledged**.
+    The body of every `worker_done`, `escalation`, and `question` message is
+    printed in full, so read the worker handoff fields from this output.
     Process every row, then `check --ack <delivery_id>`.
   - `3`: a worker requires action (per `worker-list`).
   - `4`: no in-progress worker remains; check `task-list` and `worker-list`.
   - `5`: `--max-minutes` (default 240) elapsed; restart the waiter.
   - `2`: an `orca` call failed; inspect before retrying.
-- Use `worker-read` or `check --peek` only after the waiter has exited and
-  the summary is insufficient.
+- Do not re-read message bodies with `check --peek`. Use `worker-read` only
+  after the waiter has exited and a worker's terminal output is needed.
 - While the quota is paused, do not start or restart the waiter; handle any
   waiter exit as in the quota pause reference (see **Quota control**).
 
