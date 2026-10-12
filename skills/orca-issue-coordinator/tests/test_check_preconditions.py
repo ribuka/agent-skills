@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "check_preconditions.py"
+CHECKOUT = "/home/user/repos/agent-skills"
 
 
 def load_module():
@@ -31,12 +32,16 @@ def cp(monkeypatch: pytest.MonkeyPatch):
     responses: dict[str, tuple[int, str]] = {
         "orca": (0, status_json()),
         "gh": (0, "Logged in to github.com"),
+        "rev-parse": (0, CHECKOUT),
+        "fetch": (0, ""),
+        "rev-list": (0, "0	0"),
     }
     calls: list[list[str]] = []
 
     def fake_run(cmd: list[str]) -> tuple[int, str]:
         calls.append(cmd)
-        return responses[cmd[0]]
+        # git commands are keyed by subcommand: git -C <dir> <subcommand> ...
+        return responses[cmd[3] if cmd[0] == "git" else cmd[0]]
 
     monkeypatch.setattr(module, "run", fake_run)
     monkeypatch.setenv("ORCA_TERMINAL_HANDLE", "term_test")
@@ -47,9 +52,48 @@ def cp(monkeypatch: pytest.MonkeyPatch):
 
 def test_all_checks_pass(cp, capsys: pytest.CaptureFixture[str]) -> None:
     assert cp.main() == 0
-    assert capsys.readouterr().out.strip() == "preconditions: ok"
+    assert capsys.readouterr().out.splitlines() == [
+        "preconditions: ok",
+        f"skill-checkout: {CHECKOUT}",
+    ]
     assert ["orca", "status", "--json"] in cp.calls
     assert ["gh", "auth", "status"] in cp.calls
+    assert ["git", "-C", str(cp.SKILL_DIR), "rev-parse", "--show-toplevel"] in cp.calls
+    assert ["git", "-C", CHECKOUT, "fetch", "--quiet", "origin", "main"] in cp.calls
+    assert ["git", "-C", CHECKOUT, "rev-list", "--left-right", "--count",
+            "HEAD...origin/main"] in cp.calls
+
+
+def test_skill_dir_is_the_resolved_script_parent(cp) -> None:
+    assert cp.SKILL_DIR == SCRIPT.parents[1]
+
+
+@pytest.mark.parametrize("counts, expected", [
+    ("0	3", "is 3 commit(s) behind origin/main,"),
+    ("2	0", "is 2 commit(s) not on origin/main,"),
+    ("1	4", "is 4 commit(s) behind origin/main and 1 commit(s) not on origin/main,"),
+])
+def test_stale_skill_checkout_stops(cp, capsys: pytest.CaptureFixture[str],
+                                    counts: str, expected: str) -> None:
+    cp.responses["rev-list"] = (0, counts)
+    assert cp.main() == 1
+    out = capsys.readouterr().out
+    assert f"STOP: the skill checkout {CHECKOUT} {expected}" in out
+    assert "stale skills" in out
+
+
+@pytest.mark.parametrize("key, response, expected", [
+    ("rev-parse", (128, "fatal: not a git repository"), "is not inside a git checkout (exit 128)"),
+    ("fetch", (128, "fatal: could not read from remote"),
+     f"`git fetch origin main` failed in the skill checkout {CHECKOUT} (exit 128)"),
+    ("rev-list", (128, "fatal: bad revision"), "cannot compare the skill checkout"),
+    ("rev-list", (0, "garbage"), "cannot compare the skill checkout"),
+])
+def test_unverifiable_skill_checkout_stops(cp, capsys: pytest.CaptureFixture[str], key: str,
+                                           response: tuple[int, str], expected: str) -> None:
+    cp.responses[key] = response
+    assert cp.main() == 1
+    assert expected in capsys.readouterr().out
 
 
 def test_outside_orca_terminal_stops(cp, monkeypatch: pytest.MonkeyPatch,

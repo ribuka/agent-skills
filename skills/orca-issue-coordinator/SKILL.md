@@ -26,13 +26,20 @@ uv run <skill-dir>/scripts/check_preconditions.py
 ```
 
 It verifies that this conversation runs inside an Orca terminal, that the Orca
-runtime is reachable, and that `gh auth status` succeeds. If it exits non-zero,
+runtime is reachable, that `gh auth status` succeeds, and that the git checkout
+the skills are installed from is neither behind `origin/main` nor carrying
+commits not on it (so no one runs stale skills). If it exits non-zero,
 or `orca orchestration run-create` later fails with
 `no_active_sender_terminal`, **stop immediately** and report the `STOP:` lines
 to the user. Never work around a failed precondition: do not create a
 substitute Coordinator terminal (`orca terminal create`), do not pass another
 terminal's handle to `--from`, and do not unset, replace, or switch `gh`
 credentials (e.g. clearing `GH_TOKEN`).
+
+On success it prints `skill-checkout: <path>`; keep that path. Never update
+(pull, rebase, or check out) that checkout during the Run, even when merged
+PRs change skills: every worker must run the same skill version. Report it as
+stale at the end instead (step 17).
 
 Then resolve the worker settings.
 
@@ -140,7 +147,9 @@ came from (argument > `<skill-dir>/config.conf` > defaults: implementation
     merging, revalidate the affected PR. Dispatch any dependent Task whose
     dependency PRs are now all merged (see step 5).
 17. Mark only confirmed merged Issues as complete. Report the
-    outcome and PR URL for each Issue.
+    outcome and PR URL for each Issue. If any merged PR belongs to the
+    repository of the `skill-checkout` path from step 0, ask the user to
+    update that checkout to the latest `origin/main`.
 
 ## Quota control
 
