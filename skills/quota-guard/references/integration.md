@@ -77,7 +77,7 @@ expired slightly earlier timestamp cannot bypass the latch. A low reading in the
 by a prior high reading. The guard covers the 5-hour window; it does not enforce
 7-day limits, API billing limits, or Codex usage limits.
 
-## Add to orchestrate-issues or another caller
+## Add to orca-issue-coordinator or another caller
 
 Invoke `quota-guard` once at the start; let it configure the environment
 autonomously, then call its `check` helper at the boundaries
@@ -85,7 +85,7 @@ without reloading the skill or reading snapshot history. The coordinator must
 own the run checkpoint and wake-up; workers can check the same helper without
 scheduling competing wake-ups for the same run.
 
-Suggested caller addition (`orchestrate-issues` already contains the full
+Suggested caller addition (`orca-issue-coordinator` already contains the full
 version in its `## Quota control` section; keep the two consistent):
 
 ```markdown
@@ -114,7 +114,7 @@ version in its `## Quota control` section; keep the two consistent):
   with one fresh worker), and never duplicate a dispatch.
 ```
 
-This does not relax `orchestrate-issues`' own `disable-model-invocation: true` or
+This does not relax `orca-issue-coordinator`' own `disable-model-invocation: true` or
 any approval/review rules. The saved authorized run may be reconciled on wake-up;
 a denied skill call must not be reproduced through its text as a workaround.
 

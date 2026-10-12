@@ -1,5 +1,5 @@
 ---
-name: orchestrate-issues
+name: orca-issue-coordinator
 description: Coordinate multiple GitHub Issues through ORCA Orchestration. Delegate implementation and cross-review to parallel workers using the implement-review-merge skill, then verify and merge pull requests sequentially. Use when explicitly asked to orchestrate multiple issues or coordinate parallel development.
 disable-model-invocation: true
 ---
@@ -23,13 +23,12 @@ Run once at the start, passing through any `--impl-model`, `--impl-effort`,
 `--merge-model`, or `--merge-effort` flags the user gave:
 
 ```bash
-python <skill-dir>/scripts/resolve_config.py --project-dir <repo-root> [user flags]
+uv run <skill-dir>/scripts/resolve_config.py [user flags]
 ```
 
 It prints the `--model` / `--effort` pair for each phase and where each value
-came from (argument > `<repo-root>/.orchestrate-issues.env` >
-`<skill-dir>/config.env` > defaults: implementation `opus`/`medium`, merge
-preparation `sonnet`/`medium`). Use these values on every `worker-start`.
+came from (argument > `<skill-dir>/config.conf` > defaults: implementation
+`opus`/`medium`, merge preparation `sonnet`/`medium`). Use these values on every `worker-start`.
 
 ## 1. Plan and dispatch
 

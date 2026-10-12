@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
-"""Resolve the worker model / effort settings for orchestrate-issues.
+"""Resolve the worker model / effort settings for orca-issue-coordinator.
 
 Precedence (highest first):
   1. command-line flags (--impl-model, --impl-effort, --merge-model, --merge-effort)
-  2. <project-dir>/.orchestrate-issues.env
-  3. <skill-dir>/config.env
-  4. built-in defaults
+  2. <skill-dir>/config.conf
+  3. built-in defaults
 
-Config files use plain KEY=VALUE lines; `#` starts a comment.
+The config file uses plain KEY=VALUE lines; `#` starts a comment.
 """
 
 from __future__ import annotations
@@ -25,7 +24,6 @@ DEFAULTS = {
 }
 EFFORTS = {"low", "medium", "high", "xhigh", "max"}
 SKILL_DIR = Path(__file__).resolve().parent.parent
-PROJECT_FILE = ".orchestrate-issues.env"
 
 
 def parse_env(path: Path) -> dict[str, str]:
@@ -50,15 +48,14 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     for key in DEFAULTS:
         ap.add_argument("--" + key.lower().replace("_", "-"), dest=key)
-    ap.add_argument("--project-dir", default=".", help="directory holding .orchestrate-issues.env")
     ap.add_argument("--json", action="store_true", help="emit JSON")
     opts = ap.parse_args()
 
     resolved = {k: (v, "default") for k, v in DEFAULTS.items()}
-    for path in (SKILL_DIR / "config.env", Path(opts.project_dir) / PROJECT_FILE):
-        if path.is_file():
-            for k, v in parse_env(path).items():
-                resolved[k] = (v, str(path))
+    config = SKILL_DIR / "config.conf"
+    if config.is_file():
+        for k, v in parse_env(config).items():
+            resolved[k] = (v, str(config))
     for k in DEFAULTS:
         if getattr(opts, k):
             resolved[k] = (getattr(opts, k), "argument")

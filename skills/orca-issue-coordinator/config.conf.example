@@ -1,5 +1,5 @@
-# Copy to config.env (personal, git-ignored) or to <repo>/.orchestrate-issues.env
-# (per project). Command-line flags override both. Unset keys keep the default.
+# Copy to config.conf (personal, git-ignored). Command-line flags override it.
+# Unset keys keep the default.
 
 # Implementation workers (implement-review-merge steps 1-7)
 IMPL_MODEL=opus
