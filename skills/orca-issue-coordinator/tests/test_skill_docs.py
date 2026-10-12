@@ -68,3 +68,15 @@ def test_merge_prep_states_re_review_criteria_and_report() -> None:
         assert label in skill
     assert "`none`, `mechanical`, or `newly written`" in skill
     assert "Only if the merge-preparation worker reported a `newly written`" in skill
+
+
+def test_quota_check_gates_by_exit_code_only() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    assert "**Judge READY by exit code only:**" in skill
+    assert "`<quota-check> && <command>`" in skill
+    assert "Never grep the" in skill
+    assert (
+        "python ~/.agents/skills/quota-guard/scripts/quota_guard.py check && "
+        "python <skill-dir>/scripts/wait_actionable.py" in skill
+    )
+    assert "grep -o" not in skill
