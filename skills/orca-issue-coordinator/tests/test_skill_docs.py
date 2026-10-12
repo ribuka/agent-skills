@@ -37,3 +37,10 @@ def test_merge_prep_worker_starts_from_spec_in_pr_worktree() -> None:
     assert 'worker-start --spec "<handoff>" --task-title' in skill
     assert "--worktree branch:<branch>" in skill
     assert "worker-start --task" not in skill
+
+
+def test_merge_prep_skipped_when_pr_is_already_ready() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    assert "Skip step 13 and go straight to step 14" in skill
+    assert "git merge-base --is-ancestor origin/main origin/<branch>" in skill
+    assert "gh pr checks <pr> --required" in skill
