@@ -80,3 +80,10 @@ def test_quota_check_gates_by_exit_code_only() -> None:
         "python <skill-dir>/scripts/wait_actionable.py" in skill
     )
     assert "grep -o" not in skill
+
+
+def test_review_count_checked_with_review_status_script() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    assert "bash ~/.agents/skills/pr-cross-review/scripts/review_status.sh <pr-number>" in skill
+    assert "Do not count PR comments yourself" in skill
+    assert "count the cross-review\n      comments on the PR" not in skill

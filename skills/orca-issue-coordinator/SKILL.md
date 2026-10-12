@@ -149,10 +149,14 @@ came from (argument > `<skill-dir>/config.conf` > defaults: implementation
       If that review is missing, has open findings, or could not run
       because the limit was reached, block the PR and ask the user.
     - No outstanding review findings.
-    - No more than `<max>` cross-reviews on the PR: count the cross-review
-      comments on the PR and compare with `<max>` from the latest
-      `review-count: <count>/<max>` that `pr-cross-review` printed (as
-      reported in the worker handoff).
+    - No more than `<max>` cross-reviews on the PR: run
+      `bash ~/.agents/skills/pr-cross-review/scripts/review_status.sh <pr-number>`
+      and check that its `review-count: <count>/<max>` line has
+      `<count>` ≤ `<max>`. Do not count PR comments yourself; other
+      comments are mixed in. Compare this output with the review count in
+      the worker handoff; if they differ, use the script's count and note
+      the mismatch in the Issue's report (step 17). If the script exits non-zero,
+      block the PR and ask the user.
     - The PR branch includes the latest `origin/main`.
     - Required tests and CI have passed on the current PR commit.
     - GitHub merge requirements are satisfied.
