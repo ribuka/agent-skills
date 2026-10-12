@@ -59,3 +59,12 @@ def test_skill_md_freezes_skill_checkout_during_run() -> None:
     skill = SKILL_MD.read_text(encoding="utf-8")
     assert "`skill-checkout: <path>`" in skill
     assert "Never update" in skill
+
+
+def test_merge_prep_states_re_review_criteria_and_report() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    assert "Re-review criteria after a rebase or conflict resolution" in skill
+    for label in ("**Mechanical:**", "**Newly written:**"):
+        assert label in skill
+    assert "`none`, `mechanical`, or `newly written`" in skill
+    assert "reported a `newly written`" in skill
