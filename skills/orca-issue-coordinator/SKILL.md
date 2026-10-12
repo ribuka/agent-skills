@@ -144,10 +144,10 @@ came from (argument > `<skill-dir>/config.conf` > defaults: implementation
       whether the resolution was `none`, `mechanical`, or `newly written`
       (naming the files), and whether cross-review was repeated.
 14. Independently verify:
-    - If the merge-preparation worker reported a `newly written`
-      resolution, a cross-review ran after it with no outstanding
-      findings. Otherwise, or if the limit was reached, block the PR and
-      ask the user.
+    - Only if the merge-preparation worker reported a `newly written`
+      resolution: a cross-review ran after it with no outstanding findings.
+      If that review is missing, has open findings, or could not run
+      because the limit was reached, block the PR and ask the user.
     - No outstanding review findings.
     - No more than `<max>` cross-reviews on the PR: count the cross-review
       comments on the PR and compare with `<max>` from the latest

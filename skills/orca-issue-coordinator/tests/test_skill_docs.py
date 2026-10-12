@@ -67,4 +67,4 @@ def test_merge_prep_states_re_review_criteria_and_report() -> None:
     for label in ("**Mechanical:**", "**Newly written:**"):
         assert label in skill
     assert "`none`, `mechanical`, or `newly written`" in skill
-    assert "reported a `newly written`" in skill
+    assert "Only if the merge-preparation worker reported a `newly written`" in skill
