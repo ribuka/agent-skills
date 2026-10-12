@@ -4,7 +4,7 @@
 
 Use a persistent Python 3.10+ interpreter (for example the user's installed 3.12).
 Use the already-placed skill folder. A link from `.claude/skills/quota-guard` to
-`.agents/skills/quota-guard` is sufficient; do not copy the files again. Do not keep the script in a uv
+this repository's `skills/quota-guard` is sufficient; do not copy the files again. Do not keep the script in a uv
 throwaway environment: configure stores the current interpreter's absolute path.
 
 The invoking agent performs configure once on entry; the user need not run a
