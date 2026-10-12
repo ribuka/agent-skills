@@ -140,46 +140,13 @@ new work near the 5-hour limit. `<quota-check>` below means
   preparation, merge, re-dispatch).
 - **Ownership:** the Coordinator alone owns the Run checkpoint and the
   resumption wake-up. Workers never create wake-ups.
-- **On PAUSED_QUOTA or UNKNOWN:**
-  1. Write the checkpoint (outside any worktree, e.g.
-     `~/.claude/quota-guard/checkpoints/<run-id>.md`): Run ID, each Task's
-     phase, worker handle, worktree, branch, PR URL, review count, blockers,
-     and pending actions, plus the quota helper path and state directory.
-     For each worker asked to stop, record the dispatch it was running and
-     the work left in that phase.
-  2. Ask every active worker, through ORCA Orchestration messages, to stop
-     at a safe boundary (after a commit/push or a finished review, never
-     mid-rebase) and report its state. Verify the reported states with
-     `worker-list`. Never kill worker processes or claim that all work has
-     stopped.
-  3. Ensure exactly one wake-up (see **While paused**): if none exists,
-     create one one-shot (`recurring: false`) wake-up at the result's
-     `cron`, containing the marker `quota-guard:<run-id>`, the checkpoint
-     path, and the instruction to run `<quota-check>`, reconcile the
-     checkpoint with live `task-list` / `worker-list` / PR state, and resume
-     this Run only on READY. For UNKNOWN, follow `quota-guard`'s single
-     2-second local retry first, then its 15-minute retry.
-  4. End the turn.
-- **While paused:** whatever wakes the Coordinator (a worker message, the
-  waiter exiting, or a heartbeat nudge), first run `CronList` and look for
-  `quota-guard:<run-id>`. If it exists, do not create another; only record
-  delivered worker states in the checkpoint (see **Waiting**), reply with one
-  short line, and end the turn. Never create a second wake-up for one Run.
-- **On wake-up:** the fired one-shot is gone. Run `<quota-check>`. If it is
-  not READY, create exactly one new one-shot wake-up as above and end the
-  turn. On READY, reconcile the checkpoint with live `task-list`,
-  `worker-list`, branches, and PRs, then resume without repeating completed
-  phases or duplicating dispatches:
-  - A stopped worker whose phase is unfinished and whose terminal is still
-    available: send it an ORCA message to continue the remaining work of
-    its phase and report `worker_done` as before.
-  - A stopped worker that is no longer available: confirm from its branch
-    and PR what was already done, then start one fresh worker for the same
-    phase with a handoff of that state and the review count. Never run two
-    workers on one Task.
-  - Then continue dispatching ready Tasks and start the waiter as usual.
-- If `CronCreate` / `CronList` are unavailable, keep the checkpoint and tell
-  the user that manual resumption is required.
+- **On PAUSED_QUOTA or UNKNOWN:** stop starting all new work, then read
+  `~/.agents/skills/orca-issue-coordinator/references/quota-pause.md` and
+  follow it (checkpoint, stopping workers, exactly one wake-up, end the turn).
+- **While paused or on wake-up:** whatever wakes the Coordinator (the quota
+  wake-up, a worker message, the waiter exiting, or a heartbeat nudge), first
+  follow that same reference before doing anything else, even if this
+  conversation's context has been compacted.
 
 ## Waiting
 
@@ -203,12 +170,8 @@ python <skill-dir>/scripts/wait_actionable.py [--terminal <handle>] [--run <run_
   - `2`: an `orca` call failed; inspect before retrying.
 - Use `worker-read` or `check --peek` only after the waiter has exited and
   the summary is insufficient.
-- While the quota is paused (PAUSED_QUOTA or UNKNOWN):
-  - Do not start a new waiter, and do not restart it after exit `5`.
-  - If a waiter exits `0` or `3`, only record the delivered worker states in
-    the checkpoint (and `check --ack` the Delivery after exit `0`); do not
-    dispatch, prepare merges, or merge. Then follow **While paused** in
-    **Quota control**.
+- While the quota is paused, do not start or restart the waiter; handle any
+  waiter exit as in the quota pause reference (see **Quota control**).
 
 ## Token budget
 
@@ -217,10 +180,8 @@ python <skill-dir>/scripts/wait_actionable.py [--terminal <handle>] [--run <run_
   this terminal on every heartbeat. Do not call any tool for it. Reply with
   one short line (e.g. `待機中`) and end the turn. Act only when the waiter
   exits.
-- **While the quota is paused,** handle every wake-up (worker message, waiter
-  exit, heartbeat nudge) as in **While paused** in **Quota control**: one
-  `CronList` check, no new wake-up if one exists, one short line, end the
-  turn.
+- **While the quota is paused,** handle every wake-up as in the quota pause
+  reference (see **Quota control**).
 - Report to the user only when state changes (dispatch, worker_done, merge,
   blocker, question). Never post "no news yet" updates.
 - Keep reports short: Issue, PR URL, state, next step.
