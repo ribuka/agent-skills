@@ -8,8 +8,8 @@ continue other independent Tasks does not apply.
 
 ## On PAUSED_QUOTA or UNKNOWN
 
-1. Write the checkpoint (outside any worktree, e.g.
-   `~/.claude/quota-guard/checkpoints/<run-id>.md`): Run ID, each Task's
+1. Write the checkpoint to `<run-id>.md` under the result's
+   `checkpoint_dir`: Run ID, each Task's
    phase, worker handle, worktree, branch, PR URL, review count, blockers,
    and pending actions, plus the quota helper path and state directory.
    For each worker asked to stop, record the dispatch it was running and
@@ -26,9 +26,10 @@ continue other independent Tasks does not apply.
    (`~/.agents/skills/orca-issue-coordinator/references/quota-pause.md`),
    and the instruction to follow **On wake-up** in it: run `<quota-check>`,
    reconcile the checkpoint with live `task-list` / `worker-list` / PR
-   state, and resume this Run only on READY. For UNKNOWN, follow
-   `quota-guard`'s single 2-second local retry first, then its 15-minute
-   retry.
+   state, and resume this Run only on READY. For UNKNOWN right after setup
+   or a wake-up, first wait the result's `local_retry_seconds` and re-run
+   `<quota-check>` once (no model request); only if it is still UNKNOWN,
+   use its `cron`.
 4. End the turn.
 
 If `CronCreate` / `CronList` are unavailable, keep the checkpoint and tell

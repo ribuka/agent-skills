@@ -167,3 +167,10 @@ def test_check_reports_checkpoint_dir(tmp_path, used):
         guard.record(tmp_path, payload("a", used, 1800005000), 1800001000)
     result = guard.check(tmp_path, 1800001002)
     assert result["checkpoint_dir"] == str(tmp_path / "checkpoints")
+
+
+def test_unknown_reports_local_retry_wait(tmp_path):
+    result = guard.check(tmp_path, 1800001002)
+    assert result["state"] == "UNKNOWN"
+    assert result["local_retry_seconds"] == guard.LOCAL_RETRY_SECONDS
+    assert "cron" in result

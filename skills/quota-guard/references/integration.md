@@ -53,6 +53,8 @@ compatibility from a successful synthetic shell test.
 - `check`: print one JSON decision; exit 0 / 10 / 20 for READY / PAUSED / UNKNOWN.
   It includes `checkpoint_dir` (where callers save their checkpoint) and,
   when not READY, `wake_at` / `wake_local` / `cron` for the resumption wake-up.
+  An UNKNOWN result also includes `local_retry_seconds`, the wait before one
+  local re-check.
 - `configure`: perform initial environment configuration, preserve settings,
   wrap the old statusLine, and enable the timer. Return `changed: false` on a no-op.
 - `check --threshold 95 --max-age 180 --state-dir "<path>"`: override policy.
@@ -107,6 +109,7 @@ by a prior high reading. The guard covers the 5-hour window; it does not enforce
 `check` provides a minute-rounded date-specific cron expression in the machine's
 local timezone, skipping :00/:30. Cron tools must still be verified in the user's
 ORCA-hosted session. Immediately after setup or wake-up, an UNKNOWN result may
-race a pending statusLine callback. Wait 2 seconds and check once more locally
+race a pending statusLine callback. Wait the result's `local_retry_seconds` and
+check once more locally
 without requesting another model response; if it remains UNKNOWN, follow the
 15-minute one-shot retry protocol.

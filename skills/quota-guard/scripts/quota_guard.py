@@ -17,6 +17,9 @@ from datetime import datetime
 
 
 RESET_TOLERANCE = 120.0
+# Wait before the single local re-check of an UNKNOWN result, so that an
+# in-flight statusLine callback can finish writing its snapshot.
+LOCAL_RETRY_SECONDS = 2
 
 
 def read_json(path: Path):
@@ -136,6 +139,7 @@ def check(root: Path, now: float, threshold=95.0, max_age=180.0):
         chosen = max(fresh, key=lambda r: r["window"]["used_percentage"])
         result.update(state="READY", reason="recent_local_evidence", **chosen["window"])
     else:
+        result["local_retry_seconds"] = LOCAL_RETRY_SECONDS
         result.update(wakeup(now + 900))
     return result
 
