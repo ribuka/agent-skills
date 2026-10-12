@@ -7,11 +7,16 @@ import json
 import math
 import os
 from pathlib import Path
+import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
 import time
 from datetime import datetime
+
+
+RESET_TOLERANCE = 120.0
 
 
 def read_json(path: Path):
@@ -75,11 +80,12 @@ def record(root: Path, payload: dict, now: float):
     source_at = now if fingerprint != old.get("fingerprint") else old.get("source_at", now)
     reset = window["resets_at"]
     previous = old.get("window") or {}
-    if valid_window(previous) and previous["resets_at"] > reset:
+    if valid_window(previous) and previous["resets_at"] > reset + RESET_TOLERANCE:
         return  # Do not regress to an older reset window.
     high = window["used_percentage"]
-    if previous.get("resets_at") == reset and number(previous.get("used_percentage")):
+    if valid_window(previous) and abs(previous["resets_at"] - reset) <= RESET_TOLERANCE:
         high = max(high, previous["used_percentage"])
+        reset = max(reset, previous["resets_at"])
     atomic_json(path, {"schema": 1, "observed_at": now, "source_at": source_at,
                        "fingerprint": fingerprint,
                        "window": {"used_percentage": high, "resets_at": reset}})
@@ -106,22 +112,25 @@ def check(root: Path, now: float, threshold=95.0, max_age=180.0):
             if (data.get("schema") == 1 and valid_window(window)
                     and number(data.get("source_at"))
                     and data["source_at"] <= now + 5
-                    and window["resets_at"] > now):
+                    and window["resets_at"] + RESET_TOLERANCE > now):
                 records.append(data)
         except (OSError, ValueError, TypeError, AttributeError):
             continue
     # Never resurrect an older window when newer evidence becomes stale.
     reset = max((r["window"]["resets_at"] for r in records), default=None)
-    records = [r for r in records if r["window"]["resets_at"] == reset]
-    fresh = [r for r in records if 0 <= now - r["source_at"] <= max_age]
+    records = [r for r in records
+               if reset - r["window"]["resets_at"] <= RESET_TOLERANCE]
+    fresh = [r for r in records if 0 <= now - r["source_at"] <= max_age
+             and r["window"]["resets_at"] > now]
     high = [r for r in records if r["window"]["used_percentage"] >= threshold]
     result = {"state": "UNKNOWN", "reason": "missing_or_stale_telemetry",
               "threshold": threshold, "upstream_freshness": "not_guaranteed"}
     if high:
-        chosen = max(high, key=lambda r: r["window"]["resets_at"])
+        chosen = max(high, key=lambda r: r["window"]["used_percentage"])
         result.update(state="PAUSED_QUOTA", reason="threshold_reached",
                       **chosen["window"])
-        result.update(wakeup(chosen["window"]["resets_at"] + 120))
+        result["resets_at"] = reset
+        result.update(wakeup(reset + RESET_TOLERANCE))
     elif fresh:
         chosen = max(fresh, key=lambda r: r["window"]["used_percentage"])
         result.update(state="READY", reason="recent_local_evidence", **chosen["window"])
@@ -143,7 +152,9 @@ def configure(root: Path, settings: Path):
     config = read_json(settings) if settings.exists() else {}
     if not isinstance(config, dict):
         raise ValueError("settings.json must contain an object")
-    previous_file = root / "previous-statusline.json"
+    settings_key = hashlib.sha256(
+        os.path.normcase(str(settings.resolve())).encode()).hexdigest()
+    previous_file = root / f"previous-{settings_key}.json"
     old = config.get("statusLine")
     script = Path(__file__).resolve()
     command = (f'{quote_command(sys.executable)} {quote_command(script)} statusline '
@@ -153,10 +164,21 @@ def configure(root: Path, settings: Path):
                 or not isinstance(old.get("command"), str)):
         raise ValueError("Unsupported existing statusLine; leave settings unchanged")
     already = isinstance(old, dict) and "quota_guard.py" in old.get("command", "")
-    if not already:
+    if already:
+        # Migrate the backup referenced by the installed wrapper, including the
+        # legacy shared filename. Never wrap the wrapper as the old command.
+        tokens = shlex.split(old["command"])
+        try:
+            source = Path(tokens[tokens.index("--previous-config") + 1])
+        except (ValueError, IndexError):
+            raise ValueError("Previous statusLine backup path missing; leave settings unchanged")
+        previous = read_json(source)
+        if not isinstance(previous, dict):
+            raise ValueError("Invalid previous statusLine backup; leave settings unchanged")
+        if source.resolve() != previous_file.resolve():
+            atomic_json(previous_file, previous)
+    else:
         atomic_json(previous_file, old or {})
-    elif not previous_file.exists():
-        raise ValueError("Previous statusLine backup missing; leave settings unchanged")
     new = dict(old or {})
     new.update(type="command", command=command)
     interval = new.get("refreshInterval", 60)
@@ -176,16 +198,46 @@ def configure(root: Path, settings: Path):
     return {**result, "changed": True}
 
 
+def git_bash():
+    """Resolve the Windows shell used by Claude; never fall back to cmd.exe."""
+    explicit = os.environ.get("CLAUDE_CODE_GIT_BASH_PATH")
+    if explicit:
+        if Path(explicit).is_file():
+            return explicit
+        raise FileNotFoundError("CLAUDE_CODE_GIT_BASH_PATH does not exist")
+    candidates = []
+    git = shutil.which("git")
+    if git:
+        candidates.append(Path(git).resolve().parent.parent / "bin" / "bash.exe")
+    for variable in ("ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"):
+        base = os.environ.get(variable)
+        if base:
+            candidates.append(Path(base) / ("Programs/Git" if variable == "LOCALAPPDATA"
+                                           else "Git") / "bin" / "bash.exe")
+    candidates.append(Path(shutil.which("bash.exe") or ""))
+    for candidate in candidates:
+        if candidate.is_file():
+            return str(candidate)
+    raise FileNotFoundError("Git Bash unavailable; set CLAUDE_CODE_GIT_BASH_PATH")
+
+
 def render_previous(path: Path | None, raw: str):
     if not path:
         return ""
     previous = read_json(path)
+    if not isinstance(previous, dict):
+        raise ValueError("Previous statusLine configuration must be an object")
     command = previous.get("command")
     if not command:
         return ""
-    completed = subprocess.run(command, shell=True, input=raw, text=True,
+    if not isinstance(command, str):
+        raise ValueError("Previous statusLine command must be a string")
+    windows = sys.platform == "win32"
+    invocation = [git_bash(), "-c", command] if windows else command
+    completed = subprocess.run(invocation, shell=not windows, input=raw, text=True,
                                encoding="utf-8", errors="replace", capture_output=True,
-                               timeout=3)
+                               timeout=3,
+                               creationflags=subprocess.CREATE_NO_WINDOW if windows else 0)
     if completed.returncode:
         raise RuntimeError("Existing statusLine command failed")
     return completed.stdout.rstrip("\n")

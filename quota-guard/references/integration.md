@@ -19,8 +19,10 @@ Configuration updates only `statusLine` in the user settings file. It keeps a
 byte-for-byte timestamped settings backup, preserves other keys and statusLine
 options, and adds a timer of at most 60 seconds. Existing statusLine stdout is
 retained above a short quota line; stdin is forwarded unchanged. Existing commands
-run through Python's OS shell, so test shell-dependent custom commands on Windows
-(cmd versus Git Bash); failure is displayed explicitly. Reconfiguring is idempotent
+run through Git Bash on Windows: `CLAUDE_CODE_GIT_BASH_PATH` takes precedence,
+then Git's installation and PATH are searched. The child uses `CREATE_NO_WINDOW`.
+No cmd.exe fallback is used; a missing shell or failed command is displayed
+explicitly as `[previous statusLine unavailable]`. Reconfiguring is idempotent
 and does not wrap the wrapper again. When unchanged, configure returns
 `changed: false` without rewriting settings or creating another backup. Invalid
 settings are left unchanged.
@@ -28,6 +30,22 @@ settings are left unchanged.
 Use `configure --settings "<file>" --state-dir "<directory>"` for another settings
 scope/account. Use the same state directory in all that account's `check` calls.
 Project/local settings may override the user statusLine; inspect effective settings.
+Each settings path has its own `previous-<sha256>.json` backup in the shared
+state directory. Reconfiguring a legacy wrapper copies its referenced backup to
+the scoped filename; a backup already overwritten by the old shared-file behavior
+cannot be reconstructed automatically. Recover it from the corresponding settings
+backup before reconfiguring.
+
+Use interactive terminal Claude Code sessions (including ORCA terminals) as
+telemetry producers. Do not assume Desktop Code tabs or non-interactive `claude -p`
+run statusLine. A coordinator without its own callback must use fresh evidence
+from a terminal session on the same account; without that evidence, keep UNKNOWN.
+Settings normally reload automatically. If no callback appears after a normal
+response, verify the effective settings and restart the affected session after
+checkpointing. ORCA may manage its own statusLine: after launching a session,
+check that the effective command still contains the helper. If replaced, configure
+the effective scope again and verify real telemetry. Do not infer ORCA lifecycle
+compatibility from a successful synthetic shell test.
 
 ## Runtime commands
 
@@ -49,10 +67,13 @@ permit resuming. They may be removed later while the sessions are stopped.
 
 Freshness is conservative: a change in quota, reset time, prompt ID, API duration,
 or token usage refreshes local evidence. Idle timer-only repeats do not. Stale
-high usage still blocks until reset; stale low usage becomes UNKNOWN. These
+high usage still blocks through the reset tolerance; stale low usage becomes UNKNOWN. These
 signals cannot establish the actual upstream response's observation time.
 An early subscription reset is recognized only when fresh telemetry reports a
-later reset timestamp. A low reading in the same reset window remains blocked
+reset timestamp more than 120 seconds later. Timestamps within 120 seconds of
+the latest timestamp are grouped as one window, using the latest reset for
+resumption. High records are retained for 120 seconds beyond their reset so an
+expired slightly earlier timestamp cannot bypass the latch. A low reading in the same reset window remains blocked
 by a prior high reading. The guard covers the 5-hour window; it does not enforce
 7-day limits, API billing limits, or Codex usage limits.
 
@@ -82,7 +103,7 @@ This does not relax `orchestrate-issues`' own `disable-model-invocation: true` o
 any approval/review rules. The saved authorized run may be reconciled on wake-up;
 a denied skill call must not be reproduced through its text as a workaround.
 
-## Official sources (verified 2026-10-11)
+## Official sources (verified 2026-10-12)
 
 - https://code.claude.com/docs/en/statusline — stdin schema, refreshInterval,
   rate_limits availability after the first API response, missing expired windows.
@@ -93,5 +114,7 @@ a denied skill call must not be reproduced through its text as a workaround.
 
 `check` provides a minute-rounded date-specific cron expression in the machine's
 local timezone, skipping :00/:30. Cron tools must still be verified in the user's
-ORCA-hosted session. ORCA and real Windows installation cannot be tested from
-this remote workspace.
+ORCA-hosted session. Immediately after setup or wake-up, an UNKNOWN result may
+race a pending statusLine callback. Wait 2 seconds and check once more locally
+without requesting another model response; if it remains UNKNOWN, follow the
+15-minute one-shot retry protocol.
