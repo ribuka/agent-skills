@@ -85,18 +85,33 @@ without reloading the skill or reading snapshot history. The coordinator must
 own the run checkpoint and wake-up; workers can check the same helper without
 scheduling competing wake-ups for the same run.
 
-Suggested caller addition (replace an older inline quota section):
+Suggested caller addition (`orchestrate-issues` already contains the full
+version in its `## Quota control` section; keep the two consistent):
 
 ```markdown
 ## Quota control
 
-- Load `quota-guard` and follow its setup, check, and pause/resume protocol.
-- Check before task dispatch, merge preparation, and merging, and after worker
-  completion. Continue only on READY; PAUSED_QUOTA and UNKNOWN block new work.
-- Keep one run checkpoint and one wake-up owned by the Coordinator. Request
-  active workers to checkpoint at safe boundaries and verify their states.
-- Apply this guard to all run phases. During a quota pause, do not apply the
+- Right after creating the Run, before any dispatch, load `quota-guard` once;
+  perform its setup (`configure`) and the first `check`. Afterwards only run
+  `check`.
+- Check before every Task dispatch, merge-preparation dispatch, and merge,
+  after processing each worker completion, and before starting a background
+  waiter. Continue only on READY; PAUSED_QUOTA and UNKNOWN block new work.
+- The Coordinator alone owns the Run checkpoint and the resumption wake-up;
+  workers never create wake-ups.
+- On PAUSED_QUOTA or UNKNOWN: write the checkpoint, ask active workers to
+  stop at safe boundaries and verify their states (never kill processes),
+  ensure exactly one one-shot wake-up marked `quota-guard:<run-id>`, and end
+  the turn.
+- While paused, whatever wakes the Coordinator (worker message, waiter exit,
+  heartbeat nudge), first run `CronList` for `quota-guard:<run-id>`; if it
+  exists, only record delivered worker states, reply briefly, and end the
+  turn. Never create a second wake-up for one Run.
+- While paused, do not start or restart the waiter, and do not apply the
   normal rule to continue other independent Tasks.
+- On a READY wake-up, reconcile the checkpoint with live state, tell stopped
+  workers with unfinished phases to continue (or replace an unavailable one
+  with one fresh worker), and never duplicate a dispatch.
 ```
 
 This does not relax `orchestrate-issues`' own `disable-model-invocation: true` or
