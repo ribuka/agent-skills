@@ -1,4 +1,4 @@
-skills/orchestrate-issues/config.env
+skills/orca-issue-coordinator/config.conf
 __pycache__/
 *.pyc
 .pytest_cache/
