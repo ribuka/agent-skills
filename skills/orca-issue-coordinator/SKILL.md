@@ -98,9 +98,11 @@ came from (argument > `<skill-dir>/config.conf` > defaults: implementation
 12. Select the next PR based on dependencies and readiness.
 13. After a READY quota `check`, start a **new** worker for
     **Orchestration worker / Merge preparation** mode in the PR's existing
-    worktree (`worker-start --task <task_id> --worktree <selector>`), with the
-    merge-preparation `--model` / `--effort` from step 0. Do not reuse the
-    implementation worker's conversation. Give it a short handoff:
+    worktree, with the merge-preparation `--model` / `--effort` from step 0:
+    `worker-start --spec "<handoff>" --task-title "#<issue> PR #<pr> merge prep" --worktree branch:<branch>`.
+    The Implementation Task is already completed and cannot be started again,
+    so do not pass `--task <task_id>`. Do not reuse the implementation
+    worker's conversation. The `<handoff>` is short:
     - Issue number, PR URL, branch, and worktree.
     - Cross-reviews used so far (the latest `review-count: <count>/<max>`)
       and any open findings or blockers.
