@@ -13,7 +13,7 @@
 #   - refuses to run unless the target PR actually exists in this repo;
 #   - appends a fixed provenance footer itself, so the footer cannot be
 #     omitted or altered by whatever produced the comment body;
-#   - when REVIEW_BODY_PATH_ENFORCED=true (config.env), only accepts the body
+#   - when REVIEW_BODY_PATH_ENFORCED=true (config.conf), only accepts the body
 #     file the parent review wrapper assigned (PR_CROSS_REVIEW_BODY_FILE), so
 #     the body cannot end up somewhere git would pick it up;
 #   - records the PR head commit captured by the parent review wrapper

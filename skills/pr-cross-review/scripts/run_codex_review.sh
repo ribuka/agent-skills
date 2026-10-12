@@ -5,7 +5,7 @@
 # Usage:
 #   run_codex_review.sh <pr-number> [options] [-- <extra instructions>]
 #
-# Options (defaults come from config.env):
+# Options (defaults come from config.conf):
 #   --model <model>                   CODEX_MODEL
 #   --effort <effort>                 CODEX_EFFORT, passed as `-c model_reasoning_effort=<effort>`
 #   --sandbox <mode>                  CODEX_SANDBOX (read-only|workspace-write|danger-full-access)

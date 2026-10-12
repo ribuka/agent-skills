@@ -31,7 +31,7 @@ whenever a step below says so; never merge on a guess.
   - The Coordinator alone decides when and in what order to merge PRs.
   - Report blockers to the Coordinator instead of asking the user directly.
   - Preserve the per-PR review limit (`MAX_REVIEWS` in the `pr-cross-review`
-    `config.env`) across all phases and dispatches.
+    `config.conf`) across all phases and dispatches.
   - Report completion or failure using the ORCA Orchestration protocol.
   - Stop after the assigned phase; never proceed to the next phase
     without an explicit dispatch.
@@ -76,7 +76,7 @@ Run the `pr-cross-review` skill for the pull request.
 If the review has findings, go back to step 2.
 
 - At most `MAX_REVIEWS` reviews per pull request (`pr-cross-review`
-  `config.env`); the script rejects further runs.
+  `config.conf`); the script rejects further runs.
 - If the limit is reached, or the script exits with an error, do **not**
   merge. Report the situation and ask the user how to proceed.
 

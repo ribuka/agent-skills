@@ -7,7 +7,7 @@
 # actually posted a new comment.
 
 skill_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
-config_file="${skill_dir}/config.env"
+config_file="${skill_dir}/config.conf"
 post_script="${skill_dir}/scripts/post_pr_comment.sh"
 in_progress_variable="PR_CROSS_REVIEW_IN_PROGRESS"
 
@@ -16,16 +16,16 @@ die() {
     exit 1
 }
 
-# load_config KEY... -- source config.env and require every listed key.
+# load_config KEY... -- source config.conf and require every listed key.
 # The keys are unset first so that a stray environment variable cannot stand
-# in for a value missing from config.env.
+# in for a value missing from config.conf.
 load_config() {
     local key
     [ -f "$config_file" ] || die "config file not found: $config_file"
     for key in "$@"; do
         unset "$key"
     done
-    # Strip CR so that a config.env saved with CRLF line endings still works.
+    # Strip CR so that a config.conf saved with CRLF line endings still works.
     # shellcheck source=/dev/null
     source <(tr -d '\r' <"$config_file")
     for key in "$@"; do
