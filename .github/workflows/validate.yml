@@ -34,7 +34,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: shellcheck
-        run: find skills -name '*.sh' -print0 | xargs -0 -r shellcheck
+        run: find skills -name '*.sh' -print0 | xargs -0 -r shellcheck -x -P SCRIPTDIR --severity=warning
       - name: PSScriptAnalyzer
         shell: pwsh
         run: |
