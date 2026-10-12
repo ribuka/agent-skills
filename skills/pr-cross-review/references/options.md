@@ -44,7 +44,14 @@ cut to 300 characters and marked `... [truncated <n> chars]` when cut.
 | `--effort <effort>` | `CLAUDE_EFFORT` | `low` / `medium` / `high` / `xhigh` / `max` |
 | `--permission-mode <mode>` | `CLAUDE_PERMISSION_MODE` | The reviewer runs `gh` via post_pr_comment.sh non-interactively |
 
-## Exit codes
+## review_status.sh
+
+`review_status.sh <pr-number>` takes no options. It reads `MAX_REVIEWS` from
+config.conf and prints `review-count: <count>/<max>` and
+`review-latest: <comment-url>` (`none` without a cross-review). Exit codes:
+0 success, 1 usage/config error, 2 GitHub lookup failed.
+
+## Exit codes of the review scripts
 
 | Code | Meaning |
 |------|---------|
