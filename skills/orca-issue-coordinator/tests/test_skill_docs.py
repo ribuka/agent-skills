@@ -54,6 +54,7 @@ def test_worker_messages_go_to_terminal_handle() -> None:
     reference = QUOTA_PAUSE.read_text(encoding="utf-8")
     assert reference.count("send --to <terminalHandle>") == 2
 
+
 def test_skill_md_freezes_skill_checkout_during_run() -> None:
     skill = SKILL_MD.read_text(encoding="utf-8")
     assert "`skill-checkout: <path>`" in skill
