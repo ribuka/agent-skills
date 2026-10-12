@@ -23,7 +23,7 @@ def test_quota_pause_procedure_lives_only_in_reference() -> None:
     reference = QUOTA_PAUSE.read_text(encoding="utf-8")
     for heading in ("## On PAUSED_QUOTA or UNKNOWN", "## While paused", "## On wake-up"):
         assert heading in reference
-    for detail in ("CronList", "recurring: false", "checkpoints/<run-id>.md"):
+    for detail in ("CronList", "recurring: false", "checkpoint_dir"):
         assert detail in reference
         assert detail not in skill
 
