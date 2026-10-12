@@ -6,6 +6,10 @@ Checks:
      so ORCA Orchestration can identify the Coordinator as the sender.
   2. The Orca runtime is reachable (`orca status --json`).
   3. GitHub CLI authentication works (`gh auth status`).
+  4. The git checkout this skill is installed from (the symlink source) matches
+     `origin/main`: it is neither behind it nor carrying commits that are not on
+     it, and its skills have no uncommitted changes, so the Coordinator and its
+     workers run the latest skills.
 
 Exit status: 0 when every check passes, 1 when any check fails. On failure the
 Coordinator must stop and report to the user; it must not work around it.
@@ -18,8 +22,13 @@ import os
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 TIMEOUT_SECONDS = 60
+# Resolving follows the ~/.agents/skills symlink to the real checkout.
+SKILL_DIR = Path(__file__).resolve().parents[1]
+# An explicit refspec updates origin/main whatever remote.origin.fetch says.
+MAIN_REFSPEC = "+refs/heads/main:refs/remotes/origin/main"
 
 
 def run(cmd: list[str]) -> tuple[int, str]:
@@ -63,12 +72,50 @@ def check_gh_auth() -> str | None:
     return None
 
 
+def check_skill_checkout() -> tuple[str | None, str | None]:
+    """Return (checkout path, failure message) for the skill's source checkout."""
+    code, out = run(["git", "-C", str(SKILL_DIR), "rev-parse", "--show-toplevel"])
+    if code != 0:
+        return None, f"{SKILL_DIR} is not inside a git checkout (exit {code}): {out}"
+    checkout = out.splitlines()[-1].strip()
+    code, out = run(["git", "-C", checkout, "fetch", "--quiet", "origin", MAIN_REFSPEC])
+    if code != 0:
+        return checkout, (f"`git fetch origin main` failed in the skill checkout {checkout} "
+                          f"(exit {code}): {out}")
+    code, out = run(["git", "-C", checkout, "rev-list", "--left-right", "--count",
+                     "HEAD...origin/main"])
+    counts = out.split()
+    if code != 0 or len(counts) != 2 or not all(n.isdigit() for n in counts):
+        return checkout, (f"cannot compare the skill checkout {checkout} with origin/main "
+                          f"(exit {code}): {out}")
+    ahead, behind = (int(n) for n in counts)
+    code, out = run(["git", "-C", checkout, "status", "--porcelain", "--",
+                     str(SKILL_DIR.parent)])
+    if code != 0:
+        return checkout, (f"`git status` failed in the skill checkout {checkout} "
+                          f"(exit {code}): {out}")
+    problems = []
+    if out:
+        problems.append("has uncommitted changes under its skills")
+    if behind:
+        problems.append(f"is {behind} commit(s) behind origin/main")
+    if ahead:
+        problems.append(f"has {ahead} commit(s) not on origin/main")
+    if problems:
+        return checkout, (f"the skill checkout {checkout} {' and '.join(problems)}, so the run "
+                          "would use stale skills; ask the user to sync it with origin/main")
+    return checkout, None
+
+
 def main() -> int:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    failures = [msg for msg in (check_orca_terminal(), check_orca_runtime(), check_gh_auth())
+    checkout, checkout_failure = check_skill_checkout()
+    failures = [msg for msg in (check_orca_terminal(), check_orca_runtime(), check_gh_auth(),
+                                checkout_failure)
                 if msg]
     if not failures:
         print("preconditions: ok")
+        print(f"skill-checkout: {checkout}")
         return 0
     for msg in failures:
         print(f"STOP: {msg}")
