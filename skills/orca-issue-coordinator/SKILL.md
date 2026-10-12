@@ -77,7 +77,11 @@ came from (argument > `<skill-dir>/config.conf` > defaults: implementation
    dependent Task only after every dependency's PR has been **merged**; never
    dispatch on Orca's ready state alone. Tell its worker to start from the
    latest `origin/main`, which includes those merges.
-6. Dispatch independent tasks to separate worktrees, with at most
+6. Before the first dispatch, briefly present the execution plan to the
+   user: Task dependencies, dispatch order, and the resolved worker model
+   and effort from step 0. Then start dispatching without waiting for
+   approval.
+   Dispatch independent tasks to separate worktrees, with at most
    **3 workers running concurrently**. Run the quota `check` before each
    dispatch and dispatch only on READY. Always pass the implementation
    `--model` and `--effort` from step 0, and confirm `launch.effective` in the
@@ -170,6 +174,11 @@ came from (argument > `<skill-dir>/config.conf` > defaults: implementation
     outcome and PR URL for each Issue. If any merged PR belongs to the
     repository of the `skill-checkout` path from step 0, ask the user to
     update that checkout to the latest `origin/main`.
+    Then end the Run. ORCA has no command that closes a Run; the Run ends
+    when no worker terminal still owes a decision:
+    `orca orchestration worker-list --run <run-id> --terminal-state reclaimable --json`
+    must return none (release any it lists). Finally delete only
+    `tmp/<run-id>/` (see **Rules**).
 
 ## Quota control
 
@@ -280,10 +289,8 @@ other exit code, handle the pause as in **Quota control** instead.
 - Do not merge when review, CI, or branch synchronization status
   cannot be verified.
 - Follow ORCA's protocol for completion reporting and cleanup.
+- Put every temporary file the Coordinator creates under `tmp/<run-id>/`
+  in the repository root. When the Run ends, delete only that directory;
+  never delete `tmp/` as a whole or other files in it (e.g. `rm -rf tmp/*`).
 - Resolve routine technical decisions autonomously; ask the user
   only when a safe decision cannot be made.
-
-Only after the step 0 precondition check passes, briefly present the execution
-plan (including the resolved worker model and effort), then start
-orchestration without waiting for additional approval. If any precondition
-fails, stop and ask the user instead.
