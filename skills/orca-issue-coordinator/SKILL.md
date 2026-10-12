@@ -63,7 +63,12 @@ came from (argument > `<skill-dir>/config.conf` > defaults: implementation
 4. Create one Orchestration Run, with one Task per Issue by default. Then,
    before any dispatch, set up the quota guard with this Run ID (see
    **Quota control**).
-5. Represent actual dependencies in the task DAG.
+5. Represent actual dependencies in the task DAG. Orca unblocks a dependent
+   Task as soon as its dependency Task completes, and an Implementation Task
+   completes when its PR is opened, before the PR is merged. Dispatch a
+   dependent Task only after every dependency's PR has been **merged**; never
+   dispatch on Orca's ready state alone. Tell its worker to start from the
+   latest `origin/main`, which includes those merges.
 6. Dispatch independent tasks to separate worktrees, with at most
    **3 workers running concurrently**. Run the quota `check` before each
    dispatch and dispatch only on READY. Always pass the implementation
@@ -83,7 +88,8 @@ came from (argument > `<skill-dir>/config.conf` > defaults: implementation
    - Workers must not merge or create wake-ups (`CronCreate`); the
      Coordinator alone owns the Run's checkpoint and wake-up.
 8. Fill available worker slots before waiting for completions.
-   Dispatch additional ready tasks as slots become available.
+   Dispatch additional tasks as slots become available, holding back
+   dependent Tasks until their dependency PRs are merged (step 5).
 9. Wait with the bundled script (see **Waiting**), never with a hand-rolled
    `check` loop.
 10. Track each Task's worktree, branch, PR URL, review status, review count,
@@ -122,7 +128,8 @@ came from (argument > `<skill-dir>/config.conf` > defaults: implementation
     `check` immediately before the merge is READY.
 16. After each merge, fetch the latest `origin/main` and repeat
     merge preparation for the next PR. If `main` changes before
-    merging, revalidate the affected PR.
+    merging, revalidate the affected PR. Dispatch any dependent Task whose
+    dependency PRs are now all merged (see step 5).
 17. Mark only confirmed merged Issues as complete. Report the
     outcome and PR URL for each Issue.
 
