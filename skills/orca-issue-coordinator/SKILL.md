@@ -130,9 +130,24 @@ came from (argument > `<skill-dir>/config.conf` > defaults: implementation
     - Cross-reviews used so far (the latest `review-count: <count>/<max>`)
       and any open findings or blockers.
     - The tasks: fetch and rebase onto the latest `origin/main` as needed;
-      re-run tests and CI; repeat cross-review only if substantive changes
-      require it.
+      re-run tests and CI; repeat cross-review per the re-review criteria
+      below.
+    - Re-review criteria after a rebase or conflict resolution:
+      - **Mechanical:** the resolution only keeps both sides' changes as
+        they are, or only moves lines. Do not repeat cross-review.
+      - **Newly written:** the resolution writes text or logic that no
+        cross-review has seen (e.g. re-applying this PR's change to a file
+        or section that `main` added or rewrote). Repeat cross-review
+        within `MAX_REVIEWS`; if the limit is already reached, report a
+        blocker instead of merging.
+    - The `worker_done` report must state, besides the handoff fields,
+      whether the resolution was `none`, `mechanical`, or `newly written`
+      (naming the files), and whether cross-review was repeated.
 14. Independently verify:
+    - Only if the merge-preparation worker reported a `newly written`
+      resolution: a cross-review ran after it with no outstanding findings.
+      If that review is missing, has open findings, or could not run
+      because the limit was reached, block the PR and ask the user.
     - No outstanding review findings.
     - No more than `<max>` cross-reviews on the PR: count the cross-review
       comments on the PR and compare with `<max>` from the latest
