@@ -102,6 +102,15 @@ came from (argument > `<skill-dir>/config.conf` > defaults: implementation
 ## 3. Sequential merge
 
 12. Select the next PR based on dependencies and readiness.
+    Skip step 13 and go straight to step 14 when the PR already meets all
+    of the following; merge preparation would have nothing to do:
+    - The PR branch includes the latest `origin/main`: after
+      `git fetch --prune origin`,
+      `git merge-base --is-ancestor origin/main origin/<branch>` exits `0`.
+    - All required CI checks have passed on the current head commit
+      (`gh pr checks <pr> --required`).
+    - No review findings are open (per the worker handoff and the latest
+      cross-review).
 13. After a READY quota `check`, start a **new** worker for
     **Orchestration worker / Merge preparation** mode in the PR's existing
     worktree, with the merge-preparation `--model` / `--effort` from step 0:
