@@ -4,7 +4,7 @@
 Loops `orca orchestration check --wait --types worker_done,escalation,question`
 and exits only when the coordinator has something to act on:
 
-  0  actionable messages arrived (printed compactly; the Delivery is NOT acked)
+  0  actionable messages arrived (bodies printed in full; the Delivery is NOT acked)
   3  worker-list reports a worker that requires action
   4  worker-list reports no in-progress worker for the Run
   5  --max-minutes elapsed with nothing actionable
@@ -25,6 +25,7 @@ import sys
 import time
 
 WAKE_TYPES = "worker_done,escalation,question"
+FULL_BODY_TYPES = set(WAKE_TYPES.split(","))
 AUTO_ACK_TYPES = {"heartbeat"}
 BODY_CHARS = 300
 
@@ -87,8 +88,16 @@ def print_delivery(result: dict) -> None:
             fields.append(f"outcome={p['outcome']}")
         out("- " + " ".join(fields))
         out(f"  subject: {one_line(m.get('subject', ''), 120)}")
-        if m.get("body"):
-            out(f"  body: {one_line(m['body'], BODY_CHARS)}")
+        body = m.get("body")
+        if not body:
+            continue
+        if m.get("type") in FULL_BODY_TYPES:
+            # Handoff fields (PR URL, review-count, CI status) must survive intact.
+            out("  body: |")
+            for line in body.strip("\n").splitlines():
+                out(f"    {line}".rstrip())
+        else:
+            out(f"  body: {one_line(body, BODY_CHARS)}")
     out("Process every row, then: orca orchestration check --ack "
         f"{result.get('deliveryId')} --json")
 
