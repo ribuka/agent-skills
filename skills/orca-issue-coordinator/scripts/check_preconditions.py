@@ -8,7 +8,8 @@ Checks:
   3. GitHub CLI authentication works (`gh auth status`).
   4. The git checkout this skill is installed from (the symlink source) matches
      `origin/main`: it is neither behind it nor carrying commits that are not on
-     it, so the Coordinator and its workers run the latest skills.
+     it, and its skills have no uncommitted changes, so the Coordinator and its
+     workers run the latest skills.
 
 Exit status: 0 when every check passes, 1 when any check fails. On failure the
 Coordinator must stop and report to the user; it must not work around it.
@@ -26,6 +27,8 @@ from pathlib import Path
 TIMEOUT_SECONDS = 60
 # Resolving follows the ~/.agents/skills symlink to the real checkout.
 SKILL_DIR = Path(__file__).resolve().parents[1]
+# An explicit refspec updates origin/main whatever remote.origin.fetch says.
+MAIN_REFSPEC = "+refs/heads/main:refs/remotes/origin/main"
 
 
 def run(cmd: list[str]) -> tuple[int, str]:
@@ -75,7 +78,7 @@ def check_skill_checkout() -> tuple[str | None, str | None]:
     if code != 0:
         return None, f"{SKILL_DIR} is not inside a git checkout (exit {code}): {out}"
     checkout = out.splitlines()[-1].strip()
-    code, out = run(["git", "-C", checkout, "fetch", "--quiet", "origin", "main"])
+    code, out = run(["git", "-C", checkout, "fetch", "--quiet", "origin", MAIN_REFSPEC])
     if code != 0:
         return checkout, (f"`git fetch origin main` failed in the skill checkout {checkout} "
                           f"(exit {code}): {out}")
@@ -86,13 +89,20 @@ def check_skill_checkout() -> tuple[str | None, str | None]:
         return checkout, (f"cannot compare the skill checkout {checkout} with origin/main "
                           f"(exit {code}): {out}")
     ahead, behind = (int(n) for n in counts)
+    code, out = run(["git", "-C", checkout, "status", "--porcelain", "--",
+                     str(SKILL_DIR.parent)])
+    if code != 0:
+        return checkout, (f"`git status` failed in the skill checkout {checkout} "
+                          f"(exit {code}): {out}")
     problems = []
+    if out:
+        problems.append("has uncommitted changes under its skills")
     if behind:
-        problems.append(f"{behind} commit(s) behind origin/main")
+        problems.append(f"is {behind} commit(s) behind origin/main")
     if ahead:
-        problems.append(f"{ahead} commit(s) not on origin/main")
+        problems.append(f"has {ahead} commit(s) not on origin/main")
     if problems:
-        return checkout, (f"the skill checkout {checkout} is {' and '.join(problems)}, so the run "
+        return checkout, (f"the skill checkout {checkout} {' and '.join(problems)}, so the run "
                           "would use stale skills; ask the user to sync it with origin/main")
     return checkout, None
 

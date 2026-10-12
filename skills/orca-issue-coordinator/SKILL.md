@@ -28,7 +28,8 @@ uv run <skill-dir>/scripts/check_preconditions.py
 It verifies that this conversation runs inside an Orca terminal, that the Orca
 runtime is reachable, that `gh auth status` succeeds, and that the git checkout
 the skills are installed from is neither behind `origin/main` nor carrying
-commits not on it (so no one runs stale skills). If it exits non-zero,
+commits or uncommitted skill changes not on it (so no one runs stale skills).
+If it exits non-zero,
 or `orca orchestration run-create` later fails with
 `no_active_sender_terminal`, **stop immediately** and report the `STOP:` lines
 to the user. Never work around a failed precondition: do not create a
