@@ -24,10 +24,25 @@ to focus on). Model, effort and other options can be overridden per run; see
 
 - Success: the script prints `review-posted: <comment-url>` and
   `review-count: <count>/<max>` (cross-reviews on the PR including this one,
-  and the per-PR limit) and exits 0. Read the comment with
-  `gh pr view <pr-number> --comments` and address it.
+  and the per-PR limit) and exits 0. Read only that comment and address it:
+  `gh api repos/{owner}/{repo}/issues/comments/<id> --jq .body`, where `<id>`
+  is the number after `#issuecomment-` in the URL. Do not read all PR comments
+  (`gh pr view --comments`); they include every earlier review.
 - Failure: non-zero exit with an `error:` line on stderr. Report it rather than
   retrying blindly; exit codes are listed in references/options.md.
+
+## Review status
+
+To get the review count and the latest review without running a review (for
+example when resuming work on a PR), run:
+
+```
+bash ~/.agents/skills/pr-cross-review/scripts/review_status.sh <pr-number>
+```
+
+It prints `review-count: <count>/<max>` and `review-latest: <comment-url>`
+(`none` when the PR has no cross-review) and exits 0 (other exit codes are in
+references/options.md). Read the latest review the same way as above.
 
 ## Rules the scripts enforce
 

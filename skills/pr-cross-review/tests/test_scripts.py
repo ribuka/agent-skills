@@ -328,6 +328,53 @@ def test_review_script_rejects_nested_launch(tmp_path: Path, script_name: str) -
     assert "nested review launch is not allowed" in result.stderr
 
 
+def test_review_status_reports_count_and_latest_review(tmp_path: Path) -> None:
+    """The status script prints the review count and the latest review comment URL."""
+    result = run_review_script(
+        tmp_path,
+        "review_status.sh",
+        post_comment=False,
+        existing_review_commits=(PREVIOUS_COMMIT, HEAD_COMMIT),
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.startswith(
+        "review-count: 2/3\n"
+        "review-latest: https://github.com/owner/repo/pull/123#issuecomment-902\n"
+    )
+    assert "api-calls: 1" in result.stdout
+
+
+def test_review_status_without_review(tmp_path: Path) -> None:
+    """A PR without a cross-review reports a zero count and no latest review."""
+    result = run_review_script(tmp_path, "review_status.sh", post_comment=False)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.startswith("review-count: 0/3\nreview-latest: none\n")
+
+
+def test_review_status_reports_api_failure(tmp_path: Path) -> None:
+    """A failed history lookup exits 2 without printing a status."""
+    (tmp_path / "state").touch()
+    result = run_review_script(
+        tmp_path, "review_status.sh", post_comment=False, api_failure_after_review=True
+    )
+
+    assert result.returncode == 2
+    assert "failed to query review history" in result.stderr
+    assert "review-count:" not in result.stdout
+
+
+def test_review_status_rejects_extra_arguments(tmp_path: Path) -> None:
+    """The status script takes exactly one PR number."""
+    result = run_review_script(
+        tmp_path, "review_status.sh", post_comment=False, extra_args=("--model", "x")
+    )
+
+    assert result.returncode == 1
+    assert "usage:" in result.stderr
+
+
 def test_codex_failure_log_is_bounded_by_lines_and_chars(tmp_path: Path) -> None:
     """On failure, the codex log dump keeps the last 40 lines, each cut to 300 chars."""
     lines = [f"line-{index:02d} " + "x" * 1000 for index in range(50)]

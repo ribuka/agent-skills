@@ -23,9 +23,13 @@ whenever a step below says so; never merge on a guess.
     and any blockers, so a fresh worker can take over. Do not merge.
   - **Merge preparation:** Execute steps 8–9 only after the Coordinator
     requests it. This usually starts in a new conversation: rebuild the
-    state from the Coordinator's handoff and `gh pr view` (including the
-    cross-review comments) before step 8, and use the larger of the
-    handed-off review count and the review comments on the PR. Report the
+    state from the Coordinator's handoff, `gh pr view <pr-number>` (without
+    `--comments`), and the `pr-cross-review` status script
+    (`bash ~/.agents/skills/pr-cross-review/scripts/review_status.sh <pr-number>`,
+    which prints `review-count: <count>/<max>` and
+    `review-latest: <comment-url>`) before step 8. Read only the latest
+    review comment, and use the larger of the handed-off review count and
+    the printed count. Report the
     synced commit, test/CI results, review status, total review count,
     and any blockers. Do not merge.
 - In worker mode:
@@ -71,7 +75,10 @@ Run the `pr-cross-review` skill for the pull request.
 
 - Wait for the script to finish; do not continue while it is running.
 - On success it prints `review-posted: <comment-url>` and
-  `review-count: <count>/<max>`. Read that comment and keep the count.
+  `review-count: <count>/<max>`. Keep the count, and read only that
+  comment: `gh api repos/{owner}/{repo}/issues/comments/<id> --jq .body`,
+  where `<id>` is the number after `#issuecomment-` in the URL. Do not read
+  all PR comments with `gh pr view --comments`.
 
 ### 7. Iterate on findings
 
