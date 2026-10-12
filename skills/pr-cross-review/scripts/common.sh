@@ -3,8 +3,8 @@
 #
 # Sourced, not executed. Provides config loading, option validation, the
 # review-history lookup (review count limit / incremental re-review), the
-# reviewer prompt, process-group management, and the check that the reviewer
-# actually posted a new comment.
+# reviewer prompt, process-group management, the bounded reviewer log dump, and
+# the check that the reviewer actually posted a new comment.
 
 skill_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 config_file="${skill_dir}/config.conf"
@@ -272,6 +272,26 @@ start_reviewer() {
     "$@" </dev/null &
     REVIEWER_PID=$!
     set +m
+}
+
+# The reviewer's own output is kept out of the caller's output: the scripts
+# write it to a temp log that is always removed, and dump only its tail on
+# failure. A single line (for example a JSONL event holding a whole command
+# output) can be huge, so each dumped line is also cut to a fixed length; the
+# dump stays within both bounds.
+reviewer_log_tail_lines=40
+reviewer_log_tail_line_chars=300
+
+# dump_reviewer_log <agent> <log-file> -- print the bounded tail to stderr.
+dump_reviewer_log() {
+    local label
+    label=$(review_agent_label "$1") || return 0
+    echo "---- last ${reviewer_log_tail_lines} lines of ${label} reviewer log (each cut to ${reviewer_log_tail_line_chars} chars) ----" >&2
+    tail -n "$reviewer_log_tail_lines" "$2" 2>/dev/null | awk -v max="$reviewer_log_tail_line_chars" '
+        length($0) > max { printf "%s... [truncated %d chars]\n", substr($0, 1, max), length($0) - max; next }
+        { print }
+    ' >&2 || true
+    echo "---- end of ${label} reviewer log ----" >&2
 }
 
 stop_reviewer() {

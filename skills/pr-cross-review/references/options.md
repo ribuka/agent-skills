@@ -20,6 +20,10 @@ Common to both scripts:
 
 The body file is removed after a successful post and kept on failure.
 
+The reviewer's own stdout/stderr never reaches the script's output. It goes to
+a temp log that is always removed; on failure its last 40 lines go to stderr,
+each cut to 300 characters and marked `... [truncated <n> chars]` when cut.
+
 ## run_codex_review.sh
 
 | Option | config.conf key | Notes |
@@ -32,9 +36,7 @@ The body file is removed after a successful post and kept on failure.
 | `--heartbeat-timeout-seconds <n>` | `CODEX_HEARTBEAT_TIMEOUT_SECONDS` | Kill when the progress log stops growing |
 | `--approve-for-me` | - | Passed through to `codex exec` |
 
-The progress log is a temp file (path printed to stderr at start, so it can be
-tailed). It is always removed; on failure its last 40 lines go to stderr, each
-cut to 300 characters and marked `... [truncated <n> chars]` when cut.
+The reviewer log's path is printed to stderr at start, so it can be tailed.
 
 ## run_claude_review.sh
 
