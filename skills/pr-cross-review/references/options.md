@@ -1,6 +1,6 @@
 # pr-cross-review options
 
-Defaults come from `config.env` in the skill directory. It is the only place
+Defaults come from `config.conf` in the skill directory. It is the only place
 defaults are defined; a missing key stops the script. Command-line options
 override it for a single run.
 
@@ -10,7 +10,7 @@ Common to both scripts:
 <script> <pr-number> [options] [-- <extra instructions>]
 ```
 
-| config.env key    | Meaning |
+| config.conf key   | Meaning |
 |-------------------|---------|
 | `REVIEW_LANGUAGE` | Language of the review comment, as an English name (`Japanese`, `English`, ...) |
 | `MAX_REVIEWS`     | Maximum cross-reviews per PR (Codex + Claude combined) |
@@ -22,7 +22,7 @@ The body file is removed after a successful post and kept on failure.
 
 ## run_codex_review.sh
 
-| Option | config.env key | Notes |
+| Option | config.conf key | Notes |
 |--------|----------------|-------|
 | `--model <model>` | `CODEX_MODEL` | |
 | `--effort <effort>` | `CODEX_EFFORT` | Passed as `-c model_reasoning_effort=<effort>` |
@@ -37,7 +37,7 @@ tailed). It is always removed; on failure its last 40 lines go to stderr.
 
 ## run_claude_review.sh
 
-| Option | config.env key | Notes |
+| Option | config.conf key | Notes |
 |--------|----------------|-------|
 | `--model <model>` | `CLAUDE_MODEL` | |
 | `--effort <effort>` | `CLAUDE_EFFORT` | `low` / `medium` / `high` / `xhigh` / `max` |

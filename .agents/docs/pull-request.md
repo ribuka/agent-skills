@@ -13,7 +13,7 @@
 ## Merge conditions
 
 - The branch is in sync with the latest `main`, and all CI checks have succeeded on that state.
-- No unresolved findings remain. A deferred or disputed finding, or reaching the review limit (`MAX_REVIEWS` in `skills/pr-cross-review/config.env`) with findings left, requires user confirmation before merge.
+- No unresolved findings remain. A deferred or disputed finding, or reaching the review limit (`MAX_REVIEWS` in `skills/pr-cross-review/config.conf`) with findings left, requires user confirmation before merge.
 
 ## Model labeling
 

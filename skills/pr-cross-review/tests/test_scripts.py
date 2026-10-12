@@ -142,10 +142,10 @@ def test_review_script_reports_new_comment_url(tmp_path: Path, script_name: str)
 
 @pytest.mark.parametrize("script_name", SCRIPT_NAMES)
 def test_review_script_uses_config_language(tmp_path: Path, script_name: str) -> None:
-    """The review language comes from config.env."""
+    """The review language comes from config.conf."""
     result = run_review_script(tmp_path, script_name, post_comment=True)
 
-    config = (SCRIPTS_DIR.parent / "config.env").read_text(encoding="utf-8")
+    config = (SCRIPTS_DIR.parent / "config.conf").read_text(encoding="utf-8")
     language = next(
         line.split("=", 1)[1].strip()
         for line in config.splitlines()
@@ -189,7 +189,7 @@ def test_review_script_rejects_unignored_body_dir(tmp_path: Path, script_name: s
 def test_review_script_options_override_config(
     tmp_path: Path, script_name: str, expected: str
 ) -> None:
-    """Command-line options override the config.env defaults."""
+    """Command-line options override the config.conf defaults."""
     result = run_review_script(
         tmp_path,
         script_name,

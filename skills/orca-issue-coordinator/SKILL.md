@@ -92,7 +92,7 @@ came from (argument > `<skill-dir>/config.conf` > defaults: implementation
 14. Independently verify:
     - No outstanding review findings.
     - No more than `MAX_REVIEWS` cross-reviews for the PR (`pr-cross-review`
-      `config.env`).
+      `config.conf`).
     - The PR branch includes the latest `origin/main`.
     - Required tests and CI have passed on the current PR commit.
     - GitHub merge requirements are satisfied.
@@ -217,7 +217,7 @@ python <skill-dir>/scripts/wait_actionable.py [--terminal <handle>] [--run <run_
 - Preserve the existing `implement-review-merge` workflow,
   `pr-cross-review` requirements, and GitHub authentication conventions.
 - Never exceed `MAX_REVIEWS` cross-reviews per PR (`pr-cross-review`
-  `config.env`), counting all phases and
+  `config.conf`), counting all phases and
   dispatches. Track this across worker restarts and pass it in every handoff.
 - If a review fails, the limit is reached, or a conflict cannot be
   resolved safely, block that PR and ask the user.
