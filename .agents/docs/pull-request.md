@@ -6,7 +6,7 @@
 - NEVER invoke `codex`/`claude` or `gh pr comment` directly for a review.
 - Only the agent that created the pull request may request cross-reviews.
 - Do not request a cross-review for a version bump (`bump-version` skill).
-- Do not request a re-review when the previous review had no findings or when you only explained or disputed a finding without changing code. Re-review after pushing fixes, or when a sync with `main` changed the implementation in substance.
+- Request a re-review only after pushing a commit that fixes review findings, or when a sync with `main` changed the implementation in substance. Otherwise do not request one (e.g. when the previous review had no findings, or when you only explained or disputed a finding without changing code).
 - Reply on the pull request to every finding, stating what changed or why it was deferred.
 - Changes to `skills/pr-cross-review/` itself take effect on the review run immediately (the skill is symlinked). If the change breaks the review run, report it instead of working around it.
 
