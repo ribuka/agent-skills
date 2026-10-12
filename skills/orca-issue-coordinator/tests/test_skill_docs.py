@@ -87,3 +87,22 @@ def test_review_count_checked_with_review_status_script() -> None:
     assert "bash ~/.agents/skills/pr-cross-review/scripts/review_status.sh <pr-number>" in skill
     assert "Do not count PR comments yourself" in skill
     assert "count the cross-review\n      comments on the PR" not in skill
+
+
+def test_plan_is_presented_before_first_dispatch() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    dispatch_section = skill.split("## 1. Plan and dispatch", 1)[1].split("## 2.", 1)[0]
+    assert "Before the first dispatch, briefly present the execution plan" in dispatch_section
+    assert "briefly present the execution plan" not in skill.split("## Rules", 1)[1]
+
+
+def test_temporary_files_are_scoped_to_run_directory() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    assert "`tmp/<run-id>/`" in skill
+    assert "delete only that directory" in skill
+
+
+def test_run_end_requires_no_reclaimable_worker_terminals() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    assert "ORCA has no command that closes a Run" in skill
+    assert "worker-list --run <run-id> --terminal-state reclaimable --json" in skill
