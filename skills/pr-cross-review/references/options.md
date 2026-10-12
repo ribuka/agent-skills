@@ -33,7 +33,8 @@ The body file is removed after a successful post and kept on failure.
 | `--approve-for-me` | - | Passed through to `codex exec` |
 
 The progress log is a temp file (path printed to stderr at start, so it can be
-tailed). It is always removed; on failure its last 40 lines go to stderr.
+tailed). It is always removed; on failure its last 40 lines go to stderr, each
+cut to 300 characters and marked `... [truncated <n> chars]` when cut.
 
 ## run_claude_review.sh
 

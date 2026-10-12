@@ -62,6 +62,9 @@ fake_reviewer() {
     printf 'prompt: %s\n' "${!#}" >"$REVIEW_CAPTURE_FILE"
     printf 'reviewed-commit: %s\n' "$PR_CROSS_REVIEW_REVIEWED_COMMIT" >>"$REVIEW_CAPTURE_FILE"
     printf 'args: %s\n' "$*" >>"$REVIEW_CAPTURE_FILE"
+    if [ -f "$REVIEW_OUTPUT_FILE" ]; then
+        cat "$REVIEW_OUTPUT_FILE"
+    fi
     if [ "$REVIEW_POST_COMMENT" = "true" ]; then
         printf 'review body\n' >"$PR_CROSS_REVIEW_BODY_FILE"
         : >"$REVIEW_STATE_FILE"
@@ -93,6 +96,7 @@ def run_review_script(
     api_failure_after_review: bool = False,
     extra_args: tuple[str, ...] = (),
     ignore_body_dir: bool = True,
+    reviewer_output: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run a review script with deterministic fake CLI and GitHub commands."""
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
@@ -100,12 +104,16 @@ def run_review_script(
         (tmp_path / ".gitignore").write_text("tmp/\n", encoding="utf-8")
     api_file = tmp_path / "api"
     api_file.touch()
+    output_file = tmp_path / "reviewer-output"
+    if reviewer_output is not None:
+        output_file.write_text(reviewer_output, encoding="utf-8", newline="\n")
     environment = {
         **os.environ,
         "REVIEW_SCRIPT": (SCRIPTS_DIR / script_name).as_posix(),
         "REVIEW_STATE_FILE": (tmp_path / "state").as_posix(),
         "REVIEW_CAPTURE_FILE": (tmp_path / "capture").as_posix(),
         "REVIEW_API_FILE": api_file.as_posix(),
+        "REVIEW_OUTPUT_FILE": output_file.as_posix(),
         "REVIEW_POST_COMMENT": str(post_comment).lower(),
         "REVIEW_EXISTING_COMMITS": " ".join(existing_review_commits),
         "REVIEW_HEAD_COMMIT": head_commit,
@@ -316,6 +324,27 @@ def test_review_script_rejects_nested_launch(tmp_path: Path, script_name: str) -
 
     assert result.returncode == 1
     assert "nested review launch is not allowed" in result.stderr
+
+
+def test_codex_failure_log_is_bounded_by_lines_and_chars(tmp_path: Path) -> None:
+    """On failure, the codex log dump keeps the last 40 lines, each cut to 300 chars."""
+    lines = [f"line-{index:02d} " + "x" * 1000 for index in range(50)]
+    lines.append("short-final-line")
+    result = run_review_script(
+        tmp_path,
+        "run_codex_review.sh",
+        post_comment=False,
+        reviewer_output="\n".join(lines) + "\n",
+    )
+
+    assert result.returncode == 1
+    dump = result.stderr.split("(each cut to 300 chars) ----\n", 1)[1]
+    dumped_lines = dump.split("---- end of codex progress log ----", 1)[0].splitlines()
+    assert len(dumped_lines) == 40
+    expected_first = f"{lines[11][:300]}... [truncated {len(lines[11]) - 300} chars]"
+    assert dumped_lines[0] == expected_first
+    assert all(len(line) <= len(expected_first) for line in dumped_lines)
+    assert dumped_lines[-1] == "short-final-line"
 
 
 POST_HARNESS = r"""
