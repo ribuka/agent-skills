@@ -15,6 +15,10 @@ import pytest
 SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
 HEAD_COMMIT = "b" * 40
 PREVIOUS_COMMIT = "a" * 40
+EXPLORATION_SCOPE = (
+    "Read code outside the diff only as far as needed to verify a finding "
+    "(such as callers and dependencies of the changed code); do not explore the rest of the repository."
+)
 
 
 def find_bash() -> str:
@@ -148,6 +152,7 @@ def test_review_script_reports_new_comment_url(tmp_path: Path, script_name: str)
     assert "review-count: 1/3\n" in result.stdout
     assert f"reviewed-commit: {HEAD_COMMIT}" in result.stdout
     assert "Examine the whole diff" in result.stdout
+    assert EXPLORATION_SCOPE in result.stdout
     assert "post_pr_comment.sh\" 123 \"" in result.stdout
     assert "api-calls: 2" in result.stdout
 
@@ -299,6 +304,7 @@ def test_review_script_limits_rereview_prompt(tmp_path: Path, script_name: str) 
     assert f"{PREVIOUS_COMMIT}..{HEAD_COMMIT}" in result.stdout
     assert "review-count: 2/3\n" in result.stdout
     assert "Do not raise new findings about existing code outside that diff." in result.stdout
+    assert EXPLORATION_SCOPE in result.stdout
 
 
 @pytest.mark.parametrize("script_name", SCRIPT_NAMES)

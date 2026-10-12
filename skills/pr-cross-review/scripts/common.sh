@@ -240,6 +240,7 @@ build_review_prompt() {
     else
         REVIEW_PROMPT="Re-review PR #${pr_number} of this repository. The scope is limited to the diff ${PREVIOUS_REVIEW_COMMIT}..${REVIEW_HEAD_COMMIT} and the findings of the previous review. Check whether the previous findings have been resolved and whether the fixes introduced new problems. Do not raise new findings about existing code outside that diff."
     fi
+    REVIEW_PROMPT+=" Read code outside the diff only as far as needed to verify a finding (such as callers and dependencies of the changed code); do not explore the rest of the repository."
     REVIEW_PROMPT+=" Write the review comment in ${REVIEW_LANGUAGE}."
 
     body_file=$(native_path "$REVIEW_BODY_FILE")
