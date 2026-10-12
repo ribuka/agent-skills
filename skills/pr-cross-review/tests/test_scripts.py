@@ -69,6 +69,7 @@ fake_reviewer() {
         printf 'review body\n' >"$PR_CROSS_REVIEW_BODY_FILE"
         : >"$REVIEW_STATE_FILE"
     fi
+    return "$REVIEW_EXIT_CODE"
 }
 
 claude() { fake_reviewer "$@"; }
@@ -97,6 +98,7 @@ def run_review_script(
     extra_args: tuple[str, ...] = (),
     ignore_body_dir: bool = True,
     reviewer_output: str | None = None,
+    reviewer_exit_code: int = 0,
 ) -> subprocess.CompletedProcess[str]:
     """Run a review script with deterministic fake CLI and GitHub commands."""
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
@@ -115,6 +117,7 @@ def run_review_script(
         "REVIEW_API_FILE": api_file.as_posix(),
         "REVIEW_OUTPUT_FILE": output_file.as_posix(),
         "REVIEW_POST_COMMENT": str(post_comment).lower(),
+        "REVIEW_EXIT_CODE": str(reviewer_exit_code),
         "REVIEW_EXISTING_COMMITS": " ".join(existing_review_commits),
         "REVIEW_HEAD_COMMIT": head_commit,
         "REVIEW_API_FAILURE_AFTER": str(api_failure_after_review).lower(),
@@ -375,20 +378,56 @@ def test_review_status_rejects_extra_arguments(tmp_path: Path) -> None:
     assert "usage:" in result.stderr
 
 
-def test_codex_failure_log_is_bounded_by_lines_and_chars(tmp_path: Path) -> None:
-    """On failure, the codex log dump keeps the last 40 lines, each cut to 300 chars."""
+@pytest.mark.parametrize("script_name", SCRIPT_NAMES)
+def test_review_script_hides_reviewer_output_on_success(tmp_path: Path, script_name: str) -> None:
+    """On success, the reviewer's own output reaches neither stdout nor stderr."""
+    result = run_review_script(
+        tmp_path, script_name, post_comment=True, reviewer_output="REVIEWER-REPLY-BODY\n"
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "review-posted:" in result.stdout
+    assert "REVIEWER-REPLY-BODY" not in result.stdout
+    assert "REVIEWER-REPLY-BODY" not in result.stderr
+    assert "---- last " not in result.stderr
+
+
+@pytest.mark.parametrize("script_name", SCRIPT_NAMES)
+def test_review_script_dumps_reviewer_log_on_failed_exit(tmp_path: Path, script_name: str) -> None:
+    """A non-zero reviewer exit keeps its status and dumps the log tail to stderr."""
+    result = run_review_script(
+        tmp_path,
+        script_name,
+        post_comment=False,
+        reviewer_output="REVIEWER-ERROR-DETAIL\n",
+        reviewer_exit_code=3,
+    )
+
+    assert result.returncode == 3
+    assert "exited with status 3" in result.stderr
+    assert "REVIEWER-ERROR-DETAIL" in result.stderr
+    assert "REVIEWER-ERROR-DETAIL" not in result.stdout
+
+
+@pytest.mark.parametrize("script_name", SCRIPT_NAMES)
+def test_review_script_dumps_bounded_reviewer_log_without_comment(
+    tmp_path: Path, script_name: str
+) -> None:
+    """Without a new comment, the log dump keeps the last 40 lines, each cut to 300 chars."""
     lines = [f"line-{index:02d} " + "x" * 1000 for index in range(50)]
     lines.append("short-final-line")
     result = run_review_script(
         tmp_path,
-        "run_codex_review.sh",
+        script_name,
         post_comment=False,
         reviewer_output="\n".join(lines) + "\n",
     )
 
     assert result.returncode == 1
+    assert "no new review comment was found" in result.stderr
+    assert "line-" not in result.stdout
     dump = result.stderr.split("(each cut to 300 chars) ----\n", 1)[1]
-    dumped_lines = dump.split("---- end of codex progress log ----", 1)[0].splitlines()
+    dumped_lines = dump.split("---- end of ", 1)[0].splitlines()
     assert len(dumped_lines) == 40
     expected_first = f"{lines[11][:300]}... [truncated {len(lines[11]) - 300} chars]"
     assert dumped_lines[0] == expected_first

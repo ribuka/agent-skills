@@ -24,11 +24,13 @@ to focus on). Model, effort and other options can be overridden per run; see
 
 - Success: the script prints `review-posted: <comment-url>` and
   `review-count: <count>/<max>` (cross-reviews on the PR including this one,
-  and the per-PR limit) and exits 0. Read only that comment and address it:
+  and the per-PR limit) and exits 0. The reviewer's own reply is not printed.
+  Read only that comment and address it:
   `gh api repos/{owner}/{repo}/issues/comments/<id> --jq .body`, where `<id>`
   is the number after `#issuecomment-` in the URL. Do not read all PR comments
   (`gh pr view --comments`); they include every earlier review.
-- Failure: non-zero exit with an `error:` line on stderr. Report it rather than
+- Failure: non-zero exit with an `error:` line on stderr, followed by the tail
+  of the reviewer's log when the reviewer ran. Report it rather than
   retrying blindly; exit codes are listed in references/options.md.
 
 ## Review status

@@ -106,22 +106,8 @@ export_review_environment
 # the log is the heartbeat signal. The log is a temp file that is always
 # removed; on failure its tail is printed to stderr for debugging.
 log_file=$(mktemp)
-echo "info: codex progress log (removed on exit): ${log_file}" >&2
+echo "info: codex reviewer log (removed on exit): ${log_file}" >&2
 echo "info: hard timeout: ${timeout_seconds}s, heartbeat (no-progress) timeout: ${heartbeat_timeout_seconds}s" >&2
-
-# A single JSONL event can hold a whole command output, so each dumped line is
-# also cut to a fixed length; the dump stays within both bounds.
-log_tail_lines=40
-log_tail_line_chars=300
-
-dump_log_tail() {
-    echo "---- last ${log_tail_lines} lines of codex progress log (each cut to ${log_tail_line_chars} chars) ----" >&2
-    tail -n "$log_tail_lines" "$log_file" 2>/dev/null | awk -v max="$log_tail_line_chars" '
-        length($0) > max { printf "%s... [truncated %d chars]\n", substr($0, 1, max), length($0) - max; next }
-        { print }
-    ' >&2 || true
-    echo "---- end of codex progress log ----" >&2
-}
 
 cleanup() {
     stop_reviewer
@@ -158,7 +144,7 @@ while true; do
     now=$(date +%s)
     if [ "$((now - start_time))" -ge "$timeout_seconds" ]; then
         echo "error: codex exec exceeded the hard timeout of ${timeout_seconds}s; killing pid ${REVIEWER_PID}" >&2
-        dump_log_tail
+        dump_reviewer_log codex "$log_file"
         exit 124
     fi
 
@@ -168,7 +154,7 @@ while true; do
         last_progress_time=$now
     elif [ "$((now - last_progress_time))" -ge "$heartbeat_timeout_seconds" ]; then
         echo "error: no progress in codex log for ${heartbeat_timeout_seconds}s (hang suspected); killing pid ${REVIEWER_PID}" >&2
-        dump_log_tail
+        dump_reviewer_log codex "$log_file"
         exit 125
     fi
 done
@@ -180,7 +166,7 @@ set -e
 
 if [ "$exit_code" -ne 0 ]; then
     echo "error: codex exec exited with status ${exit_code}" >&2
-    dump_log_tail
+    dump_reviewer_log codex "$log_file"
     exit "$exit_code"
 fi
 
@@ -191,6 +177,6 @@ set -e
 if [ "$status" -eq 0 ]; then
     remove_body_file
 else
-    dump_log_tail
+    dump_reviewer_log codex "$log_file"
 fi
 exit "$status"

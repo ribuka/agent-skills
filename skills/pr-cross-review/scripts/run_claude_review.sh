@@ -70,9 +70,18 @@ prepare_body_file "$pr_number" claude
 build_review_prompt "$pr_number" claude "$extra_instructions"
 export_review_environment
 
-trap stop_reviewer EXIT INT TERM
+# The reviewer's final reply repeats the posted review, so it is kept out of
+# this script's output: it goes to a temp log that is always removed, and its
+# tail is printed to stderr only on failure.
+log_file=$(mktemp)
 
-start_reviewer claude -p --model "$model" --effort "$effort" --permission-mode "$permission_mode" "$REVIEW_PROMPT"
+cleanup() {
+    stop_reviewer
+    rm -f "$log_file"
+}
+trap cleanup EXIT INT TERM
+
+start_reviewer claude -p --model "$model" --effort "$effort" --permission-mode "$permission_mode" "$REVIEW_PROMPT" >"$log_file" 2>&1
 
 set +e
 wait "$REVIEWER_PID"
@@ -80,6 +89,8 @@ exit_code=$?
 set -e
 
 if [ "$exit_code" -ne 0 ]; then
+    echo "error: claude -p exited with status ${exit_code}" >&2
+    dump_reviewer_log claude "$log_file"
     exit "$exit_code"
 fi
 
@@ -89,5 +100,7 @@ status=$?
 set -e
 if [ "$status" -eq 0 ]; then
     remove_body_file
+else
+    dump_reviewer_log claude "$log_file"
 fi
 exit "$status"
