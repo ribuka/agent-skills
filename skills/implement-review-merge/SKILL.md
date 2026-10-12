@@ -55,6 +55,8 @@ whenever a step below says so; never merge on a guess.
 
 Implement the task, or address the review findings from step 6.
 
+Run the relevant tests, keeping their output small (see step 9).
+
 ### 3. Commit
 
 Commit the changes with a message that describes them.
@@ -109,6 +111,14 @@ everything passes.
 - If the rebase or conflict resolution changed the implementation in
   substance, re-run `pr-cross-review` as needed.
 - Re-reviews count toward the `MAX_REVIEWS` limit.
+
+Keep test and CI output small; never read full logs:
+
+- Run tests with options that narrow the output (e.g. pytest `-q --tb=short`),
+  and read only the information about failed tests.
+- Check CI status with `gh pr checks <pr>`.
+- Only when a check fails, run `gh run view <run-id> --log-failed` and read only
+  the part you need (e.g. the tail), not the whole log.
 
 ### 10. Merge
 
