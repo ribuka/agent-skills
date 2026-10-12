@@ -30,3 +30,10 @@ def test_quota_pause_procedure_lives_only_in_reference() -> None:
 
 def test_wake_up_carries_reference_path() -> None:
     assert QUOTA_PAUSE_INSTALLED in QUOTA_PAUSE.read_text(encoding="utf-8")
+
+
+def test_merge_prep_worker_starts_from_spec_in_pr_worktree() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    assert 'worker-start --spec "<handoff>" --task-title' in skill
+    assert "--worktree branch:<branch>" in skill
+    assert "worker-start --task" not in skill
