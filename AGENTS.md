@@ -24,7 +24,7 @@
 
 - Validate skill frontmatter: `uv run --no-project --with pyyaml .github/scripts/validate_skills.py`
 - Run tests: `uv run --no-project --with pytest -m pytest <test-path>`
-  - Full suite: `uv run --no-project --with pytest -m pytest skills/quota-guard/tests skills/pr-cross-review/tests --tb=short -q`
+  - Full suite: `uv run --no-project --with pytest -m pytest skills/quota-guard/tests skills/pr-cross-review/tests skills/orca-issue-coordinator/tests --tb=short -q`
   - When adding a `tests/` directory to a skill, add it to the pytest job in `.github/workflows/validate.yml`.
 - Before running any pytest command, read `.agents/docs/pytest.md` and follow it.
 - CI (`.github/workflows/validate.yml`) also runs shellcheck (`--severity=warning`) on `*.sh` and PSScriptAnalyzer on `*.ps1`; run them locally when available, otherwise rely on CI.

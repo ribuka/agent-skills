@@ -17,7 +17,24 @@ disable-model-invocation: true
 
 `<skill-dir>` below is the directory containing this file.
 
-## 0. Resolve worker settings
+## 0. Check preconditions and resolve worker settings
+
+Before anything else, run:
+
+```bash
+uv run <skill-dir>/scripts/check_preconditions.py
+```
+
+It verifies that this conversation runs inside an Orca terminal, that the Orca
+runtime is reachable, and that `gh auth status` succeeds. If it exits non-zero,
+or `orca orchestration run-create` later fails with
+`no_active_sender_terminal`, **stop immediately** and report the `STOP:` lines
+to the user. Never work around a failed precondition: do not create a
+substitute Coordinator terminal (`orca terminal create`), do not pass another
+terminal's handle to `--from`, and do not unset, replace, or switch `gh`
+credentials (e.g. clearing `GH_TOKEN`).
+
+Then resolve the worker settings.
 
 Run once at the start, passing through any `--impl-model`, `--impl-effort`,
 `--merge-model`, or `--merge-effort` flags the user gave:
@@ -235,5 +252,7 @@ python <skill-dir>/scripts/wait_actionable.py [--terminal <handle>] [--run <run_
 - Resolve routine technical decisions autonomously; ask the user
   only when a safe decision cannot be made.
 
-Briefly present the execution plan (including the resolved worker model and
-effort), then start orchestration without waiting for additional approval.
+Only after the step 0 precondition check passes, briefly present the execution
+plan (including the resolved worker model and effort), then start
+orchestration without waiting for additional approval. If any precondition
+fails, stop and ask the user instead.
