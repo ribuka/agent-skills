@@ -91,8 +91,9 @@ version in its `## Quota control` section; keep the two consistent):
 ```markdown
 ## Quota control
 
-- Load `quota-guard` once at the start of the Run; perform its setup
-  (`configure`) and the first `check`. Afterwards only run `check`.
+- Right after creating the Run, before any dispatch, load `quota-guard` once;
+  perform its setup (`configure`) and the first `check`. Afterwards only run
+  `check`.
 - Check before every Task dispatch, merge-preparation dispatch, and merge,
   after processing each worker completion, and before starting a background
   waiter. Continue only on READY; PAUSED_QUOTA and UNKNOWN block new work.
@@ -108,6 +109,9 @@ version in its `## Quota control` section; keep the two consistent):
   turn. Never create a second wake-up for one Run.
 - While paused, do not start or restart the waiter, and do not apply the
   normal rule to continue other independent Tasks.
+- On a READY wake-up, reconcile the checkpoint with live state, tell stopped
+  workers with unfinished phases to continue (or replace an unavailable one
+  with one fresh worker), and never duplicate a dispatch.
 ```
 
 This does not relax `orchestrate-issues`' own `disable-model-invocation: true` or

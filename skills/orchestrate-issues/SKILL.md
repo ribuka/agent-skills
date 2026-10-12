@@ -31,8 +31,6 @@ came from (argument > `<repo-root>/.orchestrate-issues.env` >
 `<skill-dir>/config.env` > defaults: implementation `opus`/`medium`, merge
 preparation `sonnet`/`medium`). Use these values on every `worker-start`.
 
-Then set up the quota guard once (see **Quota control**).
-
 ## 1. Plan and dispatch
 
 1. Read the compact guide: `orca skills get orchestration`. Do **not** use
@@ -46,7 +44,9 @@ Then set up the quota guard once (see **Quota control**).
 3. Identify dependencies, overlapping areas, and potential conflicts from that
    summary. Open an Issue body only when a dependency cannot be decided
    otherwise.
-4. Create one Orchestration Run, with one Task per Issue by default.
+4. Create one Orchestration Run, with one Task per Issue by default. Then,
+   before any dispatch, set up the quota guard with this Run ID (see
+   **Quota control**).
 5. Represent actual dependencies in the task DAG.
 6. Dispatch independent tasks to separate worktrees, with at most
    **3 workers running concurrently**. Run the quota `check` before each
@@ -111,8 +111,10 @@ Use the `quota-guard` skill (`~/.agents/skills/quota-guard`) to stop starting
 new work near the 5-hour limit. `<quota-check>` below means
 `python ~/.agents/skills/quota-guard/scripts/quota_guard.py check`.
 
-- **Setup, once per Run:** load `quota-guard` once at the start, perform its
-  setup (`configure`) and the first `<quota-check>`. Do not reload the skill
+- **Setup, once per Run:** right after creating the Orchestration Run (its
+  ID is `<run-id>` below), load `quota-guard` once, perform its setup
+  (`configure`) and the first `<quota-check>`. If that check already blocks,
+  pause as below; no worker has been dispatched yet. Do not reload the skill
   or read snapshot history afterwards; only run `<quota-check>` and read its
   one-line JSON result.
 - **Boundaries:** run `<quota-check>` before every Task dispatch, before
@@ -125,8 +127,10 @@ new work near the 5-hour limit. `<quota-check>` below means
 - **On PAUSED_QUOTA or UNKNOWN:**
   1. Write the checkpoint (outside any worktree, e.g.
      `~/.claude/quota-guard/checkpoints/<run-id>.md`): Run ID, each Task's
-     phase, worktree, branch, PR URL, review count, blockers, and pending
-     actions, plus the quota helper path and state directory.
+     phase, worker handle, worktree, branch, PR URL, review count, blockers,
+     and pending actions, plus the quota helper path and state directory.
+     For each worker asked to stop, record the dispatch it was running and
+     the work left in that phase.
   2. Ask every active worker, through ORCA Orchestration messages, to stop
      at a safe boundary (after a commit/push or a finished review, never
      mid-rebase) and report its state. Verify the reported states with
@@ -145,10 +149,19 @@ new work near the 5-hour limit. `<quota-check>` below means
   `quota-guard:<run-id>`. If it exists, do not create another; only record
   delivered worker states in the checkpoint (see **Waiting**), reply with one
   short line, and end the turn. Never create a second wake-up for one Run.
-- **On wake-up:** the fired one-shot is gone. Run `<quota-check>`; on READY,
-  reconcile the checkpoint with live state and resume without repeating
-  completed phases or duplicating dispatches. Otherwise create exactly one
-  new one-shot wake-up as above and end the turn.
+- **On wake-up:** the fired one-shot is gone. Run `<quota-check>`. If it is
+  not READY, create exactly one new one-shot wake-up as above and end the
+  turn. On READY, reconcile the checkpoint with live `task-list`,
+  `worker-list`, branches, and PRs, then resume without repeating completed
+  phases or duplicating dispatches:
+  - A stopped worker whose phase is unfinished and whose terminal is still
+    available: send it an ORCA message to continue the remaining work of
+    its phase and report `worker_done` as before.
+  - A stopped worker that is no longer available: confirm from its branch
+    and PR what was already done, then start one fresh worker for the same
+    phase with a handoff of that state and the review count. Never run two
+    workers on one Task.
+  - Then continue dispatching ready Tasks and start the waiter as usual.
 - If `CronCreate` / `CronList` are unavailable, keep the checkpoint and tell
   the user that manual resumption is required.
 
