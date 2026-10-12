@@ -2,7 +2,7 @@
 
 - A monorepo of agent skills shared by Claude Code and Codex.
   - Each skill lives in `skills/<name>/` with a `SKILL.md` (YAML frontmatter + instructions) and optional `scripts/`, `references/`, `tests/`.
-  - Skills are symlinked into `~/.agents/skills/<name>`, so edits here take effect immediately. Skills referenced as `~/.agents/skills/...` resolve to this repository.
+  - Skills are symlinked directly from this repository into both `~/.agents/skills/<name>` and `~/.claude/skills/<name>` (never chained through each other), so edits here take effect immediately. Skills referenced as `~/.agents/skills/...` resolve to this repository.
 - Always respond in Japanese.
 - Backward compatibility is NOT required.
   - NEVER add or keep compatibility layers, deprecated aliases, old config keys, or fallbacks for old script options.
