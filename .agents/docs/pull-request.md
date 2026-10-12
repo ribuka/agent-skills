@@ -2,19 +2,18 @@
 
 ## Agent review
 
-- Request cross-reviews with the `pr-cross-review` skill (`skills/pr-cross-review/SKILL.md`). NEVER invoke `codex`/`claude` or `gh pr comment` directly for a review.
-- Only the agent that created the pull request may request cross-reviews; a review agent must not request another review.
-- Request the initial review once after creating the pull request.
-- Request a re-review only after pushing a commit that fixes review findings. Do not request one when the previous review had no findings or when you only explained or disputed a finding without changing code.
-- A re-review must not raise new findings about existing code outside the reviewed commit range.
-- Wait for the review script to exit. Proceed only after exit status 0 and `review-posted: <comment-url>`; read that comment before acting on it.
+- Follow the `implement-review-merge` skill for the review cycle (review, fix, sync with `main`, merge) and the `pr-cross-review` skill for running a review. Those skills and the review scripts are the source of truth; this section only adds repository rules.
+- NEVER invoke `codex`/`claude` or `gh pr comment` directly for a review.
+- Only the agent that created the pull request may request cross-reviews.
+- Do not request a cross-review for a version bump (`bump-version` skill).
+- Do not request a re-review when the previous review had no findings or when you only explained or disputed a finding without changing code. Re-review after pushing fixes, or when a sync with `main` changed the implementation in substance.
 - Reply on the pull request to every finding, stating what changed or why it was deferred.
 - Changes to `skills/pr-cross-review/` itself take effect on the review run immediately (the skill is symlinked). If the change breaks the review run, report it instead of working around it.
 
 ## Merge conditions
 
-- All CI checks have succeeded.
-- No unresolved findings remain. A deferred or disputed finding, or reaching the review limit (`MAX_REVIEWS`) with findings left, requires user confirmation before merge.
+- The branch is in sync with the latest `main`, and all CI checks have succeeded on that state.
+- No unresolved findings remain. A deferred or disputed finding, or reaching the review limit (`MAX_REVIEWS` in `skills/pr-cross-review/config.env`) with findings left, requires user confirmation before merge.
 
 ## Model labeling
 

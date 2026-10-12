@@ -79,13 +79,14 @@ preparation `sonnet`/`medium`). Use these values on every `worker-start`.
     merge-preparation `--model` / `--effort` from step 0. Do not reuse the
     implementation worker's conversation. Give it a short handoff:
     - Issue number, PR URL, branch, and worktree.
-    - Cross-reviews used so far (out of 3) and any open findings or blockers.
+    - Cross-reviews used so far (out of `MAX_REVIEWS`) and any open findings or blockers.
     - The tasks: fetch and rebase onto the latest `origin/main` as needed;
       re-run tests and CI; repeat cross-review only if substantive changes
       require it.
 14. Independently verify:
     - No outstanding review findings.
-    - No more than 3 cross-reviews for the PR.
+    - No more than `MAX_REVIEWS` cross-reviews for the PR (`pr-cross-review`
+      `config.env`).
     - The PR branch includes the latest `origin/main`.
     - Required tests and CI have passed on the current PR commit.
     - GitHub merge requirements are satisfied.
@@ -138,7 +139,8 @@ python <skill-dir>/scripts/wait_actionable.py [--terminal <handle>] [--run <run_
   assigned phase and report through ORCA Orchestration.
 - Preserve the existing `implement-review-merge` workflow,
   `pr-cross-review` requirements, and GitHub authentication conventions.
-- Never exceed **3 cross-reviews per PR**, counting all phases and
+- Never exceed `MAX_REVIEWS` cross-reviews per PR (`pr-cross-review`
+  `config.env`), counting all phases and
   dispatches. Track this across worker restarts and pass it in every handoff.
 - If a review fails, the limit is reached, or a conflict cannot be
   resolved safely, block that PR and ask the user.

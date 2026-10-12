@@ -30,7 +30,8 @@ whenever a step below says so; never merge on a guess.
 - In worker mode:
   - The Coordinator alone decides when and in what order to merge PRs.
   - Report blockers to the Coordinator instead of asking the user directly.
-  - Preserve the **3-review limit per PR** across all phases and dispatches.
+  - Preserve the per-PR review limit (`MAX_REVIEWS` in the `pr-cross-review`
+    `config.env`) across all phases and dispatches.
   - Report completion or failure using the ORCA Orchestration protocol.
   - Stop after the assigned phase; never proceed to the next phase
     without an explicit dispatch.
@@ -74,7 +75,8 @@ Run the `pr-cross-review` skill for the pull request.
 
 If the review has findings, go back to step 2.
 
-- At most **3 reviews per pull request**.
+- At most `MAX_REVIEWS` reviews per pull request (`pr-cross-review`
+  `config.env`); the script rejects further runs.
 - If the limit is reached, or the script exits with an error, do **not**
   merge. Report the situation and ask the user how to proceed.
 
@@ -97,7 +99,7 @@ everything passes.
 
 - If the rebase or conflict resolution changed the implementation in
   substance, re-run `pr-cross-review` as needed.
-- Re-reviews count toward the 3-review limit.
+- Re-reviews count toward the `MAX_REVIEWS` limit.
 
 ### 10. Merge
 
