@@ -61,9 +61,11 @@ description: Set up and apply a reusable Claude Code 5-hour quota guard for long
 
 ## Pause and resume
 
-1. Save a durable caller checkpoint: operation/run ID, task phases, worktrees,
-   PRs, review counts, blockers, and pending actions. Retain permissions and
-   record the helper/state paths and current session. Do not store secrets.
+1. Save a durable caller checkpoint under the result's `checkpoint_dir`
+   (outside any worktree): the operation/run ID and the caller-defined state
+   needed to resume (for example phases, work locations, and pending
+   operations). Retain permissions and record the helper/state paths and
+   current session. Do not store secrets.
 2. Read the result's `wake_at`, `wake_local`, and `cron`. Threshold pauses use
    reset + 2 minutes, rounded up; unknown telemetry uses one 15-minute retry.
 3. If `CronCreate` and `CronList` are available, check for this operation's

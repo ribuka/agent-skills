@@ -124,7 +124,8 @@ def check(root: Path, now: float, threshold=95.0, max_age=180.0):
              and r["window"]["resets_at"] > now]
     high = [r for r in records if r["window"]["used_percentage"] >= threshold]
     result = {"state": "UNKNOWN", "reason": "missing_or_stale_telemetry",
-              "threshold": threshold, "upstream_freshness": "not_guaranteed"}
+              "threshold": threshold, "upstream_freshness": "not_guaranteed",
+              "checkpoint_dir": str(root / "checkpoints")}
     if high:
         chosen = max(high, key=lambda r: r["window"]["used_percentage"])
         result.update(state="PAUSED_QUOTA", reason="threshold_reached",

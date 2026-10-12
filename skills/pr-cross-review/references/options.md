@@ -48,7 +48,7 @@ cut to 300 characters and marked `... [truncated <n> chars]` when cut.
 
 | Code | Meaning |
 |------|---------|
-| 0 | Review posted (`review-posted: <url>` on stdout) |
+| 0 | Review posted (`review-posted: <url>` and `review-count: <count>/<max>` on stdout) |
 | 1 | Usage/config error, review limit reached, no new commits since the last review, or the reviewer exited without posting |
 | 2 | GitHub lookup failed (PR head or comment history) |
 | 124 | Codex hard timeout |

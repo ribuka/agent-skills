@@ -142,6 +142,7 @@ def test_review_script_reports_new_comment_url(tmp_path: Path, script_name: str)
 
     assert result.returncode == 0, result.stderr
     assert "review-posted: https://github.com/owner/repo/pull/123#issuecomment-1001\n" in result.stdout
+    assert "review-count: 1/3\n" in result.stdout
     assert f"reviewed-commit: {HEAD_COMMIT}" in result.stdout
     assert "Examine the whole diff" in result.stdout
     assert "post_pr_comment.sh\" 123 \"" in result.stdout
@@ -293,6 +294,7 @@ def test_review_script_limits_rereview_prompt(tmp_path: Path, script_name: str) 
 
     assert result.returncode == 0, result.stderr
     assert f"{PREVIOUS_COMMIT}..{HEAD_COMMIT}" in result.stdout
+    assert "review-count: 2/3\n" in result.stdout
     assert "Do not raise new findings about existing code outside that diff." in result.stdout
 
 

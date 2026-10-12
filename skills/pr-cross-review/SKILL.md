@@ -22,8 +22,10 @@ to focus on). Model, effort and other options can be overridden per run; see
 
 ## Result
 
-- Success: the script prints `review-posted: <comment-url>` and exits 0.
-  Read the comment with `gh pr view <pr-number> --comments` and address it.
+- Success: the script prints `review-posted: <comment-url>` and
+  `review-count: <count>/<max>` (cross-reviews on the PR including this one,
+  and the per-PR limit) and exits 0. Read the comment with
+  `gh pr view <pr-number> --comments` and address it.
 - Failure: non-zero exit with an `error:` line on stderr. Report it rather than
   retrying blindly; exit codes are listed in references/options.md.
 

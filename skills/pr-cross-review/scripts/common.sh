@@ -287,8 +287,9 @@ stop_reviewer() {
 }
 
 # report_posted_review <repo> <pr-number> <agent> -- prints `review-posted: <url>`
-# and returns 0 when the reviewer posted a new comment; otherwise returns
-# 1 (no new comment) or 2 (lookup failed).
+# and `review-count: <count>/<max>` (including the new review) and returns 0
+# when the reviewer posted a new comment; otherwise returns 1 (no new comment)
+# or 2 (lookup failed).
 report_posted_review() {
     local repo=$1
     local pr_number=$2
@@ -298,6 +299,7 @@ report_posted_review() {
 
     if comment_url=$(find_new_review_comment_url "$repo" "$pr_number" "$agent" "$REVIEW_COMMENT_IDS_BEFORE"); then
         echo "review-posted: ${comment_url}"
+        echo "review-count: $((REVIEW_COUNT + 1))/${MAX_REVIEWS}"
         return 0
     else
         status=$?
