@@ -36,7 +36,7 @@ def test_merge_prep_worker_starts_from_spec_in_pr_worktree() -> None:
     skill = SKILL_MD.read_text(encoding="utf-8")
     assert 'worker-start --spec "<handoff>" --task-title' in skill
     assert "--worktree branch:<branch>" in skill
-    merge_prep_step = skill.split("13. After a READY quota", 1)[1].split("14. ", 1)[0]
+    merge_prep_step = skill.split("13. When a worker slot is free", 1)[1].split("14. ", 1)[0]
     assert "worker-start --spec" in merge_prep_step
     assert "worker-start --task" not in merge_prep_step
 
