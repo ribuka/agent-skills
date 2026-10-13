@@ -135,3 +135,14 @@ def test_concurrency_limit_comes_from_max_workers() -> None:
     assert "With `MAX_WORKERS=1`, run fully serially" in dispatch_section
     assert "3 workers running concurrently" not in skill
     assert "pass\n`--max-workers 1`" in skill
+
+
+def test_implementation_workers_do_not_sync_with_main() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    worker_step = skill.split("7. Instruct each worker", 1)[1].split("8. ", 1)[0]
+    assert "not to rebase onto or merge `origin/main`" in worker_step
+    assert "happen once, in merge preparation" in worker_step
+    assert "whether the\n     PR conflicts with `main`" in worker_step
+    rules = skill.split("## Rules", 1)[1]
+    assert "Sync each PR with `main` only in merge preparation." in rules
+    assert "never tells\n  a worker still implementing to rebase" in rules
