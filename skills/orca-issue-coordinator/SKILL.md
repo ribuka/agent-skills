@@ -68,9 +68,20 @@ came from (argument > `<skill-dir>/config.conf` > defaults: implementation
 3. Identify dependencies, overlapping areas, and potential conflicts from that
    summary. Open an Issue body only when a dependency cannot be decided
    otherwise.
-4. Create one Orchestration Run, with one Task per Issue by default. Then,
-   before any dispatch, set up the quota guard with this Run ID (see
-   **Quota control**).
+4. Create one Orchestration Run. Then, before any dispatch, set up the
+   quota guard with this Run ID (see **Quota control**). Plan one Task per
+   Issue by default, and create each Task in exactly one way:
+   - **Independent Task** (no dependencies): do not create it in advance.
+     `worker-start --spec "<brief>" --task-title "#<issue> <title>"`
+     creates the Task and starts its worker in one call (step 6).
+   - **Dependent Task** (has dependencies, or other Tasks depend on it):
+     create it up front with
+     `task-create --spec "<brief>" --task-title "#<issue> <title>" --deps '<json_array>'`
+     so the DAG is recorded, then start it with
+     `worker-start --task <task_id>` (step 6).
+   - Never create a Task you will not start. Never start a worker with
+     `--spec` for an Issue that already has a Task; that leaves an unused
+     Task in the Run, and cancelling it leaves a `failed` one.
 5. Represent actual dependencies in the task DAG. Orca unblocks a dependent
    Task as soon as its dependency Task completes, and an Implementation Task
    completes when its PR is opened, before the PR is merged. Dispatch a
@@ -82,7 +93,10 @@ came from (argument > `<skill-dir>/config.conf` > defaults: implementation
    and effort from step 0. Then start dispatching without waiting for
    approval.
    Dispatch independent tasks to separate worktrees, with at most
-   **3 workers running concurrently**. Run the quota `check` before each
+   **3 workers running concurrently**. Start each worker as step 4 decided
+   for its Task: `worker-start --spec` for an independent Task,
+   `worker-start --task <task_id>` for a Task created with `task-create`.
+   Run the quota `check` before each
    dispatch and dispatch only on READY. Always pass the implementation
    `--model` and `--effort` from step 0, and confirm `launch.effective` in the
    receipt.

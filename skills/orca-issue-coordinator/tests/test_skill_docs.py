@@ -36,7 +36,9 @@ def test_merge_prep_worker_starts_from_spec_in_pr_worktree() -> None:
     skill = SKILL_MD.read_text(encoding="utf-8")
     assert 'worker-start --spec "<handoff>" --task-title' in skill
     assert "--worktree branch:<branch>" in skill
-    assert "worker-start --task" not in skill
+    merge_prep_step = skill.split("13. After a READY quota", 1)[1].split("14. ", 1)[0]
+    assert "worker-start --spec" in merge_prep_step
+    assert "worker-start --task" not in merge_prep_step
 
 
 def test_merge_prep_skipped_when_pr_is_already_ready() -> None:
@@ -108,3 +110,17 @@ def test_run_end_requires_no_reclaimable_worker_terminals() -> None:
     skill = SKILL_MD.read_text(encoding="utf-8")
     assert "ORCA has no command that closes a Run" in skill
     assert "worker-list --run <run-id> --terminal-state reclaimable --json" in skill
+
+
+def test_each_task_is_created_and_started_in_one_way() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    dispatch_section = skill.split("## 1. Plan and dispatch", 1)[1].split("## 2.", 1)[0]
+    assert "create each Task in exactly one way" in dispatch_section
+    assert "**Independent Task**" in dispatch_section
+    assert 'worker-start --spec "<brief>" --task-title' in dispatch_section
+    assert "**Dependent Task**" in dispatch_section
+    assert "task-create --spec \"<brief>\"" in dispatch_section
+    assert "--deps '<json_array>'" in dispatch_section
+    assert "worker-start --task <task_id>" in dispatch_section
+    assert "Never create a Task you will not start." in dispatch_section
+    assert "one Task per Issue by default. Then," not in skill
