@@ -146,3 +146,17 @@ def test_implementation_workers_do_not_sync_with_main() -> None:
     rules = skill.split("## Rules", 1)[1]
     assert "Sync each PR with `main` only in merge preparation." in rules
     assert "never tells\n  a worker still implementing to rebase" in rules
+
+
+def test_overlapping_tasks_rule_and_plan() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    overlap_step = skill.split("3. Identify dependencies", 1)[1].split("4. Create one", 1)[0]
+    assert "**Same part of the same file**" in overlap_step
+    assert "this as a dependency and run the Tasks in order" in overlap_step
+    assert "**Distant parts of the same file only:** run the Tasks in parallel" in overlap_step
+    assert "merge preparation (step 13)" in overlap_step
+    dag_step = skill.split("5. Represent actual dependencies", 1)[1].split("6. Before", 1)[0]
+    assert "same-part overlaps from step 3" in dag_step
+    plan_step = skill.split("6. Before the first dispatch", 1)[1].split("## 2.", 1)[0]
+    assert "For Tasks that edit the same file" in plan_step
+    assert "state that decision and its reason" in plan_step

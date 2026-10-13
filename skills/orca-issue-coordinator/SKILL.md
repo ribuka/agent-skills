@@ -71,8 +71,15 @@ the model and effort on every `worker-start`, and never run more than
    branches. Do not read full Issue bodies or investigate code; workers do
    that. Avoid duplicating or overwriting existing changes.
 3. Identify dependencies, overlapping areas, and potential conflicts from that
-   summary. Open an Issue body only when a dependency cannot be decided
-   otherwise.
+   summary. Open an Issue body only when a dependency or an overlap cannot be
+   decided otherwise. Decide how Tasks that edit the same file run:
+   - **Same part of the same file** (the Issue titles or existing PRs and
+     branches show they edit the same step, section, or function): treat
+     this as a dependency and run the Tasks in order (step 5).
+   - **Distant parts of the same file only:** run the Tasks in parallel and
+     expect merge preparation (step 13) to resolve the resulting conflicts.
+   - If the overlap is still unclear after reading the Issue bodies, run the
+     Tasks in order.
 4. Create one Orchestration Run. Then, before any dispatch, set up the
    quota guard with this Run ID (see **Quota control**). Plan one Task per
    Issue by default, and create each Task in exactly one way:
@@ -87,7 +94,8 @@ the model and effort on every `worker-start`, and never run more than
    - Never create a Task you will not start. Never start a worker with
      `--spec` for an Issue that already has a Task; that leaves an unused
      Task in the Run, and cancelling it leaves a `failed` one.
-5. Represent actual dependencies in the task DAG. Orca unblocks a dependent
+5. Represent actual dependencies in the task DAG, including the
+   same-part overlaps from step 3. Orca unblocks a dependent
    Task as soon as its dependency Task completes, and an Implementation Task
    completes when its PR is opened, before the PR is merged. Dispatch a
    dependent Task only after every dependency's PR has been **merged**; never
@@ -95,8 +103,9 @@ the model and effort on every `worker-start`, and never run more than
    latest `origin/main`, which includes those merges.
 6. Before the first dispatch, briefly present the execution plan to the
    user: Task dependencies, dispatch order, and the resolved worker model,
-   effort, and `MAX_WORKERS` from step 0. Then start dispatching without
-   waiting for approval.
+   effort, and `MAX_WORKERS` from step 0. For Tasks that edit the same file
+   but run in parallel, state that decision and its reason (e.g. which
+   parts each edits). Then start dispatching without waiting for approval.
    Dispatch independent tasks to separate worktrees, with at most
    **`MAX_WORKERS` workers running concurrently**. Merge-preparation workers
    count toward this limit. With `MAX_WORKERS=1`, run fully serially:
