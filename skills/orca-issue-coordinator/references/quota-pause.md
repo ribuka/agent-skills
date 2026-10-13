@@ -10,12 +10,11 @@ continue other independent Tasks does not apply.
 
 1. Write the checkpoint to `<run-id>.md` under the result's
    `checkpoint_dir`: Run ID, each Task's
-   phase, worker handle, worktree, branch, PR URL, review count, blockers,
+   phase, dispatch ID, worktree, branch, PR URL, review count, blockers,
    and pending actions, plus the quota helper path and state directory.
-   For each worker asked to stop, record the dispatch it was running and
-   the work left in that phase.
+   For each worker asked to stop, record the work left in that phase.
 2. Ask every active worker, through ORCA Orchestration messages sent to its
-   terminal handle (`send --to <terminalHandle>`, see `SKILL.md`
+   Dispatch (`send --to dispatch:<dispatch_id>`, see `SKILL.md`
    **Messaging workers**), to stop at a safe boundary (after a commit/push
    or a finished review, never mid-rebase) and report its state. Verify the
    reported states with `worker-list`. Never kill worker processes or claim
@@ -58,7 +57,7 @@ the turn. On READY, reconcile the checkpoint with live `task-list`,
 phases or duplicating dispatches:
 
 - A stopped worker whose phase is unfinished and whose terminal is still
-  available: send it an ORCA message (`send --to <terminalHandle>`) to
+  available: send it an ORCA message (`send --to dispatch:<dispatch_id>`) to
   continue the remaining work of its phase and report `worker_done` as before.
 - A stopped worker that is no longer available: confirm from its branch and
   PR what was already done, then start one fresh worker for the same phase

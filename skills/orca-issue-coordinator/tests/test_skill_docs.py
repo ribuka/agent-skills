@@ -46,13 +46,15 @@ def test_merge_prep_skipped_when_pr_is_already_ready() -> None:
     assert "gh pr checks <pr> --required" in skill
 
 
-def test_worker_messages_go_to_terminal_handle() -> None:
+def test_worker_messages_go_to_dispatch() -> None:
     skill = SKILL_MD.read_text(encoding="utf-8")
     assert "## Messaging workers" in skill
-    assert "orca orchestration send --to <terminalHandle>" in skill
-    assert "worker-show --dispatch <dispatch_id> --json" in skill
+    assert "orca orchestration send --to dispatch:<dispatch_id>" in skill
+    assert "A bare `--to ctx_…` fails with" in skill
+    assert "<terminalHandle>" not in skill
     reference = QUOTA_PAUSE.read_text(encoding="utf-8")
-    assert reference.count("send --to <terminalHandle>") == 2
+    assert reference.count("send --to dispatch:<dispatch_id>") == 2
+    assert "<terminalHandle>" not in reference
 
 
 def test_skill_md_freezes_skill_checkout_during_run() -> None:
