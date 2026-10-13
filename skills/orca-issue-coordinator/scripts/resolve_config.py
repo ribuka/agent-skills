@@ -59,7 +59,7 @@ def main() -> int:
         for k, v in parse_env(config).items():
             resolved[k] = (v, str(config))
     for k in DEFAULTS:
-        if getattr(opts, k):
+        if getattr(opts, k) is not None:
             resolved[k] = (getattr(opts, k), "argument")
 
     for k, (v, src) in resolved.items():

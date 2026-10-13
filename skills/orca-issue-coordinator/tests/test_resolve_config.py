@@ -70,3 +70,11 @@ def test_invalid_max_workers_in_config_fails(run) -> None:
     code, _, err = run(config="MAX_WORKERS=0\n")
     assert code == 1
     assert "config.conf" in err
+
+
+@pytest.mark.parametrize("config", [None, "MAX_WORKERS=2\n"])
+def test_empty_max_workers_argument_fails(run, config: str | None) -> None:
+    code, out, err = run("--max-workers=", config=config)
+    assert code == 1
+    assert out == ""
+    assert "MAX_WORKERS is empty (from argument)" in err
