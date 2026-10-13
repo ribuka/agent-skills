@@ -120,8 +120,9 @@ Keep test and CI output small; never read full logs:
   GitHub CLI's built-in features; never pipe to an external `jq` or write
   a custom CI polling loop.
 - Set a finite overall timeout before starting, collect the background
-  result through automatic completion notifications or poll the same process
-  at least once per minute, and stop and report
+  result through automatic completion notifications only when the harness
+  guarantees them and enforces a hard timeout; otherwise poll the same
+  process at least once per minute. Stop and report
   `monitor-error: <reason>` on a monitoring error or timeout. A tool yielding
   a session ID is not a timeout. Follow [CI waiting](references/ci-waiting.md)
   for process ownership, exit codes, and verification before merging.
