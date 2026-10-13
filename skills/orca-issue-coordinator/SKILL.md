@@ -118,7 +118,12 @@ the model and effort on every `worker-start`, and never run more than
    - Require implementation, tests, commit, push, PR creation,
      and `pr-cross-review` with findings addressed.
    - Require the handoff fields in its `worker_done` report (see the
-     implement-review-merge skill).
+     implement-review-merge skill). The report may also state whether the
+     PR conflicts with `main`.
+   - Tell the worker not to rebase onto or merge `origin/main` even if
+     `main` moves during implementation. Syncing with `main`, resolving
+     conflicts, and re-checking CI happen once, in merge preparation
+     (step 13).
    - Workers must not merge or create wake-ups (`CronCreate`); the
      Coordinator alone owns the Run's checkpoint and wake-up.
 8. Fill available worker slots before waiting for completions.
@@ -298,6 +303,10 @@ other exit code, handle the pause as in **Quota control** instead.
   assigned phase and report through ORCA Orchestration.
 - Preserve the existing `implement-review-merge` workflow,
   `pr-cross-review` requirements, and GitHub authentication conventions.
+- Sync each PR with `main` only in merge preparation. Implementation
+  workers never rebase while implementing, and the Coordinator never tells
+  a worker still implementing to rebase, even after merging another PR. If
+  a worker asks, tell it to send `worker_done` without rebasing.
 - Never exceed the `pr-cross-review` per-PR review limit (`MAX_REVIEWS`),
   counting all phases and dispatches. Track this across worker restarts and
   pass it in every handoff.
