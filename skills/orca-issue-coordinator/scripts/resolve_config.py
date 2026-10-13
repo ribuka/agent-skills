@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Resolve the worker model / effort settings for orca-issue-coordinator.
+"""Resolve the worker settings (model / effort, concurrency) for orca-issue-coordinator.
 
 Precedence (highest first):
-  1. command-line flags (--impl-model, --impl-effort, --merge-model, --merge-effort)
+  1. command-line flags (--impl-model, --impl-effort, --merge-model, --merge-effort,
+     --max-workers)
   2. <skill-dir>/config.conf
   3. built-in defaults
 
@@ -21,6 +22,7 @@ DEFAULTS = {
     "IMPL_EFFORT": "medium",
     "MERGE_MODEL": "sonnet",
     "MERGE_EFFORT": "medium",
+    "MAX_WORKERS": "3",
 }
 EFFORTS = {"low", "medium", "high", "xhigh", "max"}
 SKILL_DIR = Path(__file__).resolve().parent.parent
@@ -67,6 +69,9 @@ def main() -> int:
         if k.endswith("_EFFORT") and v not in EFFORTS:
             print(f"error: {k}={v} (from {src}) is not one of {sorted(EFFORTS)}", file=sys.stderr)
             return 1
+        if k == "MAX_WORKERS" and not (v.isascii() and v.isdigit() and int(v) >= 1):
+            print(f"error: {k}={v} (from {src}) is not an integer >= 1", file=sys.stderr)
+            return 1
 
     if opts.json:
         print(json.dumps({k: {"value": v, "source": s} for k, (v, s) in resolved.items()},
@@ -76,6 +81,8 @@ def main() -> int:
             m, ms = resolved[f"{phase}_MODEL"]
             e, es = resolved[f"{phase}_EFFORT"]
             print(f"{phase.lower()}: --model {m} --effort {e}  (model: {ms}; effort: {es})")
+        w, ws = resolved["MAX_WORKERS"]
+        print(f"max-workers: {w}  (from {ws})")
     return 0
 
 
