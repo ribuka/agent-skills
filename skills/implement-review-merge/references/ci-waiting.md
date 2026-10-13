@@ -21,11 +21,13 @@ inspection is needed, use `gh ... --json ... --jq ...`; `--jq` is built into
    collected. A short tool yield that returns a session ID only backgrounds
    the command; it does not enforce the overall deadline.
 2. Use background execution when available. Keep the returned session/task
-   ID and collect output and exit status from that same process at least
-   once per minute until it exits. Do not start duplicate watchers. Report
-   completion or failure as soon as it is collected, within a minute of
-   the process ending; never leave the watcher unattended while doing
-   unrelated work or ending the conversation.
+   ID. If the harness guarantees automatic completion notifications and a
+   hard timeout, wait for that notification and collect the result promptly;
+   no periodic output reads are needed. Otherwise collect output and exit
+   status from that same process at least once per minute until it exits.
+   Do not start duplicate watchers. Report completion or failure as soon as
+   it is collected, within a minute of the process ending. Do not end the
+   workflow or proceed to merge while the watcher is running.
 3. On timeout, terminate the watcher and report
    `monitor-error: CI watch timed out after <duration>`. On a GitHub/API,
    authentication, missing executable, or other monitoring error, stop and
@@ -40,8 +42,8 @@ inspection is needed, use `gh ... --json ... --jq ...`; `--jq` is built into
 - A failed/cancelled check blocks merging. Read only the relevant failed
   output with `gh run view <run-id> --log-failed`.
 - Exit `8` from a one-shot `gh pr checks <pr>` means checks are pending,
-  not that monitoring failed. Start the bounded watcher above. If a watcher
-  returns `8`, CI is still unverified; report it instead of merging.
+  not that monitoring failed. Start the bounded watcher above. An unexpected
+  watcher exit leaves CI unverified; report it instead of merging.
 - Other non-zero exits require inspecting the short output to distinguish
   failed checks from a monitoring error. No checks reported is not proof
   of success; verify expected workflows have started on the pushed head.

@@ -155,8 +155,9 @@ the model and effort on every `worker-start`, and never run more than
     - The PR branch includes the latest `origin/main`: after
       `git fetch --prune origin`,
       `git merge-base --is-ancestor origin/main origin/<branch>` exits `0`.
-    - All required CI checks have passed on the current head commit
-      (`gh pr checks <pr> --required`). Exit `8` means pending: do not take
+    - All CI checks have passed on the current head commit
+      (`gh pr checks <pr>`). Check all CI even when no required checks are
+      configured. Exit `8` means pending: do not take
       this shortcut. Any other non-zero result needs inspection; report
       monitoring errors as blockers instead of treating them as pending.
       An empty check set is not proof of success.
@@ -204,14 +205,16 @@ the model and effort on every `worker-start`, and never run more than
     - The PR branch includes the latest `origin/main`.
     - Required tests and CI have passed on the current PR commit.
     - GitHub merge requirements are satisfied.
-    - If required checks are pending, use
-      `gh pr checks <pr> --required --watch --interval 30` with a finite
-      overall timeout set before starting. Collect the same background
-      process's output and exit status at least once per minute; a session
-      yield is not a timeout. On timeout terminate it; on monitoring error
+    - If CI checks are pending, use
+      `gh pr checks <pr> --watch --interval 30` with an overall timeout
+      (default: 30 minutes) set before starting. Use automatic completion
+      notifications only when the harness guarantees them and enforces a
+      hard timeout; otherwise collect the same background process's output
+      and exit status at least once per minute. A session yield is not a
+      timeout. On timeout terminate it; on monitoring error
       or timeout report `monitor-error: <reason>` and block this PR. Use
       only `gh` built-in features, never external `jq` or custom CI loops.
-      Recheck the current head and required checks before merging.
+      Recheck the current head and all CI checks before merging.
 15. Merge the PR yourself only when all conditions are met and the quota
     `check` immediately before the merge is READY.
 16. After each merge, fetch the latest `origin/main` and repeat

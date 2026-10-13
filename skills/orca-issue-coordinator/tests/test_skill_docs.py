@@ -45,7 +45,9 @@ def test_merge_prep_skipped_when_pr_is_already_ready() -> None:
     skill = SKILL_MD.read_text(encoding="utf-8")
     assert "Skip step 13 and go straight to step 14" in skill
     assert "git merge-base --is-ancestor origin/main origin/<branch>" in skill
-    assert "gh pr checks <pr> --required" in skill
+    assert "gh pr checks <pr>" in skill
+    assert "gh pr checks <pr> --required" not in skill
+    assert "even when no required checks" in skill
 
 
 def test_worker_messages_go_to_dispatch() -> None:
