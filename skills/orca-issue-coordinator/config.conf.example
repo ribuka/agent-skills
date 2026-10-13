@@ -8,3 +8,7 @@ IMPL_EFFORT=medium
 # Merge-preparation workers (implement-review-merge steps 8-9)
 MERGE_MODEL=sonnet
 MERGE_EFFORT=medium
+
+# Maximum number of workers running at once (implementation and merge
+# preparation combined); an integer >= 1. Use 1 to run Issues one at a time.
+MAX_WORKERS=3

@@ -45,15 +45,20 @@ stale at the end instead (step 17).
 Then resolve the worker settings.
 
 Run once at the start, passing through any `--impl-model`, `--impl-effort`,
-`--merge-model`, or `--merge-effort` flags the user gave:
+`--merge-model`, `--merge-effort`, or `--max-workers` flags the user gave.
+If the user explicitly asks to run the Issues serially (one at a time), pass
+`--max-workers 1`:
 
 ```bash
 uv run <skill-dir>/scripts/resolve_config.py [user flags]
 ```
 
-It prints the `--model` / `--effort` pair for each phase and where each value
+It prints the `--model` / `--effort` pair for each phase, the
+`max-workers: <n>` concurrency limit (`MAX_WORKERS`), and where each value
 came from (argument > `<skill-dir>/config.conf` > defaults: implementation
-`opus`/`medium`, merge preparation `sonnet`/`medium`). Use these values on every `worker-start`.
+`opus`/`medium`, merge preparation `sonnet`/`medium`, `MAX_WORKERS` 3). Use
+the model and effort on every `worker-start`, and never run more than
+`MAX_WORKERS` workers at once.
 
 ## 1. Plan and dispatch
 
@@ -89,12 +94,15 @@ came from (argument > `<skill-dir>/config.conf` > defaults: implementation
    dispatch on Orca's ready state alone. Tell its worker to start from the
    latest `origin/main`, which includes those merges.
 6. Before the first dispatch, briefly present the execution plan to the
-   user: Task dependencies, dispatch order, and the resolved worker model
-   and effort from step 0. Then start dispatching without waiting for
-   approval.
+   user: Task dependencies, dispatch order, and the resolved worker model,
+   effort, and `MAX_WORKERS` from step 0. Then start dispatching without
+   waiting for approval.
    Dispatch independent tasks to separate worktrees, with at most
-   **3 workers running concurrently**. Start each worker as step 4 decided
-   for its Task: `worker-start --spec` for an independent Task,
+   **`MAX_WORKERS` workers running concurrently**. Merge-preparation workers
+   count toward this limit. With `MAX_WORKERS=1`, run fully serially:
+   implement one Issue, prepare and merge its PR, and only then dispatch the
+   next Issue. Start each worker as step 4 decided for its Task:
+   `worker-start --spec` for an independent Task,
    `worker-start --task <task_id>` for a Task created with `task-create`.
    Run the quota `check` before each
    dispatch and dispatch only on READY. Always pass the implementation
@@ -137,7 +145,8 @@ came from (argument > `<skill-dir>/config.conf` > defaults: implementation
       (`gh pr checks <pr> --required`).
     - No review findings are open (per the worker handoff and the latest
       cross-review).
-13. After a READY quota `check`, start a **new** worker for
+13. When a worker slot is free (within `MAX_WORKERS`) and after a READY
+    quota `check`, start a **new** worker for
     **Orchestration worker / Merge preparation** mode in the PR's existing
     worktree, with the merge-preparation `--model` / `--effort` from step 0:
     `worker-start --spec "<handoff>" --task-title "#<issue> PR #<pr> merge prep" --worktree branch:<branch>`.

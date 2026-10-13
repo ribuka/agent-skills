@@ -36,7 +36,7 @@ def test_merge_prep_worker_starts_from_spec_in_pr_worktree() -> None:
     skill = SKILL_MD.read_text(encoding="utf-8")
     assert 'worker-start --spec "<handoff>" --task-title' in skill
     assert "--worktree branch:<branch>" in skill
-    merge_prep_step = skill.split("13. After a READY quota", 1)[1].split("14. ", 1)[0]
+    merge_prep_step = skill.split("13. When a worker slot is free", 1)[1].split("14. ", 1)[0]
     assert "worker-start --spec" in merge_prep_step
     assert "worker-start --task" not in merge_prep_step
 
@@ -124,3 +124,14 @@ def test_each_task_is_created_and_started_in_one_way() -> None:
     assert "worker-start --task <task_id>" in dispatch_section
     assert "Never create a Task you will not start." in dispatch_section
     assert "one Task per Issue by default. Then," not in skill
+
+
+def test_concurrency_limit_comes_from_max_workers() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    dispatch_section = skill.split("## 1. Plan and dispatch", 1)[1].split("## 2.", 1)[0]
+    assert "effort, and `MAX_WORKERS` from step 0" in dispatch_section
+    assert "**`MAX_WORKERS` workers running concurrently**" in dispatch_section
+    assert "Merge-preparation workers\n   count toward this limit" in dispatch_section
+    assert "With `MAX_WORKERS=1`, run fully serially" in dispatch_section
+    assert "3 workers running concurrently" not in skill
+    assert "pass\n`--max-workers 1`" in skill
