@@ -171,7 +171,7 @@ def test_provider_is_explicit_for_config_workers_and_quota() -> None:
     assert "--worktree branch:<branch> --agent <agent>" in skill
     assert "check --provider <agent>" in skill
     assert "Codex skips Claude setup" in skill
-    assert "Codex workers use the\n     Claude reviewer" in skill
+    assert "Codex workers use the Claude reviewer" in " ".join(skill.split())
     assert "Workers must not merge or schedule resumption wake-ups" in skill
 
 
@@ -191,7 +191,7 @@ def test_codex_waiting_and_recovery_lifecycle() -> None:
 def test_codex_quota_uses_automation_and_removes_waiting_wake() -> None:
     reference = QUOTA_PAUSE.read_text(encoding="utf-8")
     assert "remove the Run's waiting automation first" in reference
-    assert "Do not use\n   `CronCreate` / `CronList` in Codex" in reference
+    assert "Do not use `CronCreate` / `CronList` in Codex" in " ".join(reference.split())
     assert "remove the recorded quota automation first" in reference
 
 

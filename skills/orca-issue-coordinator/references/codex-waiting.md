@@ -6,7 +6,10 @@ or sleep through worker/CI waits: each collection can invoke the model again.
 
 ## Set up a recovery wake-up
 
-Before the first dispatch, save `tmp/<run-id>/coordinator.md`: Run ID,
+Before the first dispatch, save `tmp/<run-id>/coordinator.md` under the
+Coordinator's working repository root (git-ignored, not the installed skill
+checkout). Resolve this checkpoint to an absolute path before recording it or
+embedding it in any wake prompt. Save: Run ID,
 Coordinator terminal handle, agent, resolved settings, task/dispatch/worktree/
 branch/PR state, review counts, pending CI heads/deadlines, and automation ID.
 Refresh it before ending each turn. This is the active Run checkpoint; quota
@@ -39,6 +42,10 @@ between wakes. Orca and the terminal must remain available. If setup fails,
 stop dispatching and report manual resumption instead of relying on notifications.
 
 ## On an orchestration notification or recovery wake-up
+
+If a wake arrives during an active turn, finish the current operation first.
+Treat queued wake prompts as reconciliation requests against the latest saved
+checkpoint and live Run, never as permission to repeat a dispatch or merge.
 
 1. If quota-paused, follow `quota-pause.md` first. Otherwise run `<quota-check>`;
    proceed only on exit 0. A blocking result switches to the quota pause procedure,

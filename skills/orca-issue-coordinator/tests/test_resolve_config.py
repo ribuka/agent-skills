@@ -22,12 +22,13 @@ def run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureF
     spec.loader.exec_module(module)
     monkeypatch.setattr(module, "SKILL_DIR", tmp_path)
 
-    def _run(*args: str, config: str | None = None) -> tuple[int, str, str]:
+    def _run(*args: str, config: str | None = None,
+             agent: str | None = "claude") -> tuple[int, str, str]:
         if config is not None:
             (tmp_path / "config.conf").write_text(config, encoding="utf-8")
         argv = list(args)
-        if "--agent" not in argv:
-            argv = ["--agent", "claude", *argv]
+        if "--agent" not in argv and agent is not None:
+            argv = ["--agent", agent, *argv]
         monkeypatch.setattr(sys, "argv", ["resolve_config.py", *argv])
         code = module.main()
         out, err = capsys.readouterr()
@@ -150,3 +151,9 @@ def test_text_output_includes_agent(run) -> None:
     assert code == 0
     assert "agent: codex" in out
     assert "impl: --model gpt-6.1-sol --effort medium" in out
+
+
+def test_agent_is_required(run) -> None:
+    with pytest.raises(SystemExit) as exc:
+        run(agent=None)
+    assert exc.value.code == 2

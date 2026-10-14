@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Resolve the worker settings (model / effort, concurrency) for orca-issue-coordinator.
 
+The required --agent claude|codex selects both the Coordinator and worker agent.
 Precedence (highest first):
   1. command-line flags (--impl-model, --impl-effort, --merge-model, --merge-effort,
      --max-workers)
   2. <skill-dir>/config.conf
   3. built-in defaults
 
-The config file uses plain KEY=VALUE lines; `#` starts a comment.
+The config file uses plain KEY=VALUE lines; `#` starts a comment. Model and
+effort keys use CLAUDE_ or CODEX_ prefixes; only MAX_WORKERS is shared.
 """
 
 from __future__ import annotations
