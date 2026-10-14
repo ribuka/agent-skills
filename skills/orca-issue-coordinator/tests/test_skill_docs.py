@@ -82,8 +82,8 @@ def test_quota_check_gates_by_exit_code_only() -> None:
     assert "`<quota-check> && <command>`" in skill
     assert "Never grep the" in skill
     assert (
-        "python ~/.agents/skills/quota-guard/scripts/quota_guard.py check && "
-        "python <skill-dir>/scripts/wait_actionable.py" in skill
+        "uv run --no-project ~/.agents/skills/quota-guard/scripts/quota_guard.py check --provider claude && "
+        "uv run --no-project <skill-dir>/scripts/wait_actionable.py" in skill
     )
     assert "grep -o" not in skill
 
@@ -162,3 +162,39 @@ def test_overlapping_tasks_rule_and_plan() -> None:
     plan_step = skill.split("6. Before the first dispatch", 1)[1].split("## 2.", 1)[0]
     assert "For Tasks that edit the same file" in plan_step
     assert "state that decision and its reason" in plan_step
+
+
+def test_provider_is_explicit_for_config_workers_and_quota() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    assert "resolve_config.py --agent <agent>" in skill
+    assert "Always pass `--agent <agent>`" in skill
+    assert "--worktree branch:<branch> --agent <agent>" in skill
+    assert "check --provider <agent>" in skill
+    assert "Codex skips Claude setup" in skill
+    assert "Codex workers use the\n     Claude reviewer" in skill
+    assert "Workers must not merge or schedule resumption wake-ups" in skill
+
+
+def test_codex_waiting_and_recovery_lifecycle() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    reference = (SKILL_DIR / "references/codex-waiting.md").read_text(encoding="utf-8")
+    assert "**Codex:** follow [Codex waiting]" in skill
+    assert "**Claude Code:** run the bundled waiter" in skill
+    assert "If CI checks are pending in **Codex**" in skill
+    for contract in ("coordinator-wait:<run-id>", "*/15 * * * *",
+                     "--precheck-timeout 120", "wake --orca", "--terminal",
+                     "best-effort", "Heartbeat-only", "absolute deadline",
+                     "orca automations remove <id>", "end the turn"):
+        assert contract in reference
+
+
+def test_codex_quota_uses_automation_and_removes_waiting_wake() -> None:
+    reference = QUOTA_PAUSE.read_text(encoding="utf-8")
+    assert "remove the Run's waiting automation first" in reference
+    assert "Do not use\n   `CronCreate` / `CronList` in Codex" in reference
+    assert "remove the recorded quota automation first" in reference
+
+
+def test_codex_disallows_implicit_invocation() -> None:
+    policy = (SKILL_DIR / "agents/openai.yaml").read_text(encoding="utf-8")
+    assert "policy:\n  allow_implicit_invocation: false" in policy
