@@ -1,4 +1,4 @@
-"""Collect Claude statusLine telemetry and gate work; Python standard library only."""
+"""Gate work on Claude statusLine or live Codex quota; standard library only."""
 from __future__ import annotations
 
 import argparse
@@ -7,11 +7,13 @@ import json
 import math
 import os
 from pathlib import Path
+import queue
 import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from datetime import datetime
 
@@ -144,6 +146,146 @@ def check(root: Path, now: float, threshold=95.0, max_age=180.0):
     return result
 
 
+def read_codex_limits(timeout: float = 20.0) -> dict:
+    """Read one live snapshot over app-server stdio, without starting a turn."""
+    executable = shutil.which("codex")
+    if not executable:
+        raise FileNotFoundError("codex executable unavailable")
+    windows = sys.platform == "win32"
+    process = subprocess.Popen(
+        [executable, "app-server"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL, text=True, encoding="utf-8",
+        creationflags=subprocess.CREATE_NO_WINDOW if windows else 0)
+    lines: queue.Queue = queue.Queue()
+
+    def receive() -> None:
+        try:
+            for line in process.stdout:
+                lines.put(line)
+        finally:
+            lines.put(None)
+
+    reader = threading.Thread(target=receive, daemon=True)
+    reader.start()
+    deadline = time.monotonic() + timeout
+
+    def send(message: dict) -> None:
+        process.stdin.write(json.dumps(message) + "\n")
+        process.stdin.flush()
+
+    def response(request_id: int) -> dict:
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("Codex app-server timed out")
+            try:
+                line = lines.get(timeout=remaining)
+            except queue.Empty:
+                raise TimeoutError("Codex app-server timed out") from None
+            if line is None:
+                raise ValueError("Codex app-server closed before response")
+            message = json.loads(line)
+            if not isinstance(message, dict):
+                raise ValueError("Invalid Codex app-server message")
+            if message.get("id") != request_id:
+                continue  # Ignore notifications and unrelated responses.
+            if "error" in message:
+                raise ValueError("Codex app-server request failed")
+            result = message.get("result")
+            if not isinstance(result, dict):
+                raise ValueError("Invalid Codex app-server result")
+            return result
+
+    try:
+        send({"id": 1, "method": "initialize", "params": {
+            "clientInfo": {"name": "quota_guard", "version": "1.0.0"}}})
+        response(1)
+        send({"method": "initialized", "params": {}})
+        send({"id": 2, "method": "account/rateLimits/read"})
+        return response(2)
+    finally:
+        # npm's Windows shim owns a child process; terminate that tree too.
+        try:
+            if windows and process.poll() is None:
+                subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                               timeout=5, creationflags=subprocess.CREATE_NO_WINDOW)
+        finally:
+            if process.poll() is None:
+                process.kill()
+            process.wait(timeout=5)
+            reader.join(timeout=1)
+            process.stdin.close()
+            process.stdout.close()
+
+
+def check_codex(root: Path, now: float, threshold: float = 95.0) -> dict:
+    """Fail closed on unavailable limits; also block exhausted weekly usage."""
+    result = {"state": "UNKNOWN", "reason": "codex_telemetry_unavailable",
+              "provider": "codex", "threshold": threshold,
+              "checkpoint_dir": str(root / "checkpoints"),
+              "local_retry_seconds": LOCAL_RETRY_SECONDS,
+              **wakeup(now + 900)}
+    try:
+        snapshot = read_codex_limits()["rateLimits"]
+        if not isinstance(snapshot, dict) or snapshot.get("limitId") != "codex":
+            raise ValueError("Missing Codex quota bucket")
+        windows = []
+        for name in ("primary", "secondary"):
+            raw = snapshot.get(name)
+            if raw is None and name == "secondary":
+                continue
+            if not isinstance(raw, dict):
+                raise ValueError("Missing quota window")
+            window = {"used_percentage": raw.get("usedPercent"),
+                      "resets_at": raw.get("resetsAt")}
+            duration = raw.get("windowDurationMins")
+            if (not valid_window(window) or window["resets_at"] <= now
+                    or not number(duration) or duration <= 0):
+                raise ValueError("Invalid or expired quota window")
+            datetime.fromtimestamp(window["resets_at"])
+            windows.append((name, duration, window))
+        if windows[0][1] != 300:
+            raise ValueError("Primary quota window is not five hours")
+        blocked = [(name, window) for name, _, window in windows
+                   if window["used_percentage"] >= (threshold if name == "primary" else 100)]
+        if blocked:
+            name, chosen = max(blocked, key=lambda item: item[1]["resets_at"])
+            schedule = wakeup(chosen["resets_at"] + RESET_TOLERANCE)
+            result.update(state="PAUSED_QUOTA", reason="threshold_reached" if name == "primary"
+                          else "secondary_exhausted", blocking_window=name, **chosen)
+            result.update(schedule)
+        elif snapshot.get("rateLimitReachedType") is not None:
+            result["reason"] = "server_limit_reached"
+            return result
+        else:
+            result.update(state="READY", reason="live_account_rate_limits", **windows[0][2])
+            for key in ("wake_at", "wake_local", "cron"):
+                result.pop(key)
+        result.pop("local_retry_seconds")
+    except (OSError, ValueError, TypeError, KeyError, OverflowError, subprocess.SubprocessError):
+        pass
+    return result
+
+
+def wake(terminal: str, text: str) -> int:
+    """Send a resume prompt; always fail the automation precheck to skip its agent."""
+    try:
+        executable = os.environ.get("ORCA_CLI_COMMAND") or (
+            "orca-dev" if os.environ.get("ORCA_DEV_REPO_ROOT") else
+            "orca-ide" if sys.platform.startswith("linux") and not os.environ.get(
+                "ORCA_TERMINAL_HANDLE") else "orca")
+        executable = shutil.which(executable) or executable
+        completed = subprocess.run(
+            [executable, "terminal", "send", "--terminal", terminal, "--text", text, "--enter"],
+            capture_output=True, text=True, timeout=30,
+            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
+        print(json.dumps({"sent": completed.returncode == 0}))
+    except (OSError, subprocess.SubprocessError):
+        print(json.dumps({"sent": False}))
+    return 1
+
+
 def quote_command(value):
     # Double quoted forward-slash paths work in Windows cmd and Git Bash.
     value = str(value).replace("\\", "/")
@@ -254,6 +396,9 @@ def main():
             stream.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="action", required=True)
+    wake_parser = sub.add_parser("wake")
+    wake_parser.add_argument("--terminal", required=True)
+    wake_parser.add_argument("--text", required=True)
     default = Path.home() / ".claude" / "quota-guard"
     for name in ("statusline", "check", "configure"):
         item = sub.add_parser(name)
@@ -266,8 +411,12 @@ def main():
         if name == "configure":
             item.add_argument("--settings", type=Path,
                               default=Path.home() / ".claude" / "settings.json")
+        if name == "check":
+            item.add_argument("--provider", choices=("claude", "codex"), default="claude")
     args = parser.parse_args()
     try:
+        if args.action == "wake":
+            return wake(args.terminal, args.text)
         if args.action == "configure":
             result = configure(args.state_dir, args.settings)
             print(json.dumps(result))
@@ -291,7 +440,11 @@ def main():
                 text = "5h UNKNOWN (telemetry write failed)"
             print((previous + "\n" if previous else "") + text)
             return 0
-        result = check(args.state_dir, time.time(), args.threshold, args.max_age)
+        if args.provider == "codex":
+            root = args.state_dir if args.state_dir != default else Path.home() / ".codex" / "quota-guard"
+            result = check_codex(root, time.time(), args.threshold)
+        else:
+            result = check(args.state_dir, time.time(), args.threshold, args.max_age)
         print(json.dumps(result, separators=(",", ":")))
         return {"READY": 0, "PAUSED_QUOTA": 10, "UNKNOWN": 20}[result["state"]]
     except (OSError, ValueError, TypeError, AttributeError) as error:

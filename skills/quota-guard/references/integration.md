@@ -50,13 +50,19 @@ compatibility from a successful synthetic shell test.
 ## Runtime commands
 
 - `statusline`: accept Claude Code JSON on stdin; print a terminal status line.
-- `check`: print one JSON decision; exit 0 / 10 / 20 for READY / PAUSED / UNKNOWN.
+- `check --provider claude|codex`: print one JSON decision; exit 0 / 10 / 20
+  for READY / PAUSED_QUOTA / UNKNOWN. The default provider is Claude.
+  See [codex.md](codex.md) for live Codex acquisition and Orca wake-ups.
   It includes `checkpoint_dir` (where callers save their checkpoint) and,
   when not READY, `wake_at` / `wake_local` / `cron` for the resumption wake-up.
   An UNKNOWN result also includes `local_retry_seconds`, the wait before one
   local re-check.
 - `configure`: perform initial environment configuration, preserve settings,
   wrap the old statusLine, and enable the timer. Return `changed: false` on a no-op.
+- `wake --terminal <handle> --text <text>`: send an Orca terminal prompt, print
+  `{"sent":true|false}`, and always exit 1, including send failure or timeout.
+  This is an automation precheck, so its nonzero exit must not be treated as
+  an instruction to run the automation's agent. It never schedules anything.
 - `check --threshold 95 --max-age 180 --state-dir "<path>"`: override policy.
   If changing the display policy, also edit the statusLine command's corresponding
   flags; the check command's policy controls the caller's decisions.
@@ -78,12 +84,12 @@ reset timestamp more than 120 seconds later. Timestamps within 120 seconds of
 the latest timestamp are grouped as one window, using the latest reset for
 resumption. High records are retained for 120 seconds beyond their reset so an
 expired slightly earlier timestamp cannot bypass the latch. A low reading in the same reset window remains blocked
-by a prior high reading. The guard covers the 5-hour window; it does not enforce
-7-day limits, API billing limits, or Codex usage limits.
+by a prior high reading. The Claude provider covers only the 5-hour window;
+it does not enforce 7-day limits or API billing limits.
 
 ## Caller contract
 
-- Load `quota-guard` and run `configure` once per caller operation; afterwards
+- Load `quota-guard` and, for Claude only, run `configure` once per caller operation; afterwards
   only call the `check` helper at the caller's boundaries, without reloading
   the skill or reading snapshot history.
 - Continue only on READY; PAUSED_QUOTA and UNKNOWN block new work.
