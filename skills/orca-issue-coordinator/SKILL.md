@@ -62,7 +62,7 @@ It prints the agent, the `--model` / `--effort` pair for each phase, the
 `CLAUDE_MERGE_EFFORT`, their `CODEX_` equivalents, and shared `MAX_WORKERS`.
 Unprefixed model/effort keys are not supported. Claude defaults remain
 `opus`/`medium` for implementation and `sonnet`/`medium` for merge preparation;
-Codex defaults are `gpt-6.1-sol`/`medium` and `gpt-6.1-terra`/`medium`.
+Codex defaults are `gpt-6.1-sol`/`medium` for both phases.
 Concurrency defaults to 3. Always pass `--agent <agent>` and the resolved
 model/effort on every `worker-start`, and never exceed `MAX_WORKERS`.
 Claude effort values: `low`, `medium`, `high`, `xhigh`, `max`;
@@ -126,7 +126,9 @@ Codex: `minimal`, `low`, `medium`, `high`, `xhigh` (no `max`).
    Run the quota `check` before each
    dispatch and dispatch only on READY. Always pass `--agent <agent>` and the implementation
    `--model` and `--effort` from step 0, and confirm `launch.effective` in the
-   receipt.
+   receipt. This confirms launch preferences, not successful model execution.
+   If no result arrives, inspect bounded worker output for provider errors;
+   an unsupported-model error blocks that attempt even when launch was ready.
 
 ## 2. Parallel implementation
 

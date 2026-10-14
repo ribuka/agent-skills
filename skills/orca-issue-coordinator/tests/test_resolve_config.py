@@ -86,7 +86,7 @@ def test_empty_max_workers_argument_fails(run, config: str | None) -> None:
 
 @pytest.mark.parametrize("agent,impl,merge", [
     ("claude", "opus", "sonnet"),
-    ("codex", "gpt-6.1-sol", "gpt-6.1-terra"),
+    ("codex", "gpt-6.1-sol", "gpt-6.1-sol"),
 ])
 def test_agent_defaults(run, agent: str, impl: str, merge: str) -> None:
     code, out, _ = run("--agent", agent, "--json")

@@ -29,7 +29,7 @@ CLAUDE_DEFAULTS = {
 CODEX_DEFAULTS = {
     **CLAUDE_DEFAULTS,
     "IMPL_MODEL": "gpt-6.1-sol",
-    "MERGE_MODEL": "gpt-6.1-terra",
+    "MERGE_MODEL": "gpt-6.1-sol",
 }
 DEFAULTS = {"claude": CLAUDE_DEFAULTS, "codex": CODEX_DEFAULTS}
 CONFIG_KEYS = {f"{agent.upper()}_{key}" for agent in DEFAULTS

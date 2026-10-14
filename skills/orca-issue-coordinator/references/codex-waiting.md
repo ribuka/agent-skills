@@ -75,6 +75,14 @@ with the installed Orca build. If nudges are too frequent, report the measured
 cost and require an Orca notification filter rather than claiming token-free
 waiting. No delivery/frequency measurement is established by these instructions.
 
+For a bounded observed environment and outstanding live cases, see
+[live verification](live-verification.md). Verify the scheduler's precheck path
+with an actual scheduled run and inspect its precheck output and terminal/session
+fields. In the observed Orca 1.4.222 manual `automations run`, `precheckResult`
+was null and a separate agent terminal started; manual execution is not proof of
+scheduled recovery or of precheck suppression. Use an inert fallback prompt
+during probes, then remove the probe automation and any extra probe terminal.
+
 ## Pending CI at step 14
 
 Run `gh pr checks <pr>` once. Exit 8 means pending: save the PR head SHA and
