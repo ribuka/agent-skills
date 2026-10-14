@@ -10,7 +10,7 @@ CODEX_IMPL_EFFORT=medium
 # Merge-preparation workers (implement-review-merge steps 8-9)
 CLAUDE_MERGE_MODEL=sonnet
 CLAUDE_MERGE_EFFORT=medium
-CODEX_MERGE_MODEL=gpt-6.1-terra
+CODEX_MERGE_MODEL=gpt-6.1-sol
 CODEX_MERGE_EFFORT=medium
 
 # Maximum number of workers running at once (implementation and merge

@@ -62,11 +62,22 @@ It prints the agent, the `--model` / `--effort` pair for each phase, the
 `CLAUDE_MERGE_EFFORT`, their `CODEX_` equivalents, and shared `MAX_WORKERS`.
 Unprefixed model/effort keys are not supported. Claude defaults remain
 `opus`/`medium` for implementation and `sonnet`/`medium` for merge preparation;
-Codex defaults are `gpt-6.1-sol`/`medium` and `gpt-6.1-terra`/`medium`.
+Codex defaults are `gpt-6.1-sol`/`medium` for both phases.
 Concurrency defaults to 3. Always pass `--agent <agent>` and the resolved
 model/effort on every `worker-start`, and never exceed `MAX_WORKERS`.
 Claude effort values: `low`, `medium`, `high`, `xhigh`, `max`;
 Codex: `minimal`, `low`, `medium`, `high`, `xhigh` (no `max`).
+
+For every implementation and merge-preparation dispatch, verify
+`launch.effective`. A ready receipt confirms launch preferences, not successful
+model execution. On a recovery wake or a worker-status inspection, if no
+assistant result has appeared, inspect bounded worker output for provider
+errors even if the fleet projection says live/working. A positive provider
+rejection blocks that attempt: load Orca's orchestration recovery guide, stop
+the failed attempt with `worker-stop --dispatch <dispatch-id>` following its
+authority rules, report the blocker and ask the user for a supported model.
+Do not retry the rejected model or automatically fall back to another model.
+Silence alone is not evidence of failure and does not authorize stopping.
 
 ## 1. Plan and dispatch
 

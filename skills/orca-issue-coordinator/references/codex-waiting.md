@@ -75,6 +75,11 @@ with the installed Orca build. If nudges are too frequent, report the measured
 cost and require an Orca notification filter rather than claiming token-free
 waiting. No delivery/frequency measurement is established by these instructions.
 
+Verify recovery through an actual scheduled run, inspecting precheck output and
+terminal/session fields. Manual `automations run` is not evidence that the
+scheduler's precheck ran or suppressed a separate agent; confirm the behavior
+against the installed Orca build.
+
 ## Pending CI at step 14
 
 Run `gh pr checks <pr>` once. Exit 8 means pending: save the PR head SHA and
