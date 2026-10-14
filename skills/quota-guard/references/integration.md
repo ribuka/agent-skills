@@ -59,7 +59,7 @@ compatibility from a successful synthetic shell test.
   local re-check.
 - `configure`: perform initial environment configuration, preserve settings,
   wrap the old statusLine, and enable the timer. Return `changed: false` on a no-op.
-- `wake --terminal <handle> --text <text>`: send an Orca terminal prompt, print
+- `wake --orca <absolute-executable> --terminal <handle> --text <text>`: send an Orca terminal prompt, print
   `{"sent":true|false}`, and always exit 1, including send failure or timeout.
   This is an automation precheck, so its nonzero exit must not be treated as
   an instruction to run the automation's agent. It never schedules anything.

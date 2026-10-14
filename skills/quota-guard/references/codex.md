@@ -41,8 +41,9 @@ live provider. `--max-age` applies only to Claude. Codex checkpoints default to
 2. If `ORCA_TERMINAL_HANDLE` is absent, do not create an automation. Report the
    checkpoint path and that manual resumption is required, then end the turn.
 3. Load `orca-cli` and resolve its executable for this session. Use that
-   executable for all `orca` placeholders below; keep it available to the
-   scheduler too (for example via `ORCA_CLI_COMMAND`). If CLI/runtime access is
+   executable for all `orca` placeholders below. Resolve its absolute path
+   now and embed it in the precheck's required `--orca` argument; do not rely
+   on the scheduler inheriting this terminal's environment. If CLI/runtime access is
    unavailable, keep the checkpoint and report manual resumption.
 4. Run `orca automations list --json` and look for the exact stable name
    `quota-guard:<operation-id>`. Reuse the matching pending automation; never
@@ -62,7 +63,7 @@ live provider. `--max-age` applies only to Claude. Codex checkpoints default to
    orca automations create --name 'quota-guard:<operation-id>' \
      --trigger '<cron>' --timezone '<local-IANA-timezone>' \
      --provider codex --prompt 'Unused: precheck must always exit nonzero' \
-     --precheck 'uv run --no-project "<absolute-skill-dir>/scripts/quota_guard.py" wake --terminal "<handle>" --text "<resume-text>"' \
+     --precheck 'uv run --no-project "<absolute-skill-dir>/scripts/quota_guard.py" wake --orca "<absolute-orca-executable>" --terminal "<handle>" --text "<resume-text>"' \
      --precheck-timeout 120 --workspace 'path:<absolute-repo-path>' \
      --missed-run-grace-minutes 60 --enabled
    ```

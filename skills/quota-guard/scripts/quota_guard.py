@@ -10,6 +10,7 @@ from pathlib import Path
 import queue
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -155,6 +156,7 @@ def read_codex_limits(timeout: float = 20.0) -> dict:
     process = subprocess.Popen(
         [executable, "app-server"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL, text=True, encoding="utf-8",
+        start_new_session=not windows,
         creationflags=subprocess.CREATE_NO_WINDOW if windows else 0)
     lines: queue.Queue = queue.Queue()
 
@@ -206,7 +208,12 @@ def read_codex_limits(timeout: float = 20.0) -> dict:
     finally:
         # npm's Windows shim owns a child process; terminate that tree too.
         try:
-            if windows and process.poll() is None:
+            if not windows:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            elif process.poll() is None:
                 subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"],
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                timeout=5, creationflags=subprocess.CREATE_NO_WINDOW)
@@ -216,7 +223,10 @@ def read_codex_limits(timeout: float = 20.0) -> dict:
             process.wait(timeout=5)
             reader.join(timeout=1)
             process.stdin.close()
-            process.stdout.close()
+            # A surviving descendant may still own the pipe. Never wait on the
+            # reader's buffered-stream lock after the bounded join.
+            if not reader.is_alive():
+                process.stdout.close()
 
 
 def check_codex(root: Path, now: float, threshold: float = 95.0) -> dict:
@@ -268,17 +278,12 @@ def check_codex(root: Path, now: float, threshold: float = 95.0) -> dict:
     return result
 
 
-def wake(terminal: str, text: str) -> int:
+def wake(terminal: str, text: str, executable: str) -> int:
     """Send a resume prompt; always fail the automation precheck to skip its agent."""
     try:
-        executable = os.environ.get("ORCA_CLI_COMMAND") or (
-            "orca-dev" if os.environ.get("ORCA_DEV_REPO_ROOT") else
-            "orca-ide" if sys.platform.startswith("linux") and not os.environ.get(
-                "ORCA_TERMINAL_HANDLE") else "orca")
-        executable = shutil.which(executable) or executable
         completed = subprocess.run(
             [executable, "terminal", "send", "--terminal", terminal, "--text", text, "--enter"],
-            capture_output=True, text=True, timeout=30,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30,
             creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
         print(json.dumps({"sent": completed.returncode == 0}))
     except (OSError, subprocess.SubprocessError):
@@ -399,10 +404,11 @@ def main():
     wake_parser = sub.add_parser("wake")
     wake_parser.add_argument("--terminal", required=True)
     wake_parser.add_argument("--text", required=True)
+    wake_parser.add_argument("--orca", required=True, help="Resolved Orca executable absolute path")
     default = Path.home() / ".claude" / "quota-guard"
     for name in ("statusline", "check", "configure"):
         item = sub.add_parser(name)
-        item.add_argument("--state-dir", type=Path, default=default)
+        item.add_argument("--state-dir", type=Path)
         if name in ("statusline", "check"):
             item.add_argument("--threshold", type=float, default=95)
             item.add_argument("--max-age", type=float, default=180)
@@ -416,7 +422,10 @@ def main():
     args = parser.parse_args()
     try:
         if args.action == "wake":
-            return wake(args.terminal, args.text)
+            return wake(args.terminal, args.text, args.orca)
+        if args.state_dir is None:
+            args.state_dir = (Path.home() / ".codex" / "quota-guard"
+                              if args.action == "check" and args.provider == "codex" else default)
         if args.action == "configure":
             result = configure(args.state_dir, args.settings)
             print(json.dumps(result))
@@ -441,8 +450,7 @@ def main():
             print((previous + "\n" if previous else "") + text)
             return 0
         if args.provider == "codex":
-            root = args.state_dir if args.state_dir != default else Path.home() / ".codex" / "quota-guard"
-            result = check_codex(root, time.time(), args.threshold)
+            result = check_codex(args.state_dir, time.time(), args.threshold)
         else:
             result = check(args.state_dir, time.time(), args.threshold, args.max_age)
         print(json.dumps(result, separators=(",", ":")))

@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import time
+from types import SimpleNamespace
 
 import pytest
 
@@ -41,12 +43,18 @@ def test_five_hour_boundary(tmp_path, monkeypatch, used, state):
 @pytest.mark.parametrize("secondary,state", [(None, "READY"), (95, "READY"),
                                              (100, "PAUSED_QUOTA")])
 def test_secondary_policy(tmp_path, monkeypatch, secondary, state):
-    monkeypatch.setattr(guard, "read_codex_limits", lambda: snapshot(96 if secondary == 100 else 4, secondary))
+    monkeypatch.setattr(guard, "read_codex_limits", lambda: snapshot(4, secondary))
     result = guard.check_codex(tmp_path, NOW)
     assert result["state"] == state
     if secondary == 100:
         assert result["reason"] == "secondary_exhausted"
+        assert result["blocking_window"] == "secondary"
         assert result["wake_at"] >= NOW + 50120
+
+
+def test_both_windows_block_until_later_reset(tmp_path, monkeypatch):
+    monkeypatch.setattr(guard, "read_codex_limits", lambda: snapshot(96, 100))
+    assert guard.check_codex(tmp_path, NOW)["wake_at"] >= NOW + 50120
 
 
 @pytest.mark.parametrize("field,value", [("usedPercent", True), ("usedPercent", -1),
@@ -98,12 +106,14 @@ def test_acquisition_errors_are_unknown(tmp_path, monkeypatch, error):
 def fake_server(tmp_path, monkeypatch):
     """Launch a real local pipe peer; never invoke Codex or use the network."""
     script = tmp_path / "server.py"
-    script.write_text('''import json, sys, time
+    script.write_text('''import json, sys, time, subprocess
 mode = sys.argv[1]
 first = json.loads(sys.stdin.readline())
 assert first['method'] == 'initialize'
 assert first['params']['clientInfo']['name'] == 'quota_guard'
-if mode == 'timeout':
+if mode == 'descendant':
+    subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])
+if mode in ('timeout', 'descendant'):
     time.sleep(30)
     sys.exit(0)
 if mode == 'eof':
@@ -131,9 +141,9 @@ sys.stdin.read()
         return process
 
     monkeypatch.setattr(guard.shutil, "which", lambda _: sys.executable)
-    monkeypatch.setattr(guard.subprocess, "Popen", start)
-    # The fixture launches Python directly, so no Windows npm shim needs taskkill.
-    monkeypatch.setattr(guard.sys, "platform", "linux")
+    transport = SimpleNamespace(**vars(subprocess))
+    transport.Popen = start
+    monkeypatch.setattr(guard, "subprocess", transport)
     yield mode, processes
     assert processes and all(process.poll() is not None for process in processes)
 
@@ -149,6 +159,14 @@ def test_transport_errors_and_cleanup(fake_server, mode):
         guard.read_codex_limits(timeout=0.3 if mode == "timeout" else 5)
 
 
+def test_timeout_terminates_descendants_without_blocking_close(fake_server):
+    fake_server[0][0] = "descendant"
+    started = time.monotonic()
+    with pytest.raises(TimeoutError):
+        guard.read_codex_limits(timeout=1)
+    assert time.monotonic() - started < 8
+
+
 @pytest.mark.parametrize("state,code", [("READY", 0), ("PAUSED_QUOTA", 10), ("UNKNOWN", 20)])
 def test_codex_cli_contract(tmp_path, monkeypatch, capsys, state, code):
     monkeypatch.setattr(sys, "argv", [str(SCRIPT), "check", "--provider", "codex",
@@ -161,10 +179,24 @@ def test_codex_cli_contract(tmp_path, monkeypatch, capsys, state, code):
     assert json.loads(capsys.readouterr().out)["state"] == state
 
 
+def test_explicit_claude_state_path_is_preserved_for_codex(monkeypatch, capsys):
+    root = Path.home() / ".claude" / "quota-guard"
+    monkeypatch.setattr(sys, "argv", [str(SCRIPT), "check", "--provider", "codex",
+                                      "--state-dir", str(root)])
+
+    def check(state_dir: Path, now: float, threshold: float) -> dict:
+        assert state_dir == root
+        return {"state": "READY"}
+
+    monkeypatch.setattr(guard, "check_codex", check)
+    assert guard.main() == 0
+    assert json.loads(capsys.readouterr().out)["state"] == "READY"
+
+
 @pytest.mark.parametrize("returncode", [0, 1])
 def test_wake_always_fails_precheck(monkeypatch, capsys, returncode):
-    monkeypatch.setenv("ORCA_CLI_COMMAND", "custom-orca")
-    monkeypatch.setattr(guard.shutil, "which", lambda command: command)
+    monkeypatch.delenv("ORCA_CLI_COMMAND", raising=False)
+    executable = str(Path.cwd() / "custom-orca")
     calls = []
 
     def run(command: list[str], **kwargs) -> subprocess.CompletedProcess:
@@ -173,11 +205,13 @@ def test_wake_always_fails_precheck(monkeypatch, capsys, returncode):
 
     monkeypatch.setattr(guard.subprocess, "run", run)
     text = 'Resume quota-guard:op; checkpoint "C:/notes/a b.md"; check --provider codex; READY only'
-    assert guard.wake("term_123", text) == 1
+    assert guard.wake("term_123", text, executable) == 1
     assert json.loads(capsys.readouterr().out) == {"sent": returncode == 0}
-    assert calls[0][0] == ["custom-orca", "terminal", "send", "--terminal", "term_123",
+    assert calls[0][0] == [executable, "terminal", "send", "--terminal", "term_123",
                            "--text", text, "--enter"]
     assert calls[0][1]["timeout"] == 30
+    assert calls[0][1]["stdout"] == subprocess.DEVNULL
+    assert calls[0][1]["stderr"] == subprocess.DEVNULL
 
 
 @pytest.mark.parametrize("error", [FileNotFoundError(), subprocess.TimeoutExpired("orca", 30)])
@@ -185,5 +219,5 @@ def test_wake_send_failure_still_skips_agent(monkeypatch, capsys, error):
     def run(*args, **kwargs) -> None:
         raise error
     monkeypatch.setattr(guard.subprocess, "run", run)
-    assert guard.wake("term_123", "resume") == 1
+    assert guard.wake("term_123", "resume", "custom-orca") == 1
     assert json.loads(capsys.readouterr().out) == {"sent": False}
