@@ -12,7 +12,7 @@ disable-model-invocation: true
 - Respond in Japanese.
 - Keep the Coordinator's context small: every turn re-reads it. Follow
   **Token budget** below throughout the run.
-- Gate new work on the Claude Code 5-hour quota. Follow **Quota control**
+- Gate new work on the current agent's 5-hour quota. Follow **Quota control**
   below throughout the run.
 
 `<skill-dir>` below is the directory containing this file.
@@ -42,7 +42,9 @@ On success it prints `skill-checkout: <path>`; keep that path. Never update
 PRs change skills: every worker must run the same skill version. Report it as
 stale at the end instead (step 17).
 
-Then resolve the worker settings.
+Then identify this Coordinator's runtime as `<agent>` (`claude` or `codex`).
+Workers always use that same agent; do not offer an independent worker-agent
+override. Resolve the worker settings for it.
 
 Run once at the start, passing through any `--impl-model`, `--impl-effort`,
 `--merge-model`, `--merge-effort`, or `--max-workers` flags the user gave.
@@ -50,15 +52,21 @@ If the user explicitly asks to run the Issues serially (one at a time), pass
 `--max-workers 1`:
 
 ```bash
-uv run <skill-dir>/scripts/resolve_config.py [user flags]
+uv run <skill-dir>/scripts/resolve_config.py --agent <agent> [user flags]
 ```
 
-It prints the `--model` / `--effort` pair for each phase, the
-`max-workers: <n>` concurrency limit (`MAX_WORKERS`), and where each value
-came from (argument > `<skill-dir>/config.conf` > defaults: implementation
-`opus`/`medium`, merge preparation `sonnet`/`medium`, `MAX_WORKERS` 3). Use
-the model and effort on every `worker-start`, and never run more than
-`MAX_WORKERS` workers at once.
+It prints the agent, the `--model` / `--effort` pair for each phase, the
+`max-workers: <n>` concurrency limit (`MAX_WORKERS`), and each value's source
+(argument > `<skill-dir>/config.conf` > defaults). Configuration keys are
+`CLAUDE_IMPL_MODEL`, `CLAUDE_IMPL_EFFORT`, `CLAUDE_MERGE_MODEL`,
+`CLAUDE_MERGE_EFFORT`, their `CODEX_` equivalents, and shared `MAX_WORKERS`.
+Unprefixed model/effort keys are not supported. Claude defaults remain
+`opus`/`medium` for implementation and `sonnet`/`medium` for merge preparation;
+Codex defaults are `gpt-6.1-sol`/`medium` and `gpt-6.1-terra`/`medium`.
+Concurrency defaults to 3. Always pass `--agent <agent>` and the resolved
+model/effort on every `worker-start`, and never exceed `MAX_WORKERS`.
+Claude effort values: `low`, `medium`, `high`, `xhigh`, `max`;
+Codex: `minimal`, `low`, `medium`, `high`, `xhigh` (no `max`).
 
 ## 1. Plan and dispatch
 
@@ -81,16 +89,18 @@ the model and effort on every `worker-start`, and never run more than
    - If the overlap is still unclear after reading the Issue bodies, run the
      Tasks in order.
 4. Create one Orchestration Run. Then, before any dispatch, set up the
-   quota guard with this Run ID (see **Quota control**). Plan one Task per
+   quota guard with this Run ID (see **Quota control**). In Codex, after READY,
+   set up the recovery automation in [Codex waiting](references/codex-waiting.md)
+   before dispatching. Plan one Task per
    Issue by default, and create each Task in exactly one way:
    - **Independent Task** (no dependencies): do not create it in advance.
-     `worker-start --spec "<brief>" --task-title "#<issue> <title>"`
+     `worker-start --spec "<brief>" --task-title "#<issue> <title>" --agent <agent>`
      creates the Task and starts its worker in one call (step 6).
    - **Dependent Task** (has dependencies, or other Tasks depend on it):
      create it up front with
      `task-create --spec "<brief>" --task-title "#<issue> <title>" --deps '<json_array>'`
      so the DAG is recorded, then start it with
-     `worker-start --task <task_id>` (step 6).
+     `worker-start --task <task_id> --agent <agent>` (step 6).
    - Never create a Task you will not start. Never start a worker with
      `--spec` for an Issue that already has a Task; that leaves an unused
      Task in the Run, and cancelling it leaves a `failed` one.
@@ -114,7 +124,7 @@ the model and effort on every `worker-start`, and never run more than
    `worker-start --spec` for an independent Task,
    `worker-start --task <task_id>` for a Task created with `task-create`.
    Run the quota `check` before each
-   dispatch and dispatch only on READY. Always pass the implementation
+   dispatch and dispatch only on READY. Always pass `--agent <agent>` and the implementation
    `--model` and `--effort` from step 0, and confirm `launch.effective` in the
    receipt.
 
@@ -125,7 +135,9 @@ the model and effort on every `worker-start`, and never run more than
    - Provide the Issue number, scope, acceptance criteria, and dependencies.
      Tell the worker to read the Issue itself.
    - Require implementation, tests, commit, push, PR creation,
-     and `pr-cross-review` with findings addressed.
+     and `pr-cross-review` with findings addressed. Codex workers use the
+     Claude reviewer; Claude workers use the Codex reviewer, as that skill
+     specifies.
    - Require the handoff fields in its `worker_done` report (see the
      implement-review-merge skill). The report may also state whether the
      PR conflicts with `main`.
@@ -133,7 +145,7 @@ the model and effort on every `worker-start`, and never run more than
      `main` moves during implementation. Syncing with `main`, resolving
      conflicts, and re-checking CI happen once, in merge preparation
      (step 13).
-   - Workers must not merge or create wake-ups (`CronCreate`); the
+   - Workers must not merge or schedule resumption wake-ups; the
      Coordinator alone owns the Run's checkpoint and wake-up.
 8. Fill available worker slots before waiting for completions.
    Dispatch additional tasks as slots become available, holding back
@@ -166,8 +178,8 @@ the model and effort on every `worker-start`, and never run more than
 13. When a worker slot is free (within `MAX_WORKERS`) and after a READY
     quota `check`, start a **new** worker for
     **Orchestration worker / Merge preparation** mode in the PR's existing
-    worktree, with the merge-preparation `--model` / `--effort` from step 0:
-    `worker-start --spec "<handoff>" --task-title "#<issue> PR #<pr> merge prep" --worktree branch:<branch>`.
+    worktree, with `--agent <agent>` and the merge-preparation `--model` / `--effort` from step 0:
+    `worker-start --spec "<handoff>" --task-title "#<issue> PR #<pr> merge prep" --worktree branch:<branch> --agent <agent>`.
     The Implementation Task is already completed and cannot be started again,
     so do not pass `--task <task_id>`. Do not reuse the implementation
     worker's conversation. The `<handoff>` is short:
@@ -205,7 +217,10 @@ the model and effort on every `worker-start`, and never run more than
     - The PR branch includes the latest `origin/main`.
     - Required tests and CI have passed on the current PR commit.
     - GitHub merge requirements are satisfied.
-    - If CI checks are pending, use
+    - If CI checks are pending in **Codex**, follow
+      [Codex waiting](references/codex-waiting.md): save the PR/head/deadline,
+      end the turn, and inspect once on the next wake-up. Do not run a foreground
+      watcher or merge while pending. In **Claude Code**, use
       `gh pr checks <pr> --watch --interval 30` with an overall timeout
       (default: 30 minutes) set before starting. Use automatic completion
       notifications only when the harness guarantees them and enforces a
@@ -225,6 +240,7 @@ the model and effort on every `worker-start`, and never run more than
     outcome and PR URL for each Issue. If any merged PR belongs to the
     repository of the `skill-checkout` path from step 0, ask the user to
     update that checkout to the latest `origin/main`.
+    Remove this Run's waiting automation, if any (see **Waiting**).
     Then end the Run. ORCA has no command that closes a Run; the Run ends
     when no worker terminal still owes a decision:
     `orca orchestration worker-list --run <run-id> --terminal-state reclaimable --json`
@@ -235,11 +251,12 @@ the model and effort on every `worker-start`, and never run more than
 
 Use the `quota-guard` skill (`~/.agents/skills/quota-guard`) to stop starting
 new work near the 5-hour limit. `<quota-check>` below means
-`python ~/.agents/skills/quota-guard/scripts/quota_guard.py check`.
+`uv run --no-project ~/.agents/skills/quota-guard/scripts/quota_guard.py check --provider <agent>`.
 
 - **Setup, once per Run:** right after creating the Orchestration Run (its
-  ID is `<run-id>` below), load `quota-guard` once, perform its setup
-  (`configure`) and the first `<quota-check>`. If that check already blocks,
+  ID is `<run-id>` below), load `quota-guard` once and run the first `<quota-check>`.
+  Claude Code first performs its documented `configure` setup using `uv run`;
+  Codex skips Claude setup and uses the live Codex provider. If that check already blocks,
   pause as below; no worker has been dispatched yet. Do not reload the skill
   or read snapshot history afterwards; only run `<quota-check>` and read its
   one-line JSON result.
@@ -277,11 +294,14 @@ with the Task; no terminal handle is needed.
 
 ## Waiting
 
-Run the bundled waiter as a **background** command whenever you are waiting
+**Codex:** follow [Codex waiting](references/codex-waiting.md). End the turn
+while idle; never run or poll `wait_actionable.py`, even in the background.
+
+**Claude Code:** run the bundled waiter as a **background** command whenever you are waiting
 for workers, and only after a READY `<quota-check>`:
 
 ```bash
-python ~/.agents/skills/quota-guard/scripts/quota_guard.py check && python <skill-dir>/scripts/wait_actionable.py [--terminal <handle>] [--run <run_id>]
+uv run --no-project ~/.agents/skills/quota-guard/scripts/quota_guard.py check --provider claude && uv run --no-project <skill-dir>/scripts/wait_actionable.py [--terminal <handle>] [--run <run_id>]
 ```
 
 The `&&` starts the waiter only when the check exits `0` (READY); on any
@@ -307,7 +327,11 @@ other exit code, handle the pause as in **Quota control** instead.
 
 ## Token budget
 
-- **Ignore heartbeat nudges.** While the waiter is running, ORCA still types
+- **Codex:** consume one non-waiting Delivery per notification as specified in
+  the waiting reference, acknowledge heartbeat-only batches, then end the turn.
+  Do not assume a heartbeat nudge carries actionable work.
+
+- **Claude Code: ignore heartbeat nudges.** While the waiter is running, ORCA still types
   `You have N orchestration message(s). Run orca orchestration check ...` into
   this terminal on every heartbeat. Do not call any tool for it. Reply with
   one short line (e.g. `待機中`) and end the turn. Act only when the waiter
