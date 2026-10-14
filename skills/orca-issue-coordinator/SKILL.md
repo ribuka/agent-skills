@@ -68,6 +68,17 @@ model/effort on every `worker-start`, and never exceed `MAX_WORKERS`.
 Claude effort values: `low`, `medium`, `high`, `xhigh`, `max`;
 Codex: `minimal`, `low`, `medium`, `high`, `xhigh` (no `max`).
 
+For every implementation and merge-preparation dispatch, verify
+`launch.effective`. A ready receipt confirms launch preferences, not successful
+model execution. On a recovery wake or a worker-status inspection, if no
+assistant result has appeared, inspect bounded worker output for provider
+errors even if the fleet projection says live/working. A positive provider
+rejection blocks that attempt: load Orca's orchestration recovery guide, stop
+the failed attempt with `worker-stop --dispatch <dispatch-id>` following its
+authority rules, report the blocker and ask the user for a supported model.
+Do not retry the rejected model or automatically fall back to another model.
+Silence alone is not evidence of failure and does not authorize stopping.
+
 ## 1. Plan and dispatch
 
 1. Read the compact guide: `orca skills get orchestration`. Do **not** use
@@ -126,9 +137,7 @@ Codex: `minimal`, `low`, `medium`, `high`, `xhigh` (no `max`).
    Run the quota `check` before each
    dispatch and dispatch only on READY. Always pass `--agent <agent>` and the implementation
    `--model` and `--effort` from step 0, and confirm `launch.effective` in the
-   receipt. This confirms launch preferences, not successful model execution.
-   If no result arrives, inspect bounded worker output for provider errors;
-   an unsupported-model error blocks that attempt even when launch was ready.
+   receipt.
 
 ## 2. Parallel implementation
 

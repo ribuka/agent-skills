@@ -75,13 +75,12 @@ with the installed Orca build. If nudges are too frequent, report the measured
 cost and require an Orca notification filter rather than claiming token-free
 waiting. No delivery/frequency measurement is established by these instructions.
 
-For a bounded observed environment and outstanding live cases, see
-[live verification](live-verification.md). Verify the scheduler's precheck path
-with an actual scheduled run and inspect its precheck output and terminal/session
-fields. In the observed Orca 1.4.222 manual `automations run`, `precheckResult`
-was null and a separate agent terminal started; manual execution is not proof of
-scheduled recovery or of precheck suppression. Use an inert fallback prompt
-during probes, then remove the probe automation and any extra probe terminal.
+Verify recovery through an actual scheduled run, inspecting precheck output and
+terminal/session fields. Manual `automations run` is not evidence that the
+scheduler's precheck ran or suppressed a separate agent; confirm the behavior
+against the installed Orca build. Observations and remaining live checks are
+recorded in [Issue #62](https://github.com/ribuka/agent-skills/issues/62) and
+[Issue #63](https://github.com/ribuka/agent-skills/issues/63).
 
 ## Pending CI at step 14
 
