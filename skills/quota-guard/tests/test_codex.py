@@ -1,5 +1,6 @@
 """Codex live transport and Orca wake regression tests using local fixtures only."""
 import importlib.util
+import io
 import json
 from pathlib import Path
 import subprocess
@@ -165,6 +166,36 @@ def test_timeout_terminates_descendants_without_blocking_close(fake_server):
     with pytest.raises(TimeoutError):
         guard.read_codex_limits(timeout=1)
     assert time.monotonic() - started < 8
+
+
+@pytest.mark.parametrize("error", [ProcessLookupError(), PermissionError()])
+def test_cleanup_skips_locked_pipe_and_tolerates_exited_group(monkeypatch, error):
+    messages = guard.queue.Queue()
+    for request_id in (1, 2):
+        messages.put(json.dumps({"id": request_id, "result": {}}))
+    events = []
+    stream = SimpleNamespace(close=lambda: pytest.fail("Must not close an active reader's pipe"))
+    process = SimpleNamespace(
+        pid=123, stdin=io.StringIO(), stdout=stream, poll=lambda: None,
+        kill=lambda: events.append("kill"), wait=lambda **_: events.append("wait"))
+    reader = SimpleNamespace(start=lambda: None, join=lambda **_: None, is_alive=lambda: True)
+    transport = SimpleNamespace(**vars(subprocess))
+    transport.Popen = lambda *_, **__: process
+
+    def killpg(pid: int, sig: int) -> None:
+        assert pid == 123
+        raise error
+
+    monkeypatch.setattr(guard, "sys", SimpleNamespace(platform="darwin"))
+    monkeypatch.setattr(guard, "signal", SimpleNamespace(SIGKILL=9))
+    monkeypatch.setattr(guard, "subprocess", transport)
+    monkeypatch.setattr(guard, "threading", SimpleNamespace(Thread=lambda **_: reader))
+    monkeypatch.setattr(guard, "queue", SimpleNamespace(Queue=lambda: messages))
+    monkeypatch.setattr(guard.os, "killpg", killpg, raising=False)
+    monkeypatch.setattr(guard.shutil, "which", lambda _: "fake-codex")
+    assert guard.read_codex_limits() == {}
+    assert events == ["kill", "wait"]
+    assert process.stdin.closed
 
 
 @pytest.mark.parametrize("state,code", [("READY", 0), ("PAUSED_QUOTA", 10), ("UNKNOWN", 20)])

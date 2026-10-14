@@ -211,7 +211,7 @@ def read_codex_limits(timeout: float = 20.0) -> dict:
             if not windows:
                 try:
                     os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
+                except (ProcessLookupError, PermissionError):
                     pass
             elif process.poll() is None:
                 subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"],
