@@ -1,6 +1,6 @@
 ---
 name: quota-guard
-description: Set up and apply a reusable Claude Code 5-hour quota guard for long-running tasks, orchestration, implementation, or reviews. Use when another skill requests quota checks or when asked to pause at 95% usage and resume after reset. Includes a local Python statusLine helper; does not support Codex quota telemetry.
+description: Gate long-running work at 95% of Claude Code or Codex five-hour quota and resume after reset. Use when another skill requests quota checks or when asked to pause at 95% usage. Uses Claude statusLine telemetry or Codex app-server, with scheduled resumption.
 ---
 
 # Quota Guard
@@ -10,6 +10,12 @@ description: Set up and apply a reusable Claude Code 5-hour quota guard for long
   `scripts/quota_guard.py`; do not assume the current directory is the skill folder.
 
 ## Initialize automatically
+
+Choose the current runtime's provider explicitly. In Codex, read
+[codex.md](references/codex.md), skip Claude configuration entirely, and run
+`uv run --no-project "<skill-dir>/scripts/quota_guard.py" check --provider codex`.
+No statusLine setup, local freshness check, or session-log scan is needed.
+The following initialization steps apply only to Claude Code.
 
 1. Treat this skill folder as already placed or linked. Use its bundled helper
    directly; do not require an installer, extract an embedded payload, or copy
@@ -42,7 +48,7 @@ description: Set up and apply a reusable Claude Code 5-hour quota guard for long
 
 ## Gate at safe boundaries
 
-- Run `python "<skill-dir>/scripts/quota_guard.py" check` before a task dispatch,
+- Run `uv run --no-project "<skill-dir>/scripts/quota_guard.py" check --provider <claude|codex>` before a task dispatch,
   a new expensive phase, merge preparation, or merge; also check after worker completion.
 - Read only this short result. Never send per-minute samples to the conversation.
 - Honor the caller's safety, review, and merge requirements.
@@ -53,7 +59,9 @@ description: Set up and apply a reusable Claude Code 5-hour quota guard for long
 | `PAUSED_QUOTA` / 10 | Stop starting work; save state and schedule resumption. |
 | `UNKNOWN` / 20 | Stop starting work; diagnose telemetry and use a bounded retry. |
 
-- Default threshold: 95%; local evidence age limit: 180 seconds.
+- Default threshold: 95%; Claude local evidence age limit: 180 seconds.
+  Codex also blocks an exhausted secondary window (100%). A server limit signal
+  without an identifiable blocking window is UNKNOWN; never continue on it.
 - Treat 95% as a boundary check, not a guaranteed hard cap. Existing workers can
   continue consuming quota. Ask them through the caller's existing authorized
   worker protocol to checkpoint at safe boundaries; verify their actual states.
@@ -74,6 +82,11 @@ description: Set up and apply a reusable Claude Code 5-hour quota guard for long
    Include a stable marker `quota-guard:<operation-id>`, the checkpoint path,
    and an explicit instruction to run `check`, reconcile live state, and resume
    only on READY. Never cancel another operation's scheduled tasks.
+   In Codex, use the Orca automation procedure in [codex.md](references/codex.md)
+   instead: deduplicate by operation name, use `wake` as the nonzero precheck,
+   and remove the recurring automation first on wake-up. Without
+   `ORCA_TERMINAL_HANDLE`, save the checkpoint and report manual resumption;
+   do not create an automation.
 4. End this turn. Do not wait using `/loop`, repeated model calls, or long sleeps.
 5. On wake-up, run `check` again. Resume only on READY after reconciling the
    saved state with the actual repositories/workers. Otherwise schedule one retry;
@@ -88,9 +101,10 @@ description: Set up and apply a reusable Claude Code 5-hour quota guard for long
 
 ## Limits
 
-- Collect the statusLine's supplied telemetry; do not call undocumented APIs.
+- For Claude, collect the statusLine's supplied telemetry; do not call undocumented APIs.
+  For Codex, use the documented experimental app-server `account/rateLimits/read`.
   A 60-second helper timer is not a guaranteed 60-second upstream fetch.
-- Reject missing, malformed, expired, or stale low-usage evidence. Repeated
+- For Claude, reject missing, malformed, expired, or stale low-usage evidence. Repeated
   identical timer input does not refresh the evidence timestamp. Conservatively
   retain the maximum usage seen per reset window (reset timestamps within
   120 seconds are treated as the same window); a fresh distinctly later window
