@@ -78,9 +78,7 @@ waiting. No delivery/frequency measurement is established by these instructions.
 Verify recovery through an actual scheduled run, inspecting precheck output and
 terminal/session fields. Manual `automations run` is not evidence that the
 scheduler's precheck ran or suppressed a separate agent; confirm the behavior
-against the installed Orca build. Observations and remaining live checks are
-recorded in [Issue #62](https://github.com/ribuka/agent-skills/issues/62) and
-[Issue #63](https://github.com/ribuka/agent-skills/issues/63).
+against the installed Orca build.
 
 ## Pending CI at step 14
 
