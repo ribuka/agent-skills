@@ -129,3 +129,93 @@ The first two smoke fixtures do not establish:
 
 Later validation must supply its own receipts; do not infer success from these
 observations or describe steps 0–17 as fully validated.
+
+## Subsequent validation (after the two-fixture window)
+
+The following observations were supplied by the source Coordinator for
+[Issue #66](https://github.com/ribuka/agent-skills/issues/66), separately from
+the two smoke fixtures above. Reproduction and unexecuted trials are in the
+[reproducibility guide](validation-reproduction.md). Additional local ledgers
+are `quota-lifecycle-receipts.json`, `quota_fixture.py`, `quota_lifecycle.py`
+and `claude-diagnostic.md` beside the original Coordinator ledger; they are
+ignored local provenance, not durable public artifacts. Times remain UTC.
+
+### Controlled Codex quota and manual automation CRUD
+
+The actual quota CLI ran with only `read_codex_limits` patched and isolated
+state under repository `tmp/`. A Codex primary 300-minute bucket with future
+reset and usage 96% returned PAUSED_QUOTA/exit 10; missing limits returned
+UNKNOWN/20; usage 4% returned READY/0. The live account was not exhausted.
+
+Manual real Orca operations used disabled fixture schedules: removed waiting
+`56b85eaf-9471-416d-81fb-8262b49672be`, created quota
+`6bb3088d-9e61-48ed-be30-572d0f075d7d`, listed twice and found exactly one
+identical quota entry, removed it before READY and live task/worker
+reconciliation, created one waiting replacement
+`c2dd5dbf-175b-446c-a1e9-36c433cffd84`, then removed it and verified no fixture
+entries remained. No scheduled quota delivery or active-worker stop was
+exercised; this is not proof of autonomous behavior under every race.
+
+### Real Claude diagnostic and nesting boundary
+
+Interactive Claude setup ran once with `changed:false`, using the interpreter
+already in its effective user-scope statusLine and no project/local overrides.
+At 05:55:57, actual `check --provider claude` returned READY,
+`recent_local_evidence`, usage 55%, `resets_at:1792052400`. Snapshot files were
+written 1–10 seconds before the check; the result has no age field and upstream
+freshness is not guaranteed. No synthetic telemetry was substituted.
+
+Resolved Claude settings were implementation opus/medium, merge sonnet/medium,
+maximum workers 3. Child Run `run_6f91c0f97f0a` was created, but `worker-start`
+refused `nested_worker_depth_exceeded` (depth 2, maximum 1,
+`effectsApplied:false`); no tasks, workers or reclaimable terminals remained
+in that child Run. Diagnostic Task `task_00522ad78b07`, Dispatch
+`ctx_9a4eae6f8ae8` completed and was released. Actual Claude child launch and
+background waiter remain untested and require depth-0 validation.
+
+### Real CI empty/pending boundaries and active-turn overlap
+
+A scoped rerun of validation run `38688996409` around 05:52 returned
+`no checks reported`/exit 1 for PR #67 head `491a7fd...`; merge was blocked.
+A later review fix changed head to
+`3ee05c5ee48358aac6333e841db865c20ba7c6b2` and received clean review 2/3
+([latest comment](https://github.com/ribuka/agent-skills/pull/67#issuecomment-6185480843)).
+
+Validation run `38689171603`, attempt 2, had all three checks pending/exit 8
+at 05:57:53.2899856 on that head. The Coordinator saved absolute deadline
+06:27:53.2899856 and ended its turn without a foreground watcher. Scheduled
+recovery first tool at 06:00:50.2518192 used the same head and original
+deadline; all three checks passed. This establishes preservation across that
+wake, not a context restart or deadline-expiry trial. No API-error or
+failed-check test was run in this observation window.
+
+Recovery run `379b0dd4-2771-4324-a509-92b3e89eef80`, scheduled for 06:00,
+had precheck 06:00:32.574–06:00:35.057, exit 1, `sent:true`,
+`skipped_precheck`, and resumed the existing Coordinator. During its active
+reconciliation turn, native completion `msg_a6dce8f5b9bb` (created 06:00:59,
+delivered 06:01:00) arrived and was consumed at 06:01:07.6333837.
+Latest checkpoint/live state were used without repeated dispatch or merge.
+This is active-turn overlap, not exactly simultaneous clock-time arrivals or
+proof of all race permutations.
+
+### First implementation / fresh preparation / merge path
+
+Fresh Codex merge-preparation Task `task_08f0bcd378a3`, Dispatch
+`ctx_d57407a0d0ed`, terminal `term_bb20263d-f247-48e2-9493-ccb166493194`
+started after implementation Dispatch `ctx_e9294f5888c1` was released.
+Ready, `input_accepted`, `turn_started` and effective Codex / gpt-6.1-sol /
+medium were confirmed. Preparation fetched main: same reviewed head,
+behind 0/ahead 2, resolution none, no edits, 187 local tests passed outside
+the sandbox, six skill frontmatters validated, all three CI checks passed,
+review 2/3 without findings or a repeated review. The completion above was
+released before acknowledgment `delivery_27e34bf69961`.
+
+The Coordinator independently checked review count/latest comment, main
+ancestry, exact head, all three CI checks, CLEAN merge state, `model:gpt` and
+READY quota, then squashed with `--match-head-commit`.
+[PR #67](https://github.com/ribuka/agent-skills/pull/67) merged at 06:01:39 as
+`21f18ba1d2dbdb3cf4d4070090ebfb43de9f3ead`. Issue #66 launch was held after
+its DAG became ready until that merge was confirmed. This establishes the
+first Codex path through merge. Issue #66 completion and final whole-Run
+cleanup remain future at this checkpoint; the original two-fixture scope
+above is unchanged. Root Issue #63 tracks final results and remaining gaps.
