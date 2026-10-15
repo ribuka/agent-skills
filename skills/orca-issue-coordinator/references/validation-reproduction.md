@@ -76,8 +76,9 @@ all race permutations.
 For an implementation-level experiment, inspect the provider's current tests
 to construct a disposable acquisition fixture around the actual quota CLI.
 Use their complete valid five-hour Codex sample, including provider identity
-and a future reset; vary usage to 96%, missing limits, then 4%. Do not hard-code
-internal function names or partial payload schemas in the fixture. Only
+and a future reset; vary usage to 96%, missing limits, then 4%.
+Derive internal function names and payload fields from the provider's current
+tests, not from this guide. Only
 acquisition is substituted; parsing, exit selection and CLI handling remain
 real. No public fixture-input CLI is established here. Run the temporary
 harness with `uv run --no-project <fixture.py> <case>`, using the documented
