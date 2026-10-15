@@ -219,3 +219,50 @@ its DAG became ready until that merge was confirmed. This establishes the
 first Codex path through merge. Issue #66 completion and final whole-Run
 cleanup remain future at this checkpoint; the original two-fixture scope
 above is unchanged. Root Issue #63 tracks final results and remaining gaps.
+
+### Bounded negative controls on PR #68
+
+On head `2507cb3b64b7de599d30fb5452e96175657b89a4`, the Coordinator created
+dedicated synthetic status `issue63-negative-control` as failure at 06:06:18
+(status `56398963248`). `gh pr checks 68` returned exit 1 with that context
+failed while real pytest was still pending; PR #68 remained OPEN and unmerged.
+The Coordinator restored only that synthetic context to success at 06:06:34
+(status `56398975700`); actual workflow conclusions were untouched. This tests
+a failed status/block decision, not a failed or cancelled workflow.
+
+An intentional `GET repos/ribuka/agent-skills/pulls/0` returned HTTP 404/exit 1
+and was treated as a monitoring error. This is an invalid-lookup API fixture,
+not a network outage or an API failure for valid PR #68. Later reconciliation
+reverified the valid PR and its checks. These controls extend, rather than
+retroactively change, the earlier CI observation window.
+
+### Controlled scheduled quota wake with a safely paused worker
+
+Implementation worker `ctx_9b85e80f59b2` reported `PAUSED-FIXTURE` in
+`msg_d4667af6954c` at 06:06:48: clean pushed head `2507cb3...`, review count
+0, and no operation running. It ended its turn without completion or polling.
+At approximately 06:07 the actual helper with controlled 96% acquisition
+returned exit 10, reset `1792044436`, cron `10 15 15 10 *`, wake 06:10.
+The Coordinator removed waiting automation `cb8a699b...`, verified exactly one
+enabled quota automation `d2a1b95a-da40-45d8-8c2e-ce80c766798e`, and ended
+its turn. The live account was not exhausted.
+
+An actual scheduled wake was received; the first tool at 06:10:43.1628488
+removed the quota automation before checks. Controlled READY (4%/exit 0) and
+live READY (57%/exit 0) were both required. Reconciliation found an empty
+inbox, the Task still dispatched, the same owned worker (activity `done`,
+not a new attempt), and PR #68 OPEN at the same head with all three real CI
+checks passing and synthetic status success. Original CI deadline 06:36:34
+was preserved. Exactly one 15-minute waiting automation was recreated;
+there was no new dispatch or repeated phase. The Coordinator then explicitly
+authorized the same worker to continue before its first cross-review.
+
+Removal deleted the quota automation's run history: lookup by its ID returned
+`Automation not found`, and global history had zero matching rows. Thus this
+specific quota wake has no retained run ID, precheck `sent/status` or session
+fields; those details must not be inferred from the fully recorded 05:45
+normal recovery run. Future trials need an independent bounded observer to
+persist the scheduled receipt before removal, without delaying the required
+remove-first resumption. This controlled observation covers one safe-boundary
+pause and scheduled resume, not arbitrary active-worker interruption,
+UNKNOWN retry or every race. Final whole-Run cleanup remains unverified here.

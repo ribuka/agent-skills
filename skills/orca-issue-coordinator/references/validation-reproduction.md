@@ -35,6 +35,9 @@ Coordinator instructions.
 5. Verify recovery with an actual scheduled run: inspect trigger, scheduled
    time, precheck exit/sent/status and terminal/session fields. A manual run
    does not prove scheduler behavior or suppression of a separate agent.
+   Removal may delete automation run history. Use an independent bounded
+   observer to persist the receipt before removal; never delay remove-first
+   quota resumption to collect history. Report missing fields explicitly.
 
 ## Recovery overlap and simultaneous arrivals
 
@@ -86,10 +89,11 @@ one disabled waiting replacement only if waiting is still needed, then remove
 fixture entries and verify absence. Record IDs and order. This measures manual
 operations, not autonomous deduplication or scheduled quota delivery.
 
-Separate future trials must cover real scheduled resumption, active workers
-stopping at safe boundaries, repeated paused wakes, UNKNOWN local retry and
-resume without repeated completed phases. Never kill a worker or bypass quota
-or nesting limits to obtain evidence.
+The report also records one controlled scheduled quota wake with a worker
+paused at a safe boundary, with incomplete run-history evidence. Separate
+future trials must cover complete scheduled receipts, repeated paused wakes,
+UNKNOWN local retry and additional resume races. Never kill a worker or bypass
+quota or nesting limits to obtain evidence.
 
 ## Actual Claude evidence and lifecycle completion
 
@@ -110,5 +114,5 @@ verify worker release, empty reclaimable list and removal of Run wake-ups.
 
 At publication, separate executed observations from remaining work. The report
 records one Codex lifecycle through PR #67 merge; Claude child/waiter, exact
-simultaneity, autonomous quota scheduling and final whole-Run cleanup still
-need evidence. Unit tests and this documentation are not substitutes.
+simultaneity, autonomous quota deduplication across races and final whole-Run
+cleanup still need evidence. Unit tests and this documentation are not substitutes.
