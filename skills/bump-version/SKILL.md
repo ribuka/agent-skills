@@ -34,6 +34,7 @@ Change the version in `VERSION` and nothing else.
 - If you are on `main`, create a branch first (e.g. `bump-version-<version>`).
 - Commit with a message such as `Bump version to <version>`.
 - Push the branch to `origin`.
+- No need to run the full test suite or lint check beyond confirming that `VERSION` is the only change.
 
 ### 4. Open the pull request
 
