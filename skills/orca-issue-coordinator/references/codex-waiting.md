@@ -73,7 +73,9 @@ it does not suppress native heartbeat nudges. Before a production Run, verify
 worker_done, escalation and question delivery and observe heartbeat frequency
 with the installed Orca build. If nudges are too frequent, report the measured
 cost and require an Orca notification filter rather than claiming token-free
-waiting. No delivery/frequency measurement is established by these instructions.
+waiting. See the [2026-10-15 observations](validation-2026-10-15.md) for measured
+idle delivery, heartbeat usage, scheduled recovery, and remaining validation.
+Those smoke fixtures do not establish delivery or frequency guarantees.
 
 Verify recovery through an actual scheduled run, inspecting precheck output and
 terminal/session fields. Manual `automations run` is not evidence that the
