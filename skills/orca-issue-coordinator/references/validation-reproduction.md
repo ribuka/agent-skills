@@ -73,12 +73,15 @@ all race permutations.
 
 ## Controlled quota pause and READY reconciliation
 
-Run the real quota helper CLI with only Codex acquisition (`read_codex_limits`)
-patched in a disposable fixture; leave parsing, exit selection and CLI handling
-intact. Use `uv run --no-project <fixture.py> <case>` with a separate state
-directory under `tmp/<run-id>/`. Supply a `rateLimits` Codex primary bucket
-with `windowDurationMins: 300`, future `resetsAt` and `usedPercent: 96`, then
-missing limits, then `usedPercent: 4`. Record JSON and exits: PAUSED_QUOTA/10,
+For an implementation-level experiment, inspect the provider's current tests
+to construct a disposable acquisition fixture around the actual quota CLI.
+Use their complete valid five-hour Codex sample, including provider identity
+and a future reset; vary usage to 96%, missing limits, then 4%. Do not copy an
+internal function name or partial payload schema from this guide. Only
+acquisition is substituted; parsing, exit selection and CLI handling remain
+real. No public fixture-input CLI is established here. Run the temporary
+harness with `uv run --no-project <fixture.py> <case>`, using the documented
+`--state-dir` under `tmp/<run-id>/`. Record JSON and exits: PAUSED_QUOTA/10,
 UNKNOWN/20, READY/0. This does not exhaust the live account.
 
 For an authorized manual Orca CRUD fixture, follow
@@ -97,8 +100,10 @@ quota or nesting limits to obtain evidence.
 
 ## Actual Claude evidence and lifecycle completion
 
-Use an actual interactive Claude session and the documented quota-guard setup;
-preserve its effective interpreter and project/local statusLine overrides.
+Use an actual interactive Claude session and the documented quota-guard setup.
+Preserve unrelated settings and use its effective interpreter. Verify the
+effective statusLine invokes the helper; if project/local overrides replace
+it, configure that effective scope as quota-guard instructs.
 Collect a real `check --provider claude` result, including evidence source,
 usage/reset and observation time. Record snapshot age separately when known;
 local recency does not guarantee upstream freshness. Do not replace Claude

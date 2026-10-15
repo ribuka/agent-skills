@@ -135,14 +135,14 @@ observations or describe steps 0–17 as fully validated.
 The following observations were supplied by the source Coordinator for
 [Issue #66](https://github.com/ribuka/agent-skills/issues/66), separately from
 the two smoke fixtures above. Reproduction and unexecuted trials are in the
-[reproducibility guide](validation-reproduction.md). Additional local ledgers
-are `quota-lifecycle-receipts.json`, `quota_fixture.py`, `quota_lifecycle.py`
-and `claude-diagnostic.md` beside the original Coordinator ledger; they are
-ignored local provenance, not durable public artifacts. Times remain UTC.
+[reproducibility guide](validation-reproduction.md). Additional quota and
+Claude diagnostic ledgers were kept beside the original Coordinator ledger;
+they are ignored local provenance, not durable public artifacts. The methods
+and receipt IDs below preserve the bounded findings. Times remain UTC.
 
 ### Controlled Codex quota and manual automation CRUD
 
-The actual quota CLI ran with only `read_codex_limits` patched and isolated
+The actual quota CLI ran with only Codex acquisition substituted and isolated
 state under repository `tmp/`. A Codex primary 300-minute bucket with future
 reset and usage 96% returned PAUSED_QUOTA/exit 10; missing limits returned
 UNKNOWN/20; usage 4% returned READY/0. The live account was not exhausted.
@@ -235,6 +235,8 @@ and was treated as a monitoring error. This is an invalid-lookup API fixture,
 not a network outage or an API failure for valid PR #68. Later reconciliation
 reverified the valid PR and its checks. These controls extend, rather than
 retroactively change, the earlier CI observation window.
+These observations apply to that recorded head, not to the final PR head;
+final-head CI must be checked separately during the merge handoff.
 
 ### Controlled scheduled quota wake with a safely paused worker
 
