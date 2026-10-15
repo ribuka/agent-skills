@@ -10,8 +10,8 @@ the new turn; it is not exact model start latency or a delivery guarantee.
 - Frozen source checkout: `3b870b9`; Orca `1.4.222`, codex-cli `0.162.1`,
   Claude Code `2.1.300`; Windows, local timezone `Asia/Tokyo`.
 - Resolved CLI: `C:/Users/rtagu/AppData/Local/Programs/orca/resources/bin/orca.exe`.
-  Installed skill-checkout precheck succeeded before dispatch; that checkout
-  was held fixed during the Run.
+  Installed skill-checkout precheck succeeded before dispatch; the instruction
+  was to leave that checkout unchanged during the Run.
 - Run: `run_3e6426b79cb0`; Coordinator: Codex,
   `term_3cfdb8f8-bc11-4819-a0d0-c246defb53fc`; worker defaults:
   `gpt-6.1-sol`, medium effort, concurrency 1.
@@ -19,8 +19,11 @@ the new turn; it is not exact model start latency or a delivery guarantee.
   `heartbeat-worker.md` in the source checkout. These local, ignored ledgers
   are provenance, not published raw transcripts. Supplemental token and cleanup
   receipts were supplied by the Coordinator.
-- Both launch receipts reported ready, `input_accepted`, `turn_started`, and
-  `launch.effective` Codex / `gpt-6.1-sol` / medium. Neither worker was relaunched.
+- The notification fixture ledger records ready, `input_accepted`,
+  `turn_started`, and `launch.effective` Codex / `gpt-6.1-sol` / medium.
+  The heartbeat fixture ledger records ready, `turn_started`, and the same
+  effective launch settings; it does not record `input_accepted`.
+  Neither worker was relaunched.
 
 ## Idle notification fixture
 
@@ -104,7 +107,9 @@ The second completion, `msg_43ff56cb5e9e`, was created at 05:46:18 and
 delivered at 05:46:19; the Coordinator's first tool was at 05:46:24.8476987.
 Both fixture workers were successfully released and the reclaimable list was
 empty. The recovery automation was removed at approximately 05:46:34 and the
-automation list was empty. The tracked tree was clean before documentation work.
+automation list was empty at that point, closing the fixture window rather
+than establishing cleanup for the entire ongoing Run. The tracked tree was
+clean before documentation work.
 
 ## Open validation
 
