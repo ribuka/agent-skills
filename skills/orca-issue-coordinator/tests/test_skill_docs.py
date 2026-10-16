@@ -80,12 +80,22 @@ def test_quota_check_gates_by_exit_code_only() -> None:
     skill = SKILL_MD.read_text(encoding="utf-8")
     assert "**Judge READY by exit code only:**" in skill
     assert "`<quota-check> && <command>`" in skill
-    assert "Never grep the" in skill
+    assert "Never grep the JSON output to decide READY" in skill
     assert (
         "uv run --no-project ~/.agents/skills/quota-guard/scripts/quota_guard.py check --provider claude && "
         "uv run --no-project <skill-dir>/scripts/wait_actionable.py" in skill
     )
     assert "grep -o" not in skill
+
+
+def test_blocked_states_told_apart_by_json_state() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    assert "**Tell blocked states apart by JSON:**" in skill
+    assert "PowerShell\n  `-Command`" in skill
+    assert "exits `0` only on\n  READY" in skill
+    assert "without a parseable `state` counts as UNKNOWN" in skill
+    for stale in ("`10` on PAUSED_QUOTA", "`20` on UNKNOWN", "any\nother exit code"):
+        assert stale not in skill
 
 
 def test_review_count_checked_with_review_status_script() -> None:

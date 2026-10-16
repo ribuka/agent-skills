@@ -24,7 +24,10 @@ UNKNOWN, since a safe reset time cannot be inferred from that signal.
 Missing optional `secondary` is accepted; malformed present windows fail closed.
 Other model-specific buckets and API billing are outside this guard's scope.
 
-The JSON/exit contract is READY/0, PAUSED_QUOTA/10, UNKNOWN/20. Blocked results
+The result contract is the same as for Claude (see `SKILL.md`): exit `0` only
+on READY, and the JSON `state` distinguishes PAUSED_QUOTA from UNKNOWN, because
+Codex runs commands through PowerShell `-Command`, which reports the helper's
+10 / 20 as `1`. Blocked results
 include `checkpoint_dir`, `wake_at`, `wake_local`, and `cron`. UNKNOWN also
 includes `local_retry_seconds`: wait that short interval and check once locally
 without another model response, then schedule the one retry if still UNKNOWN.

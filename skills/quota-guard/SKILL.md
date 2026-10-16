@@ -53,11 +53,18 @@ The following initialization steps apply only to Claude Code.
 - Read only this short result. Never send per-minute samples to the conversation.
 - Honor the caller's safety, review, and merge requirements.
 
-| State / exit code | Action |
+| `state` | Action |
 | --- | --- |
-| `READY` / 0 | Continue the caller's next authorized action. |
-| `PAUSED_QUOTA` / 10 | Stop starting work; save state and schedule resumption. |
-| `UNKNOWN` / 20 | Stop starting work; diagnose telemetry and use a bounded retry. |
+| `READY` | Continue the caller's next authorized action. |
+| `PAUSED_QUOTA` | Stop starting work; save state and schedule resumption. |
+| `UNKNOWN` | Stop starting work; diagnose telemetry and use a bounded retry. |
+
+- Gate on the exit code: `check` exits `0` only on READY, so chain
+  `check ... && <command>`. On a non-zero exit, read the JSON `state` to tell
+  PAUSED_QUOTA from UNKNOWN; a non-zero exit without a parseable `state` is
+  UNKNOWN. The process exits 10 / 20 for PAUSED_QUOTA / UNKNOWN, but shells
+  such as PowerShell `-Command` (used by Codex) report any failing native
+  command as `1`, so never rely on the specific non-zero code.
 
 - Default threshold: 95%; Claude local evidence age limit: 180 seconds.
   Codex also blocks an exhausted secondary window (100%). A server limit signal
