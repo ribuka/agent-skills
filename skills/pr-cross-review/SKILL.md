@@ -34,8 +34,9 @@ to focus on). Model, effort and other options can be overridden per run; see
   retrying blindly; exit codes are listed in references/options.md.
 - Reviewer quota exhausted: exit 75 with `reviewer-quota-exhausted: <agent>`,
   `reviewer-quota-detected-at: <time>`, and `reviewer-quota-reset: <reset-time>`
-  on stdout. `<time>` is when the failure was detected (ISO 8601 local time);
-  a reset phrase without a date is relative to it. `<reset-time>` is the
+  on stdout. `<time>` is when the failure was detected (ISO 8601 local time),
+  shortly after the reviewer's message; a reset phrase without a date means
+  its occurrence nearest to `<time>`. `<reset-time>` is the
   reset time the reviewer stated (an ISO 8601 time, or its own phrase such as
   `resets 10:10am (Asia/Tokyo)`), or `unknown`. No review was posted, so the
   attempt does not count toward `MAX_REVIEWS`. Report all three lines.

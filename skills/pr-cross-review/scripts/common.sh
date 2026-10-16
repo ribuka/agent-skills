@@ -337,7 +337,8 @@ quota_reset_text() {
 # report_reviewer_quota <agent> <log-file> -- when the reviewer stopped on its
 # usage limit, print `reviewer-quota-exhausted: <agent>`,
 # `reviewer-quota-detected-at: <ISO 8601 local time>` (a reset phrase without a
-# date is relative to it), and `reviewer-quota-reset: <reset-time|unknown>`,
+# date means its occurrence nearest to it), and
+# `reviewer-quota-reset: <reset-time|unknown>`,
 # and return 0; otherwise return 1.
 report_reviewer_quota() {
     local message

@@ -21,10 +21,11 @@ always "retry after the reset", so do not ask the user.
      retry failed again).
 3. Otherwise keep the PR blocked and compute the retry time: the reset time
    plus 2 minutes, rounded up to the minute, in the machine's local timezone.
-   Resolve a reset phrase without a date against `reviewer-quota-detected-at`
-   (its first occurrence after that time), never against the time you process
-   the report. If the retry time has already passed, skip the wake-up and
-   retry now as in **On wake-up** step 4.
+   Resolve a reset phrase without a date to its occurrence nearest to
+   `reviewer-quota-detected-at` (detection can lag the reviewer's message, so
+   that occurrence may be slightly before it), never against the time you
+   process the report. If the retry time has already passed, skip the
+   wake-up and retry now as in **On wake-up** step 4.
 4. Record in the Run checkpoint: PR, branch, worktree, the interrupted phase
    (Implementation or Merge preparation), review count, retry time, and the
    wake-up marker `review-retry:<run-id>:<pr>`. Release the worker terminal
