@@ -31,6 +31,7 @@ import shutil
 import subprocess
 import sys
 import tomllib
+from datetime import datetime
 from pathlib import Path
 
 TIMEOUT_SECONDS = 60
@@ -38,6 +39,8 @@ TIMEOUT_SECONDS = 60
 SKILL_DIR = Path(__file__).resolve().parents[1]
 # An explicit refspec updates origin/main whatever remote.origin.fetch says.
 MAIN_REFSPEC = "+refs/heads/main:refs/remotes/origin/main"
+# Codex requires an RFC 3339 `last_checked_at` in its version cache.
+RFC3339 = re.compile(r"\d{4}-\d{2}-\d{2}[Tt ]\d{2}:\d{2}:\d{2}(\.\d+)?([Zz]|[+-]\d{2}:\d{2})")
 
 
 def run(cmd: list[str]) -> tuple[int, str]:
@@ -126,6 +129,31 @@ def parse_version(text: str) -> tuple[int, int, int] | None:
     return tuple(int(n) for n in match.groups()) if match else None
 
 
+def is_rfc3339(value: object) -> bool:
+    if not isinstance(value, str) or not RFC3339.fullmatch(value):
+        return False
+    try:
+        datetime.fromisoformat(value)
+    except ValueError:
+        return False
+    return True
+
+
+def read_codex_version_cache(path: Path) -> tuple[str, str | None] | None:
+    """Return (latest, dismissed) only when Codex would accept the cache file."""
+    try:
+        info = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(info, dict):
+        return None
+    latest, dismissed = info.get("latest_version"), info.get("dismissed_version")
+    if (not isinstance(latest, str) or not is_rfc3339(info.get("last_checked_at"))
+            or not (dismissed is None or isinstance(dismissed, str))):
+        return None
+    return latest, dismissed
+
+
 def check_codex_update_prompt() -> str | None:
     home = codex_home()
     try:
@@ -134,20 +162,19 @@ def check_codex_update_prompt() -> str | None:
         config = {}
     if config.get("check_for_update_on_startup", True) is False:
         return None
-    try:
-        info = json.loads((home / "version.json").read_text(encoding="utf-8"))
-        latest = info["latest_version"]
-        dismissed = info.get("dismissed_version")
-    except (OSError, ValueError, KeyError, TypeError, AttributeError):
-        return None  # Codex shows no prompt without a cached latest version.
-    if not isinstance(latest, str) or dismissed == latest:
+    cache = read_codex_version_cache(home / "version.json")
+    if cache is None:
+        return None  # Codex shows no prompt without a valid cached latest version.
+    latest, dismissed = cache
+    if dismissed == latest:
         return None
     code, out = run(["codex", "--version"])
     if code != 0:
         return f"`codex --version` failed (exit {code}): {out}"
     installed = out.split()[-1] if out.split() else ""
     newer, current = parse_version(latest), parse_version(installed)
-    if newer is None or current is None or newer <= current:
+    # Source builds report 0.0.0 and never show the prompt.
+    if newer is None or current in (None, (0, 0, 0)) or newer <= current:
         return None
     return (f"Codex {installed} will show an update prompt for {latest} when a worker starts, "
             "which blocks the worker launch (agent-update-prompt); ask the user to update "

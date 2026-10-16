@@ -199,7 +199,21 @@ def test_codex_without_update_prompt_passes(cp, codex_home: Path, latest: str,
     assert cp.main(["--agent", "codex"]) == 0
 
 
-@pytest.mark.parametrize("content", [None, "not json", "{}", '{"latest_version": 1}'])
+def test_codex_source_build_passes(cp, codex_home: Path) -> None:
+    write_version(codex_home, "0.163.0")
+    cp.responses["codex"] = (0, "codex-cli 0.0.0")
+    assert cp.main(["--agent", "codex"]) == 0
+
+
+@pytest.mark.parametrize("content", [
+    None, "not json", "{}", "[]", '{"latest_version": 1}',
+    # Codex rejects a cache without a valid RFC 3339 last_checked_at.
+    '{"latest_version": "0.163.0"}',
+    '{"latest_version": "0.163.0", "last_checked_at": "2026-10-16"}',
+    '{"latest_version": "0.163.0", "last_checked_at": "yesterday"}',
+    '{"latest_version": "0.163.0", "last_checked_at": "2026-10-16T00:00:00Z",'
+    ' "dismissed_version": 1}',
+])
 def test_codex_without_cached_latest_version_passes(cp, codex_home: Path,
                                                     content: str | None) -> None:
     if content is not None:
