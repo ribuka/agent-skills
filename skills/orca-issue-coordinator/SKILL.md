@@ -88,10 +88,13 @@ Silence alone is not evidence of failure and does not authorize stopping.
    dependencies (e.g. `gh issue list --json number,title,labels` or
    `gh issue view <n> --json number,title,labels`), plus existing PRs and
    branches. Do not read full Issue bodies or investigate code; workers do
-   that. Avoid duplicating or overwriting existing changes.
+   that. Step 3 gives the only exception. Avoid duplicating or overwriting
+   existing changes.
 3. Identify dependencies, overlapping areas, and potential conflicts from that
-   summary. Open an Issue body only when a dependency or an overlap cannot be
-   decided otherwise. Decide how Tasks that edit the same file run:
+   summary. Open an Issue body only when a dependency or an overlap involving
+   that Issue cannot be decided otherwise, and only for the Issues involved
+   (`gh issue view <n> --json body`), once each. Decide how Tasks that edit
+   the same file run:
    - **Same part of the same file** (the Issue titles or existing PRs and
      branches show they edit the same step, section, or function): treat
      this as a dependency and run the Tasks in order (step 5).
@@ -410,6 +413,15 @@ non-zero exit, handle the pause as in **Quota control** instead.
 - Report to the user only when state changes (dispatch, worker_done, merge,
   blocker, question). Never post "no news yet" updates.
 - Keep reports short: Issue, PR URL, state, next step.
+- **Read each guide or reference at most once per Run:** a skill's
+  `SKILL.md`, an `orca skills get` guide or `--reference`, and this skill's
+  `references/`. Never load the same one again through another command (e.g.
+  `Get-Content` after `orca skills get`). Read it again only when it is no
+  longer in this conversation (after compaction or in a new conversation).
+- Load only the skills and references this skill tells you to load. Do not
+  read `--help` output for commands whose usage this skill or its references
+  already give (e.g. `orca automations create`,
+  `orca orchestration worker-start`).
 - Do not re-read large outputs (full guides, Issue bodies, full worker
   transcripts, raw JSON) that the summaries already cover.
 

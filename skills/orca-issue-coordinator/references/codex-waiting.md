@@ -22,8 +22,11 @@ Record every time at which the Coordinator must look again as its own line
 (`review-quota-retry.md`). Remove or replace a line once it is handled. The
 wake precheck reads only these lines from the checkpoint.
 
-Load `orca-cli`, resolve its executable and absolute path, and confirm its
-installed automation guide. Use one automation named `coordinator-wait:<run-id>`
+Resolve only the absolute path of the `orca` executable (PowerShell:
+`(Get-Command orca).Source`; POSIX: `command -v orca`) and record it in the
+checkpoint. Do not load `orca-cli` or its automation guide, and do not read
+`orca automations create --help`: the command below is complete.
+Use one automation named `coordinator-wait:<run-id>`
 as a recovery mechanism. Check `orca automations list --json` first; reuse only
 an entry with the same Run, terminal, checkpoint and schedule. Remove an obsolete
 matching entry before replacing it. Never touch another Run's automation.

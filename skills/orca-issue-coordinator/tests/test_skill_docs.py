@@ -275,3 +275,31 @@ def test_codex_recovery_wake_uses_actionable_precheck() -> None:
     assert "a `wake-at:` line for the next inspection" in ci
     retry = (SKILL_DIR / "references/review-quota-retry.md").read_text(encoding="utf-8")
     assert "a `wake-at:` line" in retry
+
+
+def test_codex_waiting_resolves_orca_path_without_loading_orca_cli() -> None:
+    reference = (SKILL_DIR / "references/codex-waiting.md").read_text(encoding="utf-8")
+    setup = reference.split("## Set up a recovery wake-up", 1)[1].split("\n## ", 1)[0]
+    assert "Load `orca-cli`" not in setup
+    assert "Resolve only the absolute path of the `orca` executable" in setup
+    assert "(Get-Command orca).Source" in setup
+    assert "Do not load `orca-cli` or its automation guide" in setup
+    assert "orca automations create --help" in setup
+
+
+def test_guides_and_references_are_read_once_per_run() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    budget = skill.split("## Token budget", 1)[1].split("\n## ", 1)[0]
+    assert "**Read each guide or reference at most once per Run:**" in budget
+    assert "Never load the same one again through another command" in budget
+    assert "no\n  longer in this conversation" in budget
+    assert "Do not\n  read `--help` output" in budget
+
+
+def test_issue_bodies_are_read_only_for_undecidable_overlaps() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    inspect_step = skill.split("2. Inspect only what planning needs", 1)[1].split("3. ", 1)[0]
+    assert "Step 3 gives the only exception" in inspect_step
+    overlap_step = skill.split("3. Identify dependencies", 1)[1].split("4. Create one", 1)[0]
+    assert "only for the Issues involved" in overlap_step
+    assert "`gh issue view <n> --json body`), once each" in overlap_step
