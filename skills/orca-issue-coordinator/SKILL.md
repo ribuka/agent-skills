@@ -159,8 +159,9 @@ Silence alone is not evidence of failure and does not authorize stopping.
    - Workers must not merge or schedule resumption wake-ups; the
      Coordinator alone owns the Run's checkpoint and wake-up.
    - If `pr-cross-review` fails because the reviewer's quota is exhausted,
-     the worker stops and reports the `reviewer-quota-exhausted` and
-     `reviewer-quota-reset` lines unchanged in `worker_done`.
+     the worker stops and reports the `reviewer-quota-exhausted`,
+     `reviewer-quota-detected-at`, and `reviewer-quota-reset` lines unchanged
+     in `worker_done`.
 8. Fill available worker slots before waiting for completions.
    Dispatch additional tasks as slots become available, holding back
    dependent Tasks until their dependency PRs are merged (step 5).

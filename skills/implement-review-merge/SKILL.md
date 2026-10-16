@@ -82,11 +82,12 @@ Run the `pr-cross-review` skill for the pull request.
   where `<id>` is the number after `#issuecomment-` in the URL. Do not read
   all PR comments with `gh pr view --comments`.
 - If the reviewer's quota is exhausted, the script exits 75 and prints
-  `reviewer-quota-exhausted: <agent>` and `reviewer-quota-reset: <reset-time>`.
+  `reviewer-quota-exhausted: <agent>`, `reviewer-quota-detected-at: <time>`,
+  and `reviewer-quota-reset: <reset-time>`.
   No review was posted. Do not wait for the reset or retry on your own.
   In Standalone mode, ask the user, stating the reset time. In worker mode,
   stop the phase and send `worker_done` with `--outcome failed`, the handoff
-  fields, and both lines exactly as printed.
+  fields, and the three lines exactly as printed.
 
 ### 7. Iterate on findings
 

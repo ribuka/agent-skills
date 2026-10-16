@@ -479,6 +479,7 @@ def test_review_script_reports_reviewer_quota_exhaustion(tmp_path: Path, script_
     agent = "claude" if script_name == "run_claude_review.sh" else "codex"
     assert result.returncode == 75
     assert f"reviewer-quota-exhausted: {agent}\n" in result.stdout
+    assert re.search(r"^reviewer-quota-detected-at: 20\d\d-\d\d-\d\dT\d\d:\d\d:\d\d[+-]\d{4}$", result.stdout, re.M)
     assert f"reviewer-quota-reset: {reset}\n" in result.stdout
     assert "usage limit was reached" in result.stderr
 

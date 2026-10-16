@@ -62,5 +62,5 @@ config.conf and prints `review-count: <count>/<max>` and
 | 2 | GitHub lookup failed (PR head or comment history) |
 | 124 | Codex hard timeout |
 | 125 | Codex heartbeat timeout (hang suspected) |
-| 75 | The reviewer stopped on its usage limit (`reviewer-quota-exhausted: <agent>` and `reviewer-quota-reset: <reset-time>` on stdout) |
+| 75 | The reviewer stopped on its usage limit (`reviewer-quota-exhausted: <agent>`, `reviewer-quota-detected-at: <time>`, and `reviewer-quota-reset: <reset-time>` on stdout) |
 | other | Exit status of `codex exec` / `claude -p` |
