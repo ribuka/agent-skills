@@ -344,6 +344,25 @@ Keep exactly one wake-up per Run: the 15-minute recovery wake while workers or
 CI are pending, one wake at the time when the Run waits only for a known time
 (e.g. a reviewer quota retry), and none while it waits only for the user.
 
+The 15-minute recovery wake runs this precheck, which reads Orca state and the
+Run checkpoint without starting a model:
+
+```bash
+uv run --no-project <skill-dir>/scripts/wake_if_actionable.py --orca <orca> --terminal <handle> --run <run-id> --checkpoint <checkpoint> --text "<wake text>" [--safety-minutes 60]
+```
+
+- It sends `<wake text>` to the Coordinator terminal only when there is an
+  unread `worker_done` / `escalation` / `question` (peeked, not
+  acknowledged), a worker requiring action per `worker-list`, no worker in
+  progress while Tasks remain, a passed `wake-at: <ISO-8601 time> <reason>`
+  line in the checkpoint, an `orca` failure or unreadable checkpoint, or
+  `--safety-minutes` since its last wake. A condition already seen on its
+  previous run wakes again only after it clears and returns.
+- It prints one JSON line `{"wake": <bool>, "reasons": [...], "sent": <bool|null>}`
+  (plus `errors` when a check failed) and always exits non-zero, so the
+  automation never starts its own agent: `1` nothing new (no input sent),
+  `2` wake text sent, `3` wake needed but sending failed.
+
 **Claude Code:** run the bundled waiter as a **background** command whenever you are waiting
 for workers, and only after a READY `<quota-check>`:
 

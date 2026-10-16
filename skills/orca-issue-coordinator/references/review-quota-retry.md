@@ -30,7 +30,8 @@ always "retry after the reset", so do not ask the user.
    wake-up and retry now as in **On wake-up** step 3.
 4. Record in the Run checkpoint: PR, branch, worktree, the interrupted phase
    (Implementation or Merge preparation), review count, and retry time
-   (in Claude Code also the wake-up marker `review-retry:<run-id>:<pr>`).
+   (in Claude Code also the wake-up marker `review-retry:<run-id>:<pr>`; in
+   Codex the retry time as a `wake-at:` line, see [Codex waiting](codex-waiting.md)).
    Release the worker terminal (`worker-release`).
 5. Make sure the Coordinator wakes at the retry time:
    - **Claude Code:** run `CronList`; if the marker already exists, do not
