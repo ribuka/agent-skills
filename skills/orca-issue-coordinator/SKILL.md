@@ -276,11 +276,15 @@ new work near the 5-hour limit. `<quota-check>` below means
   each `worker_done`, and before starting the waiter. Continue only on
   READY. PAUSED_QUOTA and UNKNOWN block all new work (dispatch, merge
   preparation, merge, re-dispatch).
-- **Judge READY by exit code only:** `<quota-check>` exits `0` on READY,
-  `10` on PAUSED_QUOTA, and `20` on UNKNOWN. Chain the gated command as
-  `<quota-check> && <command>` so it runs only on exit `0`. Never grep the
-  JSON output to decide the state, and never run the gated command on a
-  separate line after the check.
+- **Judge READY by exit code only:** `<quota-check>` exits `0` only on
+  READY. Chain the gated command as `<quota-check> && <command>` so it runs
+  only on exit `0`. Never grep the JSON output to decide READY, and never
+  run the gated command on a separate line after the check.
+- **Tell blocked states apart by JSON:** on a non-zero exit, read the
+  `state` field of the one-line JSON result to tell PAUSED_QUOTA from
+  UNKNOWN. Do not rely on the specific non-zero code: PowerShell
+  `-Command` (used by Codex) reports any failing native command as `1`.
+  A non-zero exit without a parseable `state` counts as UNKNOWN.
 - **Ownership:** the Coordinator alone owns the Run checkpoint and the
   resumption wake-up. Workers never create wake-ups.
 - **On PAUSED_QUOTA or UNKNOWN:** stop starting all new work, then read
@@ -315,8 +319,8 @@ for workers, and only after a READY `<quota-check>`:
 uv run --no-project ~/.agents/skills/quota-guard/scripts/quota_guard.py check --provider claude && uv run --no-project <skill-dir>/scripts/wait_actionable.py [--terminal <handle>] [--run <run_id>]
 ```
 
-The `&&` starts the waiter only when the check exits `0` (READY); on any
-other exit code, handle the pause as in **Quota control** instead.
+The `&&` starts the waiter only when the check exits `0` (READY); on a
+non-zero exit, handle the pause as in **Quota control** instead.
 
 - It loops `check --wait --types "worker_done,escalation,question"`,
   acknowledges heartbeat-only batches itself, and runs `worker-list` after

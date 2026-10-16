@@ -50,8 +50,11 @@ compatibility from a successful synthetic shell test.
 ## Runtime commands
 
 - `statusline`: accept Claude Code JSON on stdin; print a terminal status line.
-- `check --provider claude|codex`: print one JSON decision; exit 0 / 10 / 20
-  for READY / PAUSED_QUOTA / UNKNOWN. The default provider is Claude.
+- `check --provider claude|codex`: print one JSON decision whose `state` is
+  READY, PAUSED_QUOTA, or UNKNOWN; exit 0 only on READY. The process exits
+  10 / 20 for PAUSED_QUOTA / UNKNOWN, but PowerShell `-Command` reports any
+  failing native command as `1`, so callers read `state` for blocked results.
+  The default provider is Claude.
   See [codex.md](codex.md) for live Codex acquisition and Orca wake-ups.
   It includes `checkpoint_dir` (where callers save their checkpoint) and,
   when not READY, `wake_at` / `wake_local` / `cron` for the resumption wake-up.
