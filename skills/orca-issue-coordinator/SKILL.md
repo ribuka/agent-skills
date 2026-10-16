@@ -158,6 +158,9 @@ Silence alone is not evidence of failure and does not authorize stopping.
      (step 13).
    - Workers must not merge or schedule resumption wake-ups; the
      Coordinator alone owns the Run's checkpoint and wake-up.
+   - If `pr-cross-review` fails because the reviewer's quota is exhausted,
+     the worker stops and reports the `reviewer-quota-exhausted` and
+     `reviewer-quota-reset` lines unchanged in `worker_done`.
 8. Fill available worker slots before waiting for completions.
    Dispatch additional tasks as slots become available, holding back
    dependent Tasks until their dependency PRs are merged (step 5).
@@ -398,7 +401,13 @@ non-zero exit, handle the pause as in **Quota control** instead.
 - Never exceed the `pr-cross-review` per-PR review limit (`MAX_REVIEWS`),
   counting all phases and dispatches. Track this across worker restarts and
   pass it in every handoff.
-- If a review fails, the limit is reached, or a conflict cannot be
+- If a worker reports that the reviewer's quota is exhausted
+  (`reviewer-quota-exhausted`) with a known reset time, do not ask the user:
+  keep the PR blocked, schedule one wake-up at the reset, and retry the
+  review then, following
+  [Reviewer quota retry](references/review-quota-retry.md).
+- If any other review failure occurs, the reset time is unknown, the
+  quota retry fails again, the limit is reached, or a conflict cannot be
   resolved safely, block that PR and ask the user.
 - Continue other independent Tasks whenever possible, except while the quota
   is PAUSED_QUOTA or UNKNOWN (see **Quota control**).

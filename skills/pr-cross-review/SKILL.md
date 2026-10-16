@@ -32,6 +32,11 @@ to focus on). Model, effort and other options can be overridden per run; see
 - Failure: non-zero exit with an `error:` line on stderr, followed by the tail
   of the reviewer's log when the reviewer ran. Report it rather than
   retrying blindly; exit codes are listed in references/options.md.
+- Reviewer quota exhausted: exit 75 with `reviewer-quota-exhausted: <agent>`
+  and `reviewer-quota-reset: <reset-time>` on stdout. `<reset-time>` is the
+  reset time the reviewer stated (an ISO 8601 time, or its own phrase such as
+  `resets 10:10am (Asia/Tokyo)`), or `unknown`. No review was posted, so the
+  attempt does not count toward `MAX_REVIEWS`. Report both lines.
 
 ## Review status
 

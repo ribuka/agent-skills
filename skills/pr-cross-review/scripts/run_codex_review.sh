@@ -167,6 +167,9 @@ set -e
 if [ "$exit_code" -ne 0 ]; then
     echo "error: codex exec exited with status ${exit_code}" >&2
     dump_reviewer_log codex "$log_file"
+    if report_reviewer_quota codex "$log_file"; then
+        exit "$reviewer_quota_exit_code"
+    fi
     exit "$exit_code"
 fi
 
@@ -178,5 +181,8 @@ if [ "$status" -eq 0 ]; then
     remove_body_file
 else
     dump_reviewer_log codex "$log_file"
+    if [ "$status" -eq 1 ] && report_reviewer_quota codex "$log_file"; then
+        status=$reviewer_quota_exit_code
+    fi
 fi
 exit "$status"

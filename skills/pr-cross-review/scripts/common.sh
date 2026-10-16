@@ -295,6 +295,56 @@ dump_reviewer_log() {
     echo "---- end of ${label} reviewer log ----" >&2
 }
 
+# A reviewer that hits its usage limit ends with a short message at the end of
+# its log. Only the last few lines are searched (for Codex, only its error
+# events), so review text that merely quotes such a message is not mistaken
+# for one.
+reviewer_quota_tail_lines=5
+reviewer_quota_pattern='usage limit|session limit|weekly limit|hit your limit|limit reached|quota exceeded|exceeded your quota'
+reviewer_quota_exit_code=75
+
+# reviewer_quota_message <agent> <log-file> -- print the reviewer's quota
+# message and return 0, or return 1 when the log has none.
+reviewer_quota_message() {
+    local tail_text
+    tail_text=$(tail -n "$reviewer_quota_tail_lines" "$2" 2>/dev/null) || return 1
+    if [ "$1" = "codex" ]; then
+        tail_text=$(printf '%s\n' "$tail_text" | grep -E '"type": ?"(error|turn\.failed)"') || return 1
+    fi
+    printf '%s\n' "$tail_text" | grep -iE "$reviewer_quota_pattern" | tail -n 1 | grep .
+}
+
+# quota_reset_text <message> -- print the reset time the message states: an
+# ISO 8601 local time for a `limit reached|<epoch>` message, otherwise the
+# message's own phrase (e.g. `resets 10:10am (Asia/Tokyo)`), or `unknown`
+# when it names no time.
+quota_reset_text() {
+    local message=$1
+    local epoch
+    local reset
+    epoch=$(printf '%s\n' "$message" | grep -oE 'limit reached\|[0-9]{9,}' | grep -oE '[0-9]+$' || true)
+    if [ -n "$epoch" ]; then
+        date -d "@${epoch}" '+%Y-%m-%dT%H:%M:%S%z' 2>/dev/null \
+            || date -r "$epoch" '+%Y-%m-%dT%H:%M:%S%z' 2>/dev/null \
+            || printf '@%s\n' "$epoch"
+        return 0
+    fi
+    reset=$(printf '%s\n' "$message" | grep -oiE '(resets?|try again)[^"\\]*[0-9][^"\\]*' | head -n 1 \
+        | sed -E 's/[[:space:].]+$//' | cut -c1-200 || true)
+    printf '%s\n' "${reset:-unknown}"
+}
+
+# report_reviewer_quota <agent> <log-file> -- when the reviewer stopped on its
+# usage limit, print `reviewer-quota-exhausted: <agent>` and
+# `reviewer-quota-reset: <reset-time|unknown>` and return 0; otherwise return 1.
+report_reviewer_quota() {
+    local message
+    message=$(reviewer_quota_message "$1" "$2") || return 1
+    echo "error: the $(review_agent_label "$1") reviewer stopped because its usage limit was reached" >&2
+    echo "reviewer-quota-exhausted: $1"
+    echo "reviewer-quota-reset: $(quota_reset_text "$message")"
+}
+
 stop_reviewer() {
     if [ -z "${REVIEWER_PID:-}" ]; then
         return 0
