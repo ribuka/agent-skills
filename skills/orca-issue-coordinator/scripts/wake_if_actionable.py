@@ -13,8 +13,11 @@ Coordinator terminal only when one of these holds:
   error     an orca call failed or the checkpoint cannot be read
 
 A condition already seen on the previous run does not wake again until it
-clears and returns; the safety interval still wakes. Prints one JSON line and
-always exits non-zero so the automation never starts its own agent:
+clears and returns; the safety interval still wakes. It reads every
+worker-list page and limits all orca queries to one time budget, so the wake
+is still sent within the automation's 120-second precheck timeout. Prints one
+JSON line and always exits non-zero so the automation never starts its own
+agent:
 
   1  nothing new; no input was sent
   2  the wake text was sent
@@ -29,6 +32,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -37,13 +41,29 @@ DONE_TASK_STATES = {"completed", "failed", "cancelled", "canceled"}
 WAKE_AT = re.compile(r"^\s*(?:[-*]\s+)?`?wake-at:\s*(\S+?)`?(?:\s+(.*))?$")
 STATE_FILE = "wake-state.json"
 EXIT_IDLE, EXIT_SENT, EXIT_SEND_FAILED = 1, 2, 3
+# The automation kills the precheck after 120 s; keep time to send the wake.
+QUERY_BUDGET_S, CALL_TIMEOUT_S, SEND_TIMEOUT_S = 60, 20, 20
+MAX_WORKER_PAGES = 50
 
 
-def run_orca(orca: str, args: list[str], timeout_s: float = 60) -> dict:
+class Budget:
+    """Shared deadline for all orca queries of one precheck run."""
+
+    def __init__(self, seconds: float) -> None:
+        self.deadline = time.monotonic() + seconds
+
+    def timeout(self) -> float:
+        left = self.deadline - time.monotonic()
+        if left < 1:
+            raise RuntimeError("orca query time budget exhausted")
+        return min(CALL_TIMEOUT_S, left)
+
+
+def run_orca(orca: str, args: list[str], budget: Budget) -> dict:
     proc = subprocess.run(
         [orca, *args],
         capture_output=True,
-        timeout=timeout_s,
+        timeout=budget.timeout(),
         encoding="utf-8",
         errors="replace",
         creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
@@ -59,16 +79,31 @@ def run_orca(orca: str, args: list[str], timeout_s: float = 60) -> dict:
     return data.get("result") or {}
 
 
-def message_reasons(orca: str, terminal: str, run: str) -> list[str]:
+def message_reasons(orca: str, terminal: str, run: str, budget: Budget) -> list[str]:
     result = run_orca(orca, ["orchestration", "check", "--terminal", terminal, "--run", run,
-                             "--peek", "--types", WAKE_TYPES, "--json"])
+                             "--peek", "--types", WAKE_TYPES, "--json"], budget)
     return [f"message:{m.get('type')}:{m.get('id')}" for m in result.get("messages") or []
             if m.get("type") in WAKE_TYPES.split(",")]
 
 
-def worker_reasons(orca: str, run: str) -> list[str]:
-    workers = run_orca(orca, ["orchestration", "worker-list", "--run", run, "--json"]
-                       ).get("workers") or []
+def list_workers(orca: str, run: str, budget: Budget) -> list[dict]:
+    workers: list[dict] = []
+    cursor = None
+    for _ in range(MAX_WORKER_PAGES):
+        args = ["orchestration", "worker-list", "--run", run, "--json"]
+        if cursor:
+            args[-1:-1] = ["--cursor", cursor]
+        result = run_orca(orca, args, budget)
+        workers += result.get("workers") or []
+        page = result.get("page") or {}
+        cursor = page.get("nextCursor")
+        if not (page.get("hasMore") and cursor):
+            return workers
+    raise RuntimeError(f"worker-list has more than {MAX_WORKER_PAGES} pages")
+
+
+def worker_reasons(orca: str, run: str, budget: Budget) -> list[str]:
+    workers = list_workers(orca, run, budget)
     reasons, in_progress = [], 0
     for w in workers:
         proj = w.get("projection") or {}
@@ -80,8 +115,8 @@ def worker_reasons(orca: str, run: str) -> list[str]:
             categories = ",".join(sorted(att.get("categories") or [])) or "-"
             reasons.append(f"worker:{w.get('dispatchId')}:{categories}:{nxt.get('kind') or 'none'}")
     if in_progress == 0:
-        tasks = run_orca(orca, ["orchestration", "task-list", "--run", run, "--json"]
-                         ).get("tasks") or []
+        tasks = run_orca(orca, ["orchestration", "task-list", "--run", run, "--json"],
+                         budget).get("tasks") or []
         remaining = sorted(t.get("id") for t in tasks if t.get("status") not in DONE_TASK_STATES)
         if remaining:
             reasons.append("idle:" + ",".join(remaining))
@@ -132,7 +167,7 @@ def send_wake(orca: str, terminal: str, text: str) -> bool:
     try:
         completed = subprocess.run(
             [orca, "terminal", "send", "--terminal", terminal, "--text", text, "--enter"],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=SEND_TIMEOUT_S,
             creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
         return completed.returncode == 0
     except (OSError, subprocess.SubprocessError):
@@ -160,9 +195,10 @@ def main() -> int:
 
     reasons: list[str] = []
     errors: list[str] = []
+    budget = Budget(QUERY_BUDGET_S)
     checks = (
-        ("check", lambda: message_reasons(opts.orca, opts.terminal, opts.run)),
-        ("worker-list", lambda: worker_reasons(opts.orca, opts.run)),
+        ("check", lambda: message_reasons(opts.orca, opts.terminal, opts.run, budget)),
+        ("worker-list", lambda: worker_reasons(opts.orca, opts.run, budget)),
         ("checkpoint", lambda: deadline_reasons(opts.checkpoint, now)),
     )
     for name, check in checks:

@@ -357,7 +357,9 @@ uv run --no-project <skill-dir>/scripts/wake_if_actionable.py --orca <orca> --te
   progress while Tasks remain, a passed `wake-at: <ISO-8601 time> <reason>`
   line in the checkpoint, an `orca` failure or unreadable checkpoint, or
   `--safety-minutes` since its last wake. A condition already seen on its
-  previous run wakes again only after it clears and returns.
+  previous run wakes again only after it clears and returns. It reads every
+  `worker-list` page and caps its `orca` queries at 60 seconds in total, so
+  the wake is still sent within the automation's 120-second precheck timeout.
 - It prints one JSON line `{"wake": <bool>, "reasons": [...], "sent": <bool|null>}`
   (plus `errors` when a check failed) and always exits non-zero, so the
   automation never starts its own agent: `1` nothing new (no input sent),

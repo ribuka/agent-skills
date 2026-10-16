@@ -39,11 +39,13 @@ class Orca:
     def __init__(self) -> None:
         self.messages: list[dict] = []
         self.workers: list[dict] = [worker("ctx_1")]
+        self.worker_pages: list[list[dict]] | None = None
         self.tasks: list[dict] = [{"id": "task_1", "status": "dispatched"}]
         self.fail: str | None = None
         self.calls: list[list[str]] = []
 
-    def __call__(self, orca: str, args: list[str], timeout_s: float = 60) -> dict:
+    def __call__(self, orca: str, args: list[str], budget) -> dict:
+        budget.timeout()
         self.calls.append(args)
         if self.fail == args[1]:
             raise RuntimeError(f"orca {args[1]} failed: boom")
@@ -51,7 +53,12 @@ class Orca:
             assert "--peek" in args and "--ack" not in args and "--wait" not in args
             return {"messages": self.messages}
         if args[1] == "worker-list":
-            return {"workers": self.workers}
+            if self.worker_pages is None:
+                return {"workers": self.workers}
+            index = int(args[args.index("--cursor") + 1]) if "--cursor" in args else 0
+            more = index + 1 < len(self.worker_pages)
+            return {"workers": self.worker_pages[index],
+                    "page": {"hasMore": more, "nextCursor": str(index + 1) if more else None}}
         if args[1] == "task-list":
             return {"tasks": self.tasks}
         raise AssertionError(args)
@@ -209,3 +216,38 @@ def test_state_is_kept_next_to_checkpoint(env, capsys) -> None:
     state = json.loads(env["state"].read_text(encoding="utf-8"))
     assert state["seen"] == ["message:worker_done:msg_1"]
     assert datetime.fromisoformat(state["last_wake"]).tzinfo is not None
+
+
+def test_worker_list_reads_every_page(env, capsys) -> None:
+    env["orca"].worker_pages = [[worker("ctx_new")],
+                                [worker("ctx_old", outcome="succeeded", kind="release")]]
+    code, result = env["run"](capsys)
+    assert code == 2
+    assert result["reasons"] == ["worker:ctx_old:-:release"]
+    cursors = [c[c.index("--cursor") + 1] for c in env["orca"].calls if "--cursor" in c]
+    assert cursors == ["1"]
+
+
+def test_exhausted_query_budget_still_sends_wake(env, capsys, monkeypatch) -> None:
+    monkeypatch.setattr(env["module"], "QUERY_BUDGET_S", 0)
+    code, result = env["run"](capsys)
+    assert code == 2
+    assert result["reasons"] == ["error:check", "error:worker-list"]
+    assert all("budget exhausted" in e for e in result["errors"])
+    assert env["sent"] == ["Resume"]
+
+
+def test_orca_calls_share_one_time_budget(tmp_path, monkeypatch) -> None:
+    module = load_module()
+    calls: list[float] = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(kwargs["timeout"])
+        raise module.subprocess.TimeoutExpired(cmd, kwargs["timeout"])
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+    budget = module.Budget(module.QUERY_BUDGET_S)
+    with pytest.raises(module.subprocess.TimeoutExpired):
+        module.run_orca("orca", ["orchestration", "check"], budget)
+    assert calls == [module.CALL_TIMEOUT_S]
+    assert module.QUERY_BUDGET_S + module.SEND_TIMEOUT_S < 120
