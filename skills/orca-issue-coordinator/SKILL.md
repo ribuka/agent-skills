@@ -19,16 +19,20 @@ disable-model-invocation: true
 
 ## 0. Check preconditions and resolve worker settings
 
-Before anything else, run:
+First identify this Coordinator's runtime as `<agent>` (`claude` or `codex`).
+Workers always use that same agent; do not offer an independent worker-agent
+override. Before anything else, run:
 
 ```bash
-uv run <skill-dir>/scripts/check_preconditions.py
+uv run <skill-dir>/scripts/check_preconditions.py --agent <agent>
 ```
 
 It verifies that this conversation runs inside an Orca terminal, that the Orca
 runtime is reachable, that `gh auth status` succeeds, and that the git checkout
 the skills are installed from is neither behind `origin/main` nor carrying
 commits or uncommitted skill changes not on it (so no one runs stale skills).
+With `--agent codex` it also verifies that Codex will not show its update
+prompt when a worker starts.
 If it exits non-zero,
 or `orca orchestration run-create` later fails with
 `no_active_sender_terminal`, **stop immediately** and report the `STOP:` lines
@@ -42,9 +46,7 @@ On success it prints `skill-checkout: <path>`; keep that path. Never update
 PRs change skills: every worker must run the same skill version. Report it as
 stale at the end instead (step 17).
 
-Then identify this Coordinator's runtime as `<agent>` (`claude` or `codex`).
-Workers always use that same agent; do not offer an independent worker-agent
-override. Resolve the worker settings for it.
+Then resolve the worker settings for `<agent>`.
 
 Run once at the start, passing through any `--impl-model`, `--impl-effort`,
 `--merge-model`, `--merge-effort`, or `--max-workers` flags the user gave.
@@ -78,6 +80,15 @@ the failed attempt with `worker-stop --dispatch <dispatch-id>` following its
 authority rules, report the blocker and ask the user for a supported model.
 Do not retry the rejected model or automatically fall back to another model.
 Silence alone is not evidence of failure and does not authorize stopping.
+
+If a `worker-start` fails with `Agent startup blocked: agent-update-prompt`,
+the agent CLI showed its update prompt in the worker terminal. The
+precondition check cannot rule this out for the whole Run: Codex refreshes
+its cached latest version in the background. Never answer the prompt by
+sending keys to the worker terminal (`orca terminal send`); its menu options
+change between versions. Stop dispatching, release the failed dispatch, and
+ask the user to update the agent CLI or dismiss the prompt. Retry the Task
+with `--retry-of` only after the user confirms.
 
 ## 1. Plan and dispatch
 

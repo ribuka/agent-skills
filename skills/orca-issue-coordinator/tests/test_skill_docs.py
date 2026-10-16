@@ -325,3 +325,12 @@ def test_docs_do_not_name_quota_guard_storage_paths() -> None:
         text = doc.read_text(encoding="utf-8")
         for path in ("quota-guard/checkpoints", ".claude/quota-guard", ".codex/quota-guard"):
             assert path not in text, (doc.name, path)
+
+
+def test_preconditions_take_agent_and_update_prompt_stops_dispatch() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    assert "check_preconditions.py --agent <agent>" in skill
+    assert skill.index("identify this Coordinator's runtime") < skill.index(
+        "check_preconditions.py")
+    assert "Agent startup blocked: agent-update-prompt" in skill
+    assert "Never answer the prompt by\nsending keys to the worker terminal" in skill
