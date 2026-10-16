@@ -6,6 +6,7 @@ Run with: uv run --with pytest -m pytest <skill-dir>/tests
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -439,6 +440,112 @@ def test_review_script_dumps_bounded_reviewer_log_without_comment(
     assert dumped_lines[0] == expected_first
     assert all(len(line) <= len(expected_first) for line in dumped_lines)
     assert dumped_lines[-1] == "short-final-line"
+
+
+def reviewer_error_output(script_name: str, message: str) -> str:
+    """Format a reviewer error message the way each reviewer CLI ends its log."""
+    if script_name == "run_codex_review.sh":
+        return (
+            '{"type":"item.completed","item":{"type":"agent_message"}}\n'
+            f'{{"type":"turn.failed","error":{{"message":"{message}"}}}}\n'
+        )
+    return f"{message}\n"
+
+
+QUOTA_MESSAGES = {
+    "run_claude_review.sh": (
+        "You've hit your session limit \u00b7 resets 10:10am (Asia/Tokyo)",
+        "resets 10:10am (Asia/Tokyo)",
+    ),
+    "run_codex_review.sh": (
+        "You've hit your usage limit. Upgrade to Pro or try again at 10:10 AM.",
+        "try again at 10:10 AM",
+    ),
+}
+
+
+@pytest.mark.parametrize("script_name", SCRIPT_NAMES)
+def test_review_script_reports_reviewer_quota_exhaustion(tmp_path: Path, script_name: str) -> None:
+    """A reviewer stopped by its usage limit exits 75 and reports the reset time."""
+    message, reset = QUOTA_MESSAGES[script_name]
+    result = run_review_script(
+        tmp_path,
+        script_name,
+        post_comment=False,
+        reviewer_output=reviewer_error_output(script_name, message),
+        reviewer_exit_code=1,
+    )
+
+    agent = "claude" if script_name == "run_claude_review.sh" else "codex"
+    assert result.returncode == 75
+    assert f"reviewer-quota-exhausted: {agent}\n" in result.stdout
+    assert re.search(r"^reviewer-quota-detected-at: 20\d\d-\d\d-\d\dT\d\d:\d\d:\d\d[+-]\d{4}$", result.stdout, re.M)
+    assert f"reviewer-quota-reset: {reset}\n" in result.stdout
+    assert "usage limit was reached" in result.stderr
+
+
+@pytest.mark.parametrize("script_name", SCRIPT_NAMES)
+def test_review_script_reports_quota_without_comment(tmp_path: Path, script_name: str) -> None:
+    """A quota message after a zero exit without a comment is reported the same way."""
+    message, reset = QUOTA_MESSAGES[script_name]
+    result = run_review_script(
+        tmp_path,
+        script_name,
+        post_comment=False,
+        reviewer_output=reviewer_error_output(script_name, message),
+    )
+
+    assert result.returncode == 75
+    assert f"reviewer-quota-reset: {reset}\n" in result.stdout
+    assert "no new review comment was found" in result.stderr
+
+
+def test_review_script_converts_epoch_reset_time(tmp_path: Path) -> None:
+    """A `limit reached|<epoch>` message is reported as an ISO 8601 local time."""
+    result = run_review_script(
+        tmp_path,
+        "run_claude_review.sh",
+        post_comment=False,
+        reviewer_output="Claude AI usage limit reached|1760580600\n",
+        reviewer_exit_code=1,
+    )
+
+    assert result.returncode == 75
+    assert re.search(r"^reviewer-quota-reset: 20\d\d-\d\d-\d\dT\d\d:\d\d:\d\d[+-]\d{4}$", result.stdout, re.M)
+
+
+@pytest.mark.parametrize("script_name", SCRIPT_NAMES)
+def test_review_script_reports_unknown_quota_reset(tmp_path: Path, script_name: str) -> None:
+    """A quota message without a time reports the reset as unknown."""
+    result = run_review_script(
+        tmp_path,
+        script_name,
+        post_comment=False,
+        reviewer_output=reviewer_error_output(script_name, "Usage limit reached. Please try again later."),
+        reviewer_exit_code=1,
+    )
+
+    assert result.returncode == 75
+    assert "reviewer-quota-reset: unknown\n" in result.stdout
+
+
+@pytest.mark.parametrize("script_name", SCRIPT_NAMES)
+def test_review_script_ignores_quoted_quota_text(tmp_path: Path, script_name: str) -> None:
+    """Quota wording outside the reviewer's final error is not a quota failure."""
+    if script_name == "run_codex_review.sh":
+        output = '{"type":"item.completed","item":{"text":"usage limit reached, resets 10am"}}\n'
+    else:
+        output = "usage limit reached, resets 10am\n" + "other output\n" * 5
+    result = run_review_script(
+        tmp_path,
+        script_name,
+        post_comment=False,
+        reviewer_output=output,
+        reviewer_exit_code=3,
+    )
+
+    assert result.returncode == 3
+    assert "reviewer-quota" not in result.stdout
 
 
 POST_HARNESS = r"""
