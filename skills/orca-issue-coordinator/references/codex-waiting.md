@@ -11,8 +11,8 @@ Coordinator's working repository root (git-ignored, not the installed skill
 checkout). Resolve this checkpoint to an absolute path before recording it or
 embedding it in any wake prompt. Save: Run ID,
 Coordinator terminal handle, agent, resolved settings, task/dispatch/worktree/
-branch/PR state, review counts, pending CI heads/deadlines, and automation ID.
-Refresh it before ending each turn. This is the active Run checkpoint; quota
+branch/PR state, review counts, pending CI heads/deadlines, the waiting mode
+(see **Waiting modes**), and automation ID. Refresh it before ending each turn. This is the active Run checkpoint; quota
 pauses also require the durable checkpoint described in `quota-pause.md`.
 
 Load `orca-cli`, resolve its executable and absolute path, and confirm its
@@ -36,10 +36,47 @@ orca automations create --name 'coordinator-wait:<run-id>' \
 `quota-guard` documents `wake`: it sends input to the saved terminal and always
 exits nonzero, so no separate automation agent starts. Record the returned ID
 and verify name, terminal, schedule and precheck using `automations list`.
-Do not turn the precheck exit into success. The fallback deliberately permits
-one Coordinator turn every 15 minutes even when idle; it does not poll a model
-between wakes. Orca and the terminal must remain available. If setup fails,
-stop dispatching and report manual resumption instead of relying on notifications.
+Do not turn the precheck exit into success. In `recurring` mode the fallback
+deliberately permits one Coordinator turn every 15 minutes even when idle; it
+does not poll a model between wakes. Orca and the terminal must remain
+available. If setup fails, stop dispatching and report manual resumption
+instead of relying on notifications.
+
+## Waiting modes
+
+Keep exactly one wake-up per Run: at most one `coordinator-wait:<run-id>`
+automation, and no other waiting automation (a quota pause replaces it, see
+`quota-pause.md`). Before ending each turn, choose the mode from what the Run
+still waits for and record it in the checkpoint as `waiting-mode: <mode>`:
+
+- `recurring`: a worker is active, CI is pending (see **Pending CI**), or the
+  Run waits for anything else without a known time. Use the 15-minute
+  automation above. A known-time wait (below) that is due during this mode is
+  handled on the first wake at or after its time.
+- `known-time <local-time> <reason>`: no worker is active, no CI is pending,
+  and at least one remaining wait ends at a known time, such as a reviewer
+  quota retry time (`review-quota-retry.md`). Use one wake at the earliest
+  such time; other Tasks may still wait for the user.
+- `user-only`: no worker is active, no CI is pending, nothing waits for a
+  known time, and every remaining Task waits for a user answer. Remove the
+  automation and record `automation: none`. A user answer arrives through the
+  chat and starts a turn by itself; idle wakes would only scroll the pending
+  question away (SKILL.md **Asking the user**).
+
+To switch modes, remove the recorded automation with
+`orca automations remove <id>` and verify it is absent, then create the new
+one (none for `user-only`) and record its ID. If the mode and wake time are
+unchanged, keep the existing automation. Create the `known-time` automation
+with the command above, changing only `--trigger` to a five-field cron for the
+wake time in the same timezone (`<minute> <hour> <day> <month> *`) and
+`--missed-run-grace-minutes` to `60`; the wake text stays the same. That cron
+recurs annually, so remove it on wake-up (step 1 below).
+
+Returning to `recurring`: a turn that starts while the mode is `known-time` or
+`user-only` (the known-time wake, a user answer, a worker message, or a
+heartbeat nudge) follows the steps below and chooses the mode again at the
+end. Recreate exactly one waiting automation only if the Run still needs to
+wait.
 
 ## On an orchestration notification or recovery wake-up
 
@@ -47,7 +84,10 @@ If a wake arrives during an active turn, finish the current operation first.
 Treat queued wake prompts as reconciliation requests against the latest saved
 checkpoint and live Run, never as permission to repeat a dispatch or merge.
 
-1. If quota-paused, follow `quota-pause.md` first. Otherwise run `<quota-check>`;
+1. If quota-paused, follow `quota-pause.md` first. If the checkpoint's mode is
+   `known-time` and its time has come, remove that automation now, resolve a
+   removal failure before creating another, and record `automation: none`.
+   Then run `<quota-check>`;
    proceed only on exit 0. A blocking result switches to the quota pause procedure,
    which removes this waiting automation before scheduling quota resumption.
 2. Run exactly one non-waiting
@@ -62,8 +102,10 @@ checkpoint and live Run, never as permission to repeat a dispatch or merge.
    On recovery wakes, also inspect `worker-list` and `task-list` once: recover
    completed/missing/stuck workers even if a notification was lost. Verify live
    state before redispatching. Treat errors as blockers, not empty mail.
-4. Process ready work within quota and concurrency limits. If still waiting,
-   update the checkpoint and end the turn. If a question to the user is
+4. Process ready work within quota and concurrency limits. If a recorded
+   reviewer quota retry time has passed, follow **On wake-up** in
+   `review-quota-retry.md` for that PR. If still waiting, choose the waiting
+   mode (**Waiting modes**), update the checkpoint and end the turn. If a question to the user is
    pending, end with the reminder line from the SKILL.md **Asking the user**
    rules; never end with only "waiting for an answer". Do not call `check --wait`, launch
    `wait_actionable.py`, or start a foreground `gh pr checks --watch`.
@@ -97,5 +139,5 @@ before merging; a new head needs fresh review/test/sync verification.
 On Run completion, remove the recorded waiting automation with
 `orca automations remove <id>` and verify it is absent before deleting the Run's
 temporary directory. Resolve removal failures; do not abandon a recurring wake-up.
-After quota resumption, reconcile saved/live state and recreate exactly one
-waiting automation only if this Run still needs to wait.
+After quota resumption, reconcile saved/live state and choose the waiting mode
+again (**Waiting modes**).

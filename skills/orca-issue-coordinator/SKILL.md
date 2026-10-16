@@ -340,6 +340,9 @@ Code Coordinators (blockers, decisions, model choices, or anything else).
 
 **Codex:** follow [Codex waiting](references/codex-waiting.md). End the turn
 while idle; never run or poll `wait_actionable.py`, even in the background.
+Keep exactly one wake-up per Run: the 15-minute recovery wake while workers or
+CI are pending, one wake at the time when the Run waits only for a known time
+(e.g. a reviewer quota retry), and none while it waits only for the user.
 
 **Claude Code:** run the bundled waiter as a **background** command whenever you are waiting
 for workers, and only after a READY `<quota-check>`:
@@ -404,8 +407,8 @@ non-zero exit, handle the pause as in **Quota control** instead.
   pass it in every handoff.
 - If a worker reports that the reviewer's quota is exhausted
   (`reviewer-quota-exhausted`) with a known reset time, do not ask the user:
-  keep the PR blocked, schedule one wake-up at the reset, and retry the
-  review then, following
+  keep the PR blocked, make sure the Coordinator wakes at the reset, and
+  retry the review then, following
   [Reviewer quota retry](references/review-quota-retry.md).
 - If any other review failure occurs, the reset time is unknown, the
   quota retry fails again, the limit is reached, or a conflict cannot be

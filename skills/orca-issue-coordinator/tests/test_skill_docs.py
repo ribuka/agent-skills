@@ -223,3 +223,33 @@ def test_user_questions_are_written_in_full_in_final_message() -> None:
     assert "one-line reminder" in section
     reference = (SKILL_DIR / "references/codex-waiting.md").read_text(encoding="utf-8")
     assert "**Asking the user**" in reference
+
+
+def test_codex_waiting_modes_keep_one_wake_up_per_run() -> None:
+    reference = (SKILL_DIR / "references/codex-waiting.md").read_text(encoding="utf-8")
+    section = reference.split("## Waiting modes", 1)[1].split("\n## ", 1)[0]
+    assert "Keep exactly one wake-up per Run" in section
+    assert "`waiting-mode: <mode>`" in section
+    for mode in ("- `recurring`:", "- `known-time <local-time> <reason>`:", "- `user-only`:"):
+        assert mode in section
+    assert "every remaining Task waits for a user answer" in section
+    assert "`automation: none`" in section
+    assert "--missed-run-grace-minutes" in section
+    assert "Returning to `recurring`" in section
+    assert "Recreate exactly one waiting automation only if the Run still needs to\nwait" in section
+    assert "the waiting mode\n(see **Waiting modes**)" in reference
+    on_wake = reference.split("## On an orchestration notification", 1)[1].split("\n## ", 1)[0]
+    assert "mode is\n   `known-time`" in on_wake
+    assert "choose the waiting\n   mode (**Waiting modes**)" in on_wake
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    assert "Keep exactly one wake-up per Run" in skill
+
+
+def test_codex_review_retry_uses_known_time_waiting_mode() -> None:
+    retry = (SKILL_DIR / "references/review-quota-retry.md").read_text(encoding="utf-8")
+    assert "do not create a separate automation" in retry
+    assert "**Waiting modes** in\n     [Codex waiting](codex-waiting.md)" in retry
+    assert "quota-guard` skill's Codex Orca automation" not in retry
+    assert "Remove the retry time\n   from the checkpoint" in retry
+    reference = (SKILL_DIR / "references/codex-waiting.md").read_text(encoding="utf-8")
+    assert "`review-quota-retry.md`" in reference
