@@ -307,6 +307,31 @@ with the Task; no terminal handle is needed.
 - `--to dispatch:<dispatch_id>` addresses that exact attempt. After a
   re-dispatch, send to the new dispatch ID.
 
+## Asking the user
+
+These rules apply to every question to the user, in both Codex and Claude
+Code Coordinators (blockers, decisions, model choices, or anything else).
+
+- **Write the full question in the final message of the turn.** Never rely
+  only on `request_user_input_async`, `AskUserQuestion`, or another
+  input UI: later terminal input (heartbeat nudges, recovery wake text) and
+  later turns can hide or scroll it away. You may also open such a UI, but
+  the final message must stand on its own.
+- Use this format:
+  - **Background:** what happened and why a decision is needed, with the
+    Issue/PR numbers.
+  - **Options:** each choice and its consequence.
+  - **Recommendation:** the option you recommend and why.
+  - **Example reply:** a short reply the user can copy (e.g. `#32: A`).
+- Explain terms the user may not know (e.g. Git submodules) inside the
+  question.
+- Ask related pending questions together in one message, numbered, instead
+  of one at a time.
+- While a question is unanswered, end every later turn (including
+  heartbeat-only and wake-up turns) with a one-line reminder that names the
+  pending question and the expected reply, instead of an empty or
+  waiting-only message.
+
 ## Waiting
 
 **Codex:** follow [Codex waiting](references/codex-waiting.md). End the turn
@@ -350,7 +375,8 @@ non-zero exit, handle the pause as in **Quota control** instead.
   `You have N orchestration message(s). Run orca orchestration check ...` into
   this terminal on every heartbeat. Do not call any tool for it. Reply with
   one short line (e.g. `待機中`) and end the turn. Act only when the waiter
-  exits.
+  exits. If a question to the user is pending, that line is the reminder
+  from **Asking the user**.
 - **While the quota is paused,** handle every wake-up as in the quota pause
   reference (see **Quota control**).
 - Report to the user only when state changes (dispatch, worker_done, merge,

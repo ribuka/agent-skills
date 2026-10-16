@@ -63,7 +63,9 @@ checkpoint and live Run, never as permission to repeat a dispatch or merge.
    completed/missing/stuck workers even if a notification was lost. Verify live
    state before redispatching. Treat errors as blockers, not empty mail.
 4. Process ready work within quota and concurrency limits. If still waiting,
-   update the checkpoint and end the turn. Do not call `check --wait`, launch
+   update the checkpoint and end the turn. If a question to the user is
+   pending, end with the reminder line from the SKILL.md **Asking the user**
+   rules; never end with only "waiting for an answer". Do not call `check --wait`, launch
    `wait_actionable.py`, or start a foreground `gh pr checks --watch`.
 
 Notifications are best-effort, so neither actionable delivery nor a fixed

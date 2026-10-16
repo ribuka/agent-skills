@@ -208,3 +208,18 @@ def test_codex_quota_uses_automation_and_removes_waiting_wake() -> None:
 def test_codex_disallows_implicit_invocation() -> None:
     policy = (SKILL_DIR / "agents/openai.yaml").read_text(encoding="utf-8")
     assert "policy:\n  allow_implicit_invocation: false" in policy
+
+
+def test_user_questions_are_written_in_full_in_final_message() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    section = skill.split("## Asking the user", 1)[1].split("\n## ", 1)[0]
+    assert "both Codex and Claude\nCode Coordinators" in section
+    assert "**Write the full question in the final message of the turn.**" in section
+    assert "`request_user_input_async`" in section
+    for part in ("**Background:**", "**Options:**", "**Recommendation:**", "**Example reply:**"):
+        assert part in section
+    assert "Explain terms the user may not know" in section
+    assert "Ask related pending questions together" in section
+    assert "one-line reminder" in section
+    reference = (SKILL_DIR / "references/codex-waiting.md").read_text(encoding="utf-8")
+    assert "**Asking the user**" in reference
