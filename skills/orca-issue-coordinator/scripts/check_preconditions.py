@@ -10,6 +10,12 @@ Checks:
      `origin/main`: it is neither behind it nor carrying commits that are not on
      it, and its skills have no uncommitted changes, so the Coordinator and its
      workers run the latest skills.
+  5. With `--agent codex`: the installed Codex CLI will not show its update
+     prompt at startup. Codex shows it when the latest version it cached in
+     `<CODEX_HOME>/version.json` is newer than the installed one and was not
+     dismissed, unless `check_for_update_on_startup = false` in its
+     `config.toml`. The prompt blocks every worker launch
+     (`agent-update-prompt`).
 
 Exit status: 0 when every check passes, 1 when any check fails. On failure the
 Coordinator must stop and report to the user; it must not work around it.
@@ -17,11 +23,14 @@ Coordinator must stop and report to the user; it must not work around it.
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 TIMEOUT_SECONDS = 60
@@ -107,12 +116,55 @@ def check_skill_checkout() -> tuple[str | None, str | None]:
     return checkout, None
 
 
-def main() -> int:
+def codex_home() -> Path:
+    return Path(os.environ.get("CODEX_HOME", "").strip() or Path.home() / ".codex")
+
+
+def parse_version(text: str) -> tuple[int, int, int] | None:
+    """Parse a plain release version (`1.2.3`); pre-releases and others give None."""
+    match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", text.strip())
+    return tuple(int(n) for n in match.groups()) if match else None
+
+
+def check_codex_update_prompt() -> str | None:
+    home = codex_home()
+    try:
+        config = tomllib.loads((home / "config.toml").read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        config = {}
+    if config.get("check_for_update_on_startup", True) is False:
+        return None
+    try:
+        info = json.loads((home / "version.json").read_text(encoding="utf-8"))
+        latest = info["latest_version"]
+        dismissed = info.get("dismissed_version")
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return None  # Codex shows no prompt without a cached latest version.
+    if not isinstance(latest, str) or dismissed == latest:
+        return None
+    code, out = run(["codex", "--version"])
+    if code != 0:
+        return f"`codex --version` failed (exit {code}): {out}"
+    installed = out.split()[-1] if out.split() else ""
+    newer, current = parse_version(latest), parse_version(installed)
+    if newer is None or current is None or newer <= current:
+        return None
+    return (f"Codex {installed} will show an update prompt for {latest} when a worker starts, "
+            "which blocks the worker launch (agent-update-prompt); ask the user to update "
+            "Codex, or to start `codex` once and choose to skip this version")
+
+
+def main(argv: list[str] | None = None) -> int:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--agent", required=True, choices=("claude", "codex"),
+                        help="the Coordinator's runtime; workers use the same agent")
+    args = parser.parse_args(argv)
     checkout, checkout_failure = check_skill_checkout()
-    failures = [msg for msg in (check_orca_terminal(), check_orca_runtime(), check_gh_auth(),
-                                checkout_failure)
-                if msg]
+    checks = [check_orca_terminal(), check_orca_runtime(), check_gh_auth(), checkout_failure]
+    if args.agent == "codex":
+        checks.append(check_codex_update_prompt())
+    failures = [msg for msg in checks if msg]
     if not failures:
         print("preconditions: ok")
         print(f"skill-checkout: {checkout}")

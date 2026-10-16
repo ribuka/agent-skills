@@ -38,6 +38,7 @@ def cp(monkeypatch: pytest.MonkeyPatch):
         "fetch": (0, ""),
         "rev-list": (0, "0 0"),
         "status": (0, ""),
+        "codex": (0, "codex-cli 0.162.1"),
     }
     calls: list[list[str]] = []
 
@@ -54,7 +55,7 @@ def cp(monkeypatch: pytest.MonkeyPatch):
 
 
 def test_all_checks_pass(cp, capsys: pytest.CaptureFixture[str]) -> None:
-    assert cp.main() == 0
+    assert cp.main(["--agent", "claude"]) == 0
     assert capsys.readouterr().out.splitlines() == [
         "preconditions: ok",
         f"skill-checkout: {CHECKOUT}",
@@ -82,7 +83,7 @@ def test_skill_dir_is_the_resolved_script_parent(cp) -> None:
 def test_stale_skill_checkout_stops(cp, capsys: pytest.CaptureFixture[str],
                                     counts: str, expected: str) -> None:
     cp.responses["rev-list"] = (0, counts)
-    assert cp.main() == 1
+    assert cp.main(["--agent", "claude"]) == 1
     out = capsys.readouterr().out
     assert f"STOP: the skill checkout {CHECKOUT} {expected}" in out
     assert "stale skills" in out
@@ -90,7 +91,7 @@ def test_stale_skill_checkout_stops(cp, capsys: pytest.CaptureFixture[str],
 
 def test_uncommitted_skill_changes_stop(cp, capsys: pytest.CaptureFixture[str]) -> None:
     cp.responses["status"] = (0, " M skills/example/SKILL.md")
-    assert cp.main() == 1
+    assert cp.main(["--agent", "claude"]) == 1
     assert (f"STOP: the skill checkout {CHECKOUT} has uncommitted changes under its skills,"
             in capsys.readouterr().out)
 
@@ -106,14 +107,14 @@ def test_uncommitted_skill_changes_stop(cp, capsys: pytest.CaptureFixture[str]) 
 def test_unverifiable_skill_checkout_stops(cp, capsys: pytest.CaptureFixture[str], key: str,
                                            response: tuple[int, str], expected: str) -> None:
     cp.responses[key] = response
-    assert cp.main() == 1
+    assert cp.main(["--agent", "claude"]) == 1
     assert expected in capsys.readouterr().out
 
 
 def test_outside_orca_terminal_stops(cp, monkeypatch: pytest.MonkeyPatch,
                                      capsys: pytest.CaptureFixture[str]) -> None:
     monkeypatch.delenv("ORCA_TERMINAL_HANDLE")
-    assert cp.main() == 1
+    assert cp.main(["--agent", "claude"]) == 1
     out = capsys.readouterr().out
     assert "STOP: not running inside an Orca terminal" in out
     assert "Do not work around it." in out
@@ -121,7 +122,7 @@ def test_outside_orca_terminal_stops(cp, monkeypatch: pytest.MonkeyPatch,
 
 def test_blank_terminal_handle_stops(cp, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ORCA_TERMINAL_HANDLE", "  ")
-    assert cp.main() == 1
+    assert cp.main(["--agent", "claude"]) == 1
 
 
 @pytest.mark.parametrize("response, expected", [
@@ -133,13 +134,13 @@ def test_blank_terminal_handle_stops(cp, monkeypatch: pytest.MonkeyPatch) -> Non
 def test_orca_runtime_failure_stops(cp, capsys: pytest.CaptureFixture[str],
                                     response: tuple[int, str], expected: str) -> None:
     cp.responses["orca"] = response
-    assert cp.main() == 1
+    assert cp.main(["--agent", "claude"]) == 1
     assert expected in capsys.readouterr().out
 
 
 def test_gh_auth_failure_stops(cp, capsys: pytest.CaptureFixture[str]) -> None:
     cp.responses["gh"] = (1, "HTTP 401: Bad credentials")
-    assert cp.main() == 1
+    assert cp.main(["--agent", "claude"]) == 1
     out = capsys.readouterr().out
     assert "STOP: `gh auth status` failed (exit 1): HTTP 401: Bad credentials" in out
 
@@ -148,8 +149,78 @@ def test_reports_every_failure(cp, monkeypatch: pytest.MonkeyPatch,
                                capsys: pytest.CaptureFixture[str]) -> None:
     monkeypatch.delenv("ORCA_TERMINAL_HANDLE")
     cp.responses["gh"] = (1, "not logged in")
-    assert cp.main() == 1
+    assert cp.main(["--agent", "claude"]) == 1
     assert capsys.readouterr().out.count("STOP:") == 2
+
+
+@pytest.fixture
+def codex_home(cp, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    return tmp_path
+
+
+def write_version(home: Path, latest: str, dismissed: str | None = None) -> None:
+    info = {"latest_version": latest, "last_checked_at": "2026-10-16T00:00:00Z",
+            "dismissed_version": dismissed}
+    (home / "version.json").write_text(json.dumps(info), encoding="utf-8")
+
+
+def test_codex_pending_update_prompt_stops(cp, codex_home: Path,
+                                           capsys: pytest.CaptureFixture[str]) -> None:
+    write_version(codex_home, "0.163.0")
+    assert cp.main(["--agent", "codex"]) == 1
+    out = capsys.readouterr().out
+    assert ("STOP: Codex 0.162.1 will show an update prompt for 0.163.0 when a worker starts"
+            in out)
+    assert "agent-update-prompt" in out
+    assert ["codex", "--version"] in cp.calls
+
+
+def test_claude_agent_skips_codex_check(cp, codex_home: Path) -> None:
+    write_version(codex_home, "0.163.0")
+    assert cp.main(["--agent", "claude"]) == 0
+    assert ["codex", "--version"] not in cp.calls
+
+
+def test_agent_is_required(cp) -> None:
+    with pytest.raises(SystemExit):
+        cp.main([])
+
+
+@pytest.mark.parametrize("latest, dismissed", [
+    ("0.163.0", "0.163.0"),  # dismissed with "skip this version"
+    ("0.162.1", None),  # already up to date
+    ("0.161.0", None),  # cache older than the installed version
+    ("0.164.0-alpha.1", None),  # pre-releases are not offered
+])
+def test_codex_without_update_prompt_passes(cp, codex_home: Path, latest: str,
+                                            dismissed: str | None) -> None:
+    write_version(codex_home, latest, dismissed)
+    assert cp.main(["--agent", "codex"]) == 0
+
+
+@pytest.mark.parametrize("content", [None, "not json", "{}", '{"latest_version": 1}'])
+def test_codex_without_cached_latest_version_passes(cp, codex_home: Path,
+                                                    content: str | None) -> None:
+    if content is not None:
+        (codex_home / "version.json").write_text(content, encoding="utf-8")
+    assert cp.main(["--agent", "codex"]) == 0
+    assert ["codex", "--version"] not in cp.calls
+
+
+def test_codex_update_check_disabled_in_config_passes(cp, codex_home: Path) -> None:
+    write_version(codex_home, "0.163.0")
+    (codex_home / "config.toml").write_text("check_for_update_on_startup = false\n",
+                                            encoding="utf-8")
+    assert cp.main(["--agent", "codex"]) == 0
+
+
+def test_codex_version_failure_stops(cp, codex_home: Path,
+                                     capsys: pytest.CaptureFixture[str]) -> None:
+    write_version(codex_home, "0.163.0")
+    cp.responses["codex"] = (127, "codex: command not found")
+    assert cp.main(["--agent", "codex"]) == 1
+    assert "STOP: `codex --version` failed (exit 127)" in capsys.readouterr().out
 
 
 def git(cwd: Path, *args: str) -> str:
