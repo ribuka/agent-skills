@@ -301,6 +301,7 @@ dump_reviewer_log() {
 # for one.
 reviewer_quota_tail_lines=5
 reviewer_quota_pattern='usage limit|session limit|weekly limit|hit your limit|limit reached|quota exceeded|exceeded your quota'
+# shellcheck disable=SC2034 # used by run_codex_review.sh and run_claude_review.sh
 reviewer_quota_exit_code=75
 
 # reviewer_quota_message <agent> <log-file> -- print the reviewer's quota
