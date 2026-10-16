@@ -174,3 +174,54 @@ def test_unknown_reports_local_retry_wait(tmp_path):
     assert result["state"] == "UNKNOWN"
     assert result["local_retry_seconds"] == guard.LOCAL_RETRY_SECONDS
     assert "cron" in result
+
+
+def run_clear(state, operation, provider="claude"):
+    result = subprocess.run([sys.executable, str(SCRIPT), "clear-checkpoint",
+                             "--provider", provider, "--state-dir", str(state),
+                             f"--operation={operation}"],
+                            text=True, capture_output=True, encoding="utf-8")
+    return result.returncode, json.loads(result.stdout)
+
+
+def test_clear_checkpoint_deletes_only_that_operation(tmp_path):
+    checkpoints = tmp_path / "checkpoints"
+    checkpoints.mkdir()
+    (checkpoints / "run_a.md").write_text("a", encoding="utf-8")
+    (checkpoints / "run_b.md").write_text("b", encoding="utf-8")
+    code, result = run_clear(tmp_path, "run_a")
+    assert (code, result) == (0, {"removed": True, "path": str(checkpoints / "run_a.md")})
+    assert not (checkpoints / "run_a.md").exists()
+    assert (checkpoints / "run_b.md").is_file()
+    assert run_clear(tmp_path, "run_a", "codex") == (
+        0, {"removed": False, "path": str(checkpoints / "run_a.md")})
+
+
+@pytest.mark.parametrize("operation", ["", ".", "..", "../run_a", "a/b", "a\b", "-x", "*"])
+def test_clear_checkpoint_refuses_invalid_operation(tmp_path, operation):
+    (tmp_path / "run_a.md").write_text("a", encoding="utf-8")
+    code, result = run_clear(tmp_path / "state", operation)
+    assert code == 2
+    assert result["removed"] is False
+    assert (tmp_path / "run_a.md").is_file()
+
+
+def test_clear_checkpoint_reports_failure(tmp_path):
+    (tmp_path / "checkpoints" / "run_dir.md").mkdir(parents=True)
+    code, result = guard.clear_checkpoint(tmp_path, "run_dir")
+    assert code == 1
+    assert result["removed"] is False
+    assert result["reason"]
+    assert (tmp_path / "checkpoints" / "run_dir.md").is_dir()
+
+
+def test_clear_checkpoint_default_state_dir_follows_provider(tmp_path, monkeypatch):
+    monkeypatch.setattr(guard.Path, "home", classmethod(lambda cls: tmp_path))
+    for provider, home in (("claude", ".claude"), ("codex", ".codex")):
+        path = tmp_path / home / "quota-guard" / "checkpoints" / "run_a.md"
+        path.parent.mkdir(parents=True)
+        path.write_text("a", encoding="utf-8")
+        monkeypatch.setattr(sys, "argv", ["quota_guard.py", "clear-checkpoint",
+                                          "--provider", provider, "--operation", "run_a"])
+        assert guard.main() == 0
+        assert not path.exists()

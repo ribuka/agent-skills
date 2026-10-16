@@ -155,6 +155,6 @@ before merging; a new head needs fresh review/test/sync verification.
 
 On Run completion, remove the recorded waiting automation with
 `orca automations remove <id>` and verify it is absent before deleting the Run's
-temporary directory. Resolve removal failures; do not abandon a recurring wake-up.
+temporary directory and quota checkpoint (`SKILL.md` step 17). Resolve removal failures; do not abandon a recurring wake-up.
 After quota resumption, reconcile saved/live state and choose the waiting mode
 again (**Waiting modes**).

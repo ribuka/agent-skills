@@ -303,3 +303,25 @@ def test_issue_bodies_are_read_only_for_undecidable_overlaps() -> None:
     overlap_step = skill.split("3. Identify dependencies", 1)[1].split("4. Create one", 1)[0]
     assert "only for the Issues involved" in overlap_step
     assert "`gh issue view <n> --json body`), once each" in overlap_step
+
+
+def test_run_end_cleanup_uses_scripts_only() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    step = skill.split("17. Mark only confirmed merged Issues", 1)[1].split("## Quota control", 1)[0]
+    assert "<skill-dir>/scripts/cleanup_run.py --run-id <run-id>" in step
+    assert ("~/.agents/skills/quota-guard/scripts/quota_guard.py clear-checkpoint "
+            "--provider <agent> --operation <run-id>") in step
+    for code in ("Exit `0`", "`1`", "`2`"):
+        assert code in step
+    assert "do not retry with another command" in step
+    assert "report the remaining paths to the user" in step
+    reference = QUOTA_PAUSE.read_text(encoding="utf-8")
+    assert "## Checkpoint lifecycle" in reference
+    assert "clear-checkpoint" in reference
+
+
+def test_docs_do_not_name_quota_guard_storage_paths() -> None:
+    for doc in [SKILL_MD, *(SKILL_DIR / "references").glob("*.md")]:
+        text = doc.read_text(encoding="utf-8")
+        for path in ("quota-guard/checkpoints", ".claude/quota-guard", ".codex/quota-guard"):
+            assert path not in text, (doc.name, path)

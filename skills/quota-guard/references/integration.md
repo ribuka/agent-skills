@@ -66,6 +66,11 @@ compatibility from a successful synthetic shell test.
   `{"sent":true|false}`, and always exit 1, including send failure or timeout.
   This is an automation precheck, so its nonzero exit must not be treated as
   an instruction to run the automation's agent. It never schedules anything.
+- `clear-checkpoint --provider claude|codex --operation <operation-id>`: delete
+  `<operation-id>.md` under that provider's `checkpoint_dir` once the operation
+  completes. Operation IDs start with a letter or digit and contain only
+  letters, digits, `_`, `.`, and `-`. Exit 0 when deleted or already absent,
+  1 when deletion failed, 2 on an invalid ID; `--state-dir` applies as for `check`.
 - `check --threshold 95 --max-age 180 --state-dir "<path>"`: override policy.
   If changing the display policy, also edit the statusLine command's corresponding
   flags; the check command's policy controls the caller's decisions.
@@ -96,8 +101,9 @@ it does not enforce 7-day limits or API billing limits.
   only call the `check` helper at the caller's boundaries, without reloading
   the skill or reading snapshot history.
 - Continue only on READY; PAUSED_QUOTA and UNKNOWN block new work.
-- One owner per operation writes the checkpoint (under `checkpoint_dir` from
-  the `check` result) and creates the resumption wake-up: at most one one-shot
+- One owner per operation writes the checkpoint (`<operation-id>.md` under
+  `checkpoint_dir` from the `check` result), deletes it with `clear-checkpoint`
+  when the operation completes, and creates the resumption wake-up: at most one one-shot
   wake-up per operation, marked `quota-guard:<operation-id>`, at the result's
   `cron`. Other participants may run `check` but never schedule competing
   wake-ups for the same operation.

@@ -76,8 +76,8 @@ The following initialization steps apply only to Claude Code.
 
 ## Pause and resume
 
-1. Save a durable caller checkpoint under the result's `checkpoint_dir`
-   (outside any worktree): the operation/run ID and the caller-defined state
+1. Save a durable caller checkpoint as `<operation-id>.md` under the result's
+   `checkpoint_dir` (outside any worktree): the operation/run ID and the caller-defined state
    needed to resume (for example phases, work locations, and pending
    operations). Retain permissions and record the helper/state paths and
    current session. Do not store secrets.
@@ -105,6 +105,14 @@ The following initialization steps apply only to Claude Code.
 6. If the tools/session cannot schedule or remain available, keep the checkpoint
    and report that manual or external resumption is required. Never promise recovery
    after the session exits. Timers do not independently fetch fresh quota data.
+7. When the operation completes and no resumption remains, delete its
+   checkpoint with
+   `uv run --no-project "<skill-dir>/scripts/quota_guard.py" clear-checkpoint --provider <claude|codex> --operation <operation-id>`.
+   It deletes only `<operation-id>.md` under that provider's `checkpoint_dir`
+   and prints `{"removed": <bool>, "path": ...}`. Exit `0`: deleted or
+   already absent; `1`: deletion failed (`path` remains, `reason` says why);
+   `2`: invalid operation ID, nothing deleted. On a failure, report the
+   remaining path instead of deleting it another way.
 
 ## Limits
 
