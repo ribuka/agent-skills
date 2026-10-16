@@ -8,6 +8,7 @@ import math
 import os
 from pathlib import Path
 import queue
+import re
 import shlex
 import shutil
 import signal
@@ -23,6 +24,8 @@ RESET_TOLERANCE = 120.0
 # Wait before the single local re-check of an UNKNOWN result, so that an
 # in-flight statusLine callback can finish writing its snapshot.
 LOCAL_RETRY_SECONDS = 2
+# A caller checkpoint is `<checkpoint_dir>/<operation-id>.md`.
+OPERATION_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*")
 
 
 def read_json(path: Path):
@@ -291,6 +294,20 @@ def wake(terminal: str, text: str, executable: str) -> int:
     return 1
 
 
+def clear_checkpoint(root: Path, operation: str) -> tuple[int, dict]:
+    """Delete one finished operation's checkpoint; absent counts as success."""
+    if not OPERATION_ID.fullmatch(operation):
+        return 2, {"removed": False, "reason": f"invalid operation ID: {operation!r}"}
+    path = root / "checkpoints" / f"{operation}.md"
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        return 0, {"removed": False, "path": str(path)}
+    except OSError as error:
+        return 1, {"removed": False, "path": str(path), "reason": str(error)}
+    return 0, {"removed": True, "path": str(path)}
+
+
 def quote_command(value):
     # Double quoted forward-slash paths work in Windows cmd and Git Bash.
     value = str(value).replace("\\", "/")
@@ -406,7 +423,7 @@ def main():
     wake_parser.add_argument("--text", required=True)
     wake_parser.add_argument("--orca", required=True, help="Resolved Orca executable absolute path")
     default = Path.home() / ".claude" / "quota-guard"
-    for name in ("statusline", "check", "configure"):
+    for name in ("statusline", "check", "configure", "clear-checkpoint"):
         item = sub.add_parser(name)
         item.add_argument("--state-dir", type=Path)
         if name in ("statusline", "check"):
@@ -417,15 +434,21 @@ def main():
         if name == "configure":
             item.add_argument("--settings", type=Path,
                               default=Path.home() / ".claude" / "settings.json")
-        if name == "check":
+        if name in ("check", "clear-checkpoint"):
             item.add_argument("--provider", choices=("claude", "codex"), default="claude")
+        if name == "clear-checkpoint":
+            item.add_argument("--operation", required=True)
     args = parser.parse_args()
     try:
         if args.action == "wake":
             return wake(args.terminal, args.text, args.orca)
         if args.state_dir is None:
             args.state_dir = (Path.home() / ".codex" / "quota-guard"
-                              if args.action == "check" and args.provider == "codex" else default)
+                              if getattr(args, "provider", None) == "codex" else default)
+        if args.action == "clear-checkpoint":
+            code, result = clear_checkpoint(args.state_dir, args.operation)
+            print(json.dumps(result))
+            return code
         if args.action == "configure":
             result = configure(args.state_dir, args.settings)
             print(json.dumps(result))

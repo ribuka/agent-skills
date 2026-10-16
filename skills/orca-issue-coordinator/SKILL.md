@@ -262,8 +262,23 @@ Silence alone is not evidence of failure and does not authorize stopping.
     Then end the Run. ORCA has no command that closes a Run; the Run ends
     when no worker terminal still owes a decision:
     `orca orchestration worker-list --run <run-id> --terminal-state reclaimable --json`
-    must return none (release any it lists). Finally delete only
-    `tmp/<run-id>/` (see **Rules**).
+    must return none (release any it lists). Finally delete this Run's
+    files with these commands only, from the Coordinator's working
+    repository:
+    - Temporary directory:
+      `uv run --no-project <skill-dir>/scripts/cleanup_run.py --run-id <run-id>`.
+      It deletes only `tmp/<run-id>/` under the git top level of the current
+      directory and prints one JSON line `{"status": ..., "path": ...}`.
+      Exit `0`: removed or already absent; `1`: deletion failed, `path`
+      remains; `2`: refused (invalid Run ID, or the path resolves outside
+      `tmp/<run-id>/`), nothing deleted.
+    - Quota checkpoint (see **Quota control**):
+      `uv run --no-project ~/.agents/skills/quota-guard/scripts/quota_guard.py clear-checkpoint --provider <agent> --operation <run-id>`.
+      Exit `0`: deleted or already absent; `1`: deletion failed, `path`
+      remains; `2`: invalid Run ID, nothing deleted.
+    - If either command exits non-zero or is rejected (e.g. by an approval
+      policy), do not retry with another command (`rm -rf`, `Remove-Item`,
+      ...); report the remaining paths to the user.
 
 ## Quota control
 
@@ -458,7 +473,8 @@ non-zero exit, handle the pause as in **Quota control** instead.
   cannot be verified.
 - Follow ORCA's protocol for completion reporting and cleanup.
 - Put every temporary file the Coordinator creates under `tmp/<run-id>/`
-  in the repository root. When the Run ends, delete only that directory;
-  never delete `tmp/` as a whole or other files in it (e.g. `rm -rf tmp/*`).
+  in the repository root. When the Run ends, delete only that directory, with
+  `cleanup_run.py` (step 17); never delete `tmp/` as a whole or other files
+  in it (e.g. `rm -rf tmp/*`), and never delete workers' files.
 - Resolve routine technical decisions autonomously; ask the user
   only when a safe decision cannot be made.

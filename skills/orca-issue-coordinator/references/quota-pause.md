@@ -10,6 +10,13 @@ For either agent, UNKNOWN immediately after setup or wake-up permits one local
 retry after the returned `local_retry_seconds`, without another model request.
 If it remains UNKNOWN, use the provider's scheduled retry below.
 
+## Checkpoint lifecycle
+
+The quota checkpoint lives for the whole Run: create it on the first pause,
+update it on later pauses and wake-ups, and keep it after resuming on READY.
+Delete it only when the Run completes, with `quota-guard`'s `clear-checkpoint`
+command in `SKILL.md` step 17; never delete it by path.
+
 ## On PAUSED_QUOTA or UNKNOWN
 
 1. Write the checkpoint to `<run-id>.md` under the result's
