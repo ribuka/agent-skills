@@ -15,6 +15,13 @@ branch/PR state, review counts, pending CI heads/deadlines, the waiting mode
 (see **Waiting modes**), and automation ID. Refresh it before ending each turn. This is the active Run checkpoint; quota
 pauses also require the durable checkpoint described in `quota-pause.md`.
 
+Record every time at which the Coordinator must look again as its own line
+`wake-at: <ISO-8601 time with offset> <reason>` (e.g.
+`wake-at: 2026-10-16T14:05:00+09:00 ci #84`): the next pending-CI inspection
+(see **Pending CI**) and any reviewer quota retry time
+(`review-quota-retry.md`). Remove or replace a line once it is handled. The
+wake precheck reads only these lines from the checkpoint.
+
 Load `orca-cli`, resolve its executable and absolute path, and confirm its
 installed automation guide. Use one automation named `coordinator-wait:<run-id>`
 as a recovery mechanism. Check `orca automations list --json` first; reuse only
@@ -28,17 +35,19 @@ for the invoking shell, including doubled embedded single quotes in PowerShell):
 orca automations create --name 'coordinator-wait:<run-id>' \
   --trigger '*/15 * * * *' --timezone '<local-IANA-timezone>' \
   --provider codex --prompt 'Unused: precheck always exits nonzero' \
-  --precheck 'uv run --no-project "<absolute-quota-guard-dir>/scripts/quota_guard.py" wake --orca "<absolute-orca-executable>" --terminal "<coordinator-handle>" --text "Resume the existing Run <run-id> from <absolute-checkpoint-path>. Follow the installed orca-issue-coordinator Codex waiting reference. Check quota first, reconcile once, then end the turn if still waiting."' \
+  --precheck 'uv run --no-project "<absolute-skill-dir>/scripts/wake_if_actionable.py" --orca "<absolute-orca-executable>" --terminal "<coordinator-handle>" --run "<run-id>" --checkpoint "<absolute-checkpoint-path>" --text "Resume the existing Run <run-id> from <absolute-checkpoint-path>. Follow the installed orca-issue-coordinator Codex waiting reference. Check quota first, reconcile once, then end the turn if still waiting."' \
   --precheck-timeout 120 --workspace 'path:<absolute-repo-path>' \
   --missed-run-grace-minutes 15 --enabled
 ```
 
-`quota-guard` documents `wake`: it sends input to the saved terminal and always
-exits nonzero, so no separate automation agent starts. Record the returned ID
-and verify name, terminal, schedule and precheck using `automations list`.
-Do not turn the precheck exit into success. In `recurring` mode the fallback
-deliberately permits one Coordinator turn every 15 minutes even when idle; it
-does not poll a model between wakes. Orca and the terminal must remain
+`wake_if_actionable.py` (see SKILL.md **Waiting**) sends the wake text to the
+Coordinator terminal only when the Run needs it (an unread actionable message,
+a worker requiring action, no worker in progress while Tasks remain, a passed
+`wake-at:` time, the 60-minute safety interval, or an `orca` failure) and
+always exits nonzero, so no separate automation agent starts and an idle fire
+makes no model request. Record the returned ID and verify name, terminal,
+schedule and precheck using `automations list`. Do not turn the precheck exit
+into success. Orca and the terminal must remain
 available. If setup fails, stop dispatching and report manual resumption
 instead of relying on notifications.
 
@@ -52,7 +61,7 @@ still waits for and record it in the checkpoint as `waiting-mode: <mode>`:
 - `recurring`: a worker is active, CI is pending (see **Pending CI**), or the
   Run waits for anything else without a known time. Use the 15-minute
   automation above. A known-time wait (below) that is due during this mode is
-  handled on the first wake at or after its time.
+  handled on the first fire at or after its `wake-at:` time.
 - `known-time <local-time> <reason>`: no worker is active, no CI is pending,
   and at least one remaining wait ends at a known time, such as a reviewer
   quota retry time (`review-quota-retry.md`). Use one wake at the earliest
@@ -67,10 +76,13 @@ To switch modes, remove the recorded automation with
 `orca automations remove <id>` and verify it is absent, then create the new
 one (none for `user-only`) and record its ID. If the mode and wake time are
 unchanged, keep the existing automation. Create the `known-time` automation
-with the command above, changing only `--trigger` to a five-field cron for the
-wake time in the same timezone (`<minute> <hour> <day> <month> *`) and
-`--missed-run-grace-minutes` to `60`; the wake text stays the same. That cron
-recurs annually, so remove it on wake-up (step 1 below).
+with the command above, changing `--trigger` to a five-field cron for the
+wake time in the same timezone (`<minute> <hour> <day> <month> *`),
+`--missed-run-grace-minutes` to `60`, and the precheck to
+`uv run --no-project "<absolute-quota-guard-dir>/scripts/quota_guard.py" wake --orca "<absolute-orca-executable>" --terminal "<coordinator-handle>" --text "<same wake text>"`.
+`quota-guard` documents `wake`: it always sends the text and exits nonzero, so
+the one known-time fire always wakes. That cron recurs annually, so remove it
+on wake-up (step 1 below).
 
 Returning to `recurring`: a turn that starts while the mode is `known-time` or
 `user-only` (the known-time wake, a user answer, a worker message, or a
@@ -128,9 +140,11 @@ against the installed Orca build.
 
 Run `gh pr checks <pr>` once. Exit 8 means pending: save the PR head SHA and
 an absolute deadline (default 30 minutes from the first pending observation),
-then end the turn with the recovery automation enabled. At subsequent wakes,
-inspect that PR once; never reset its deadline on a heartbeat or a context
-restart. Do not build a tight CI polling loop. If the deadline expires, report
+and a `wake-at:` line for the next inspection 15 minutes from now (never later
+than the deadline), then end the turn with the recovery automation enabled.
+At subsequent wakes, inspect that PR once and replace its `wake-at:` line the
+same way while it stays pending; never reset its deadline on a heartbeat or a
+context restart. Do not build a tight CI polling loop. If the deadline expires, report
 `monitor-error: CI deadline exceeded` and block the PR. Other errors, failed or
 cancelled checks also block it; an empty check set is not success. Read only
 relevant failed logs. Verify all checks and the current head again immediately

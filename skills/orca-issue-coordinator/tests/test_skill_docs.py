@@ -253,3 +253,25 @@ def test_codex_review_retry_uses_known_time_waiting_mode() -> None:
     assert "Remove the retry time\n   from the checkpoint" in retry
     reference = (SKILL_DIR / "references/codex-waiting.md").read_text(encoding="utf-8")
     assert "`review-quota-retry.md`" in reference
+
+
+def test_codex_recovery_wake_uses_actionable_precheck() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    section = skill.split("## Waiting", 1)[1].split("\n## ", 1)[0]
+    assert "<skill-dir>/scripts/wake_if_actionable.py" in section
+    for contract in ('{"wake": <bool>, "reasons": [...], "sent": <bool|null>}',
+                     "always exits non-zero", "`1` nothing new", "`2` wake text sent",
+                     "`3` wake needed but sending failed", "wake-at: <ISO-8601 time> <reason>"):
+        assert contract in section
+    reference = (SKILL_DIR / "references/codex-waiting.md").read_text(encoding="utf-8")
+    setup = reference.split("## Set up a recovery wake-up", 1)[1].split("\n## ", 1)[0]
+    assert '"<absolute-skill-dir>/scripts/wake_if_actionable.py" --orca' in setup
+    assert '--run "<run-id>" --checkpoint "<absolute-checkpoint-path>"' in setup
+    assert "`wake-at: <ISO-8601 time with offset> <reason>`" in setup
+    assert "permits one Coordinator turn every 15 minutes even when idle" not in reference
+    modes = reference.split("## Waiting modes", 1)[1].split("\n## ", 1)[0]
+    assert "quota_guard.py\" wake --orca" in modes
+    ci = reference.split("## Pending CI", 1)[1]
+    assert "a `wake-at:` line for the next inspection" in ci
+    retry = (SKILL_DIR / "references/review-quota-retry.md").read_text(encoding="utf-8")
+    assert "a `wake-at:` line" in retry
