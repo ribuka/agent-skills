@@ -238,9 +238,11 @@ with `--retry-of` only after the user confirms.
     - No more than `<max>` cross-reviews on the PR, plus the extra reviews
       the user approved for it: run
       `bash ~/.agents/skills/pr-cross-review/scripts/review_status.sh <pr-number>`
-      and check that its `review-count: <count>/<max>` line has
-      `<count>` ≤ `<max>` and its `review-extra: <count>` line does not
-      exceed the approved extra reviews. Do not count PR comments yourself; other
+      and check its `review-extra: <count>` line: it must not exceed the
+      extra reviews the user approved for this PR (`0` without approval).
+      Do not compare `review-count: <count>/<max>` with `<max>` alone; after
+      an approved extra review it is above `<max>` (e.g. `4/3` with
+      `review-extra: 1`). Do not count PR comments yourself; other
       comments are mixed in. Compare this output with the review count in
       the worker handoff; if they differ, use the script's count and note
       the mismatch in the Issue's report (step 17). If the script exits non-zero,
