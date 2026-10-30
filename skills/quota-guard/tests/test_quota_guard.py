@@ -16,6 +16,13 @@ guard = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(guard)
 
 
+@pytest.fixture(autouse=True)
+def fake_uv(tmp_path, monkeypatch):
+    uv = tmp_path / "tools" / "uv"
+    monkeypatch.setenv("UV", str(uv))
+    return uv
+
+
 def payload(session, used, reset):
     return {"session_id": session, "rate_limits": {
         "five_hour": {"used_percentage": used, "resets_at": reset}}}
@@ -84,6 +91,33 @@ def test_settings_scopes_preserve_independent_commands(tmp_path):
     before = {p: p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
     assert guard.configure(root, user)["changed"] is False
     assert before == {p: p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
+
+
+def test_command_is_stable_across_project_venvs(tmp_path, monkeypatch, fake_uv):
+    settings = tmp_path / "settings.json"
+    guard.atomic_json(settings, {"statusLine": {"type": "command", "command": "printf 'OLD'"}})
+    results, commands = [], []
+    for repo in ("repo-a", "repo-b"):
+        monkeypatch.setattr(guard.sys, "executable",
+                            str(tmp_path / repo / ".venv" / "Scripts" / "python.exe"))
+        results.append(guard.configure(tmp_path / "state", settings)["changed"])
+        commands.append(guard.read_json(settings)["statusLine"]["command"])
+    assert results == [True, False]
+    assert commands[0] == commands[1]
+    assert ".venv" not in commands[0]
+    assert shlex.split(commands[0])[:3] == [fake_uv.resolve().as_posix(), "run", "--no-project"]
+    assert len(list(tmp_path.glob("settings.json.quota-guard-*.bak"))) == 1
+
+
+def test_missing_uv_leaves_settings_unchanged(tmp_path, monkeypatch):
+    monkeypatch.delenv("UV")
+    monkeypatch.setattr(guard.shutil, "which", lambda name: None)
+    settings = tmp_path / "settings.json"
+    guard.atomic_json(settings, {"statusLine": {"type": "command", "command": "printf 'OLD'"}})
+    before = settings.read_bytes()
+    with pytest.raises(FileNotFoundError):
+        guard.configure(tmp_path, settings)
+    assert settings.read_bytes() == before
 
 
 def test_legacy_wrapper_migrates_referenced_backup(tmp_path):
