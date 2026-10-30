@@ -364,6 +364,16 @@ with the Task; no terminal handle is needed.
 - `--to dispatch:<dispatch_id>` addresses that exact attempt. After a
   re-dispatch, send to the new dispatch ID.
 
+### Answering worker questions
+
+- **Within the Issue as written:** if the Issue's scope and acceptance
+  criteria still hold whichever way you answer, answer the worker yourself.
+- **Changes the Issue:** if the only answers drop, add, or weaken a scope
+  item or acceptance criterion (e.g. the Issue contradicts itself), do not
+  decide. Reply to the worker that it must wait for the user's decision, then
+  ask the user (see **Asking the user**), naming the affected criterion.
+  Answer the worker only after the user replies.
+
 ## Asking the user
 
 These rules apply to every question to the user, in both Codex and Claude
@@ -534,4 +544,5 @@ non-zero exit, handle the pause as in **Quota control** instead.
   `cleanup_run.py` (step 17); never delete `tmp/` as a whole or other files
   in it (e.g. `rm -rf tmp/*`), and never delete workers' files.
 - Resolve routine technical decisions autonomously; ask the user
-  only when a safe decision cannot be made.
+  only when a safe decision cannot be made. Changing an Issue's scope or
+  acceptance criteria is never routine (see **Answering worker questions**).
