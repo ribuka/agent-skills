@@ -225,6 +225,19 @@ def test_user_questions_are_written_in_full_in_final_message() -> None:
     assert "**Asking the user**" in reference
 
 
+def test_worker_questions_that_change_the_issue_go_to_the_user() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    section = skill.split("### Answering worker questions", 1)[1].split("\n## ", 1)[0]
+    text = " ".join(section.split())
+    assert "**Within the Issue as written:**" in text
+    assert "answer the worker yourself" in text
+    assert "**Changes the Issue:**" in text
+    assert "drop, add, or weaken a scope item or acceptance criterion" in text
+    assert "wait for the user's decision" in text
+    assert "**Asking the user**" in text
+    assert "acceptance criteria is never routine" in " ".join(skill.split())
+
+
 def test_codex_waiting_modes_keep_one_wake_up_per_run() -> None:
     reference = (SKILL_DIR / "references/codex-waiting.md").read_text(encoding="utf-8")
     section = reference.split("## Waiting modes", 1)[1].split("\n## ", 1)[0]
