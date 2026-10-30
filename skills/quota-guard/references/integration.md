@@ -6,9 +6,10 @@ Requires `uv` and Python 3.10+.
 Use the already-placed skill folder. A link from `.claude/skills/quota-guard` to
 this repository's `skills/quota-guard` is sufficient; do not copy the files again.
 configure writes a statusLine command that launches the helper through the
-absolute path of `uv` (`"<uv>" run --no-project ...`), never the interpreter that
-ran configure, so the command is the same from every repository and survives a
-project `.venv` being deleted or rebuilt.
+absolute path of `uv` (`"<uv>" run --isolated --no-project --no-config --python ">=3.10" ...`),
+never the interpreter that ran configure, so the command is the same from every
+repository. The session's working directory (its `.venv`, `.python-version`, and
+uv configuration) does not affect which Python runs the statusLine.
 
 The invoking agent performs configure once on entry; the user need not run a
 separate installer. Equivalent commands in PowerShell:

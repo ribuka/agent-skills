@@ -3,6 +3,7 @@ import importlib.util
 import json
 from pathlib import Path
 import shlex
+import shutil
 import subprocess
 import sys
 import time
@@ -105,8 +106,29 @@ def test_command_is_stable_across_project_venvs(tmp_path, monkeypatch, fake_uv):
     assert results == [True, False]
     assert commands[0] == commands[1]
     assert ".venv" not in commands[0]
-    assert shlex.split(commands[0])[:3] == [fake_uv.resolve().as_posix(), "run", "--no-project"]
+    assert shlex.split(commands[0])[0] == fake_uv.resolve().as_posix()
     assert len(list(tmp_path.glob("settings.json.quota-guard-*.bak"))) == 1
+
+
+def test_command_runs_independent_of_working_directory(tmp_path, monkeypatch):
+    uv = shutil.which("uv")
+    if not uv:
+        pytest.skip("uv unavailable")
+    monkeypatch.setenv("UV", uv)
+    settings = tmp_path / "settings.json"
+    guard.atomic_json(settings, {"statusLine": {"type": "command", "command": "printf 'OLD'"}})
+    guard.configure(tmp_path / "state", settings)
+    tokens = shlex.split(guard.read_json(settings)["statusLine"]["command"])
+    workdir = tmp_path / "repo"
+    workdir.mkdir()
+    (workdir / ".python-version").write_text("3.99\n", encoding="utf-8")
+    (workdir / "uv.toml").write_text("bogus = [\n", encoding="utf-8")
+    (workdir / ".venv").mkdir()
+    (workdir / ".venv" / "pyvenv.cfg").write_text("home = /missing\n", encoding="utf-8")
+    result = subprocess.run(tokens, cwd=workdir, input=json.dumps(payload("a", 42, time.time() + 5000)),
+                            text=True, capture_output=True, encoding="utf-8", timeout=120)
+    assert result.returncode == 0, result.stderr
+    assert "5h 42% READY" in result.stdout
 
 
 def test_missing_uv_leaves_settings_unchanged(tmp_path, monkeypatch):

@@ -332,7 +332,10 @@ def configure(root: Path, settings: Path):
     uv = os.environ.get("UV") or shutil.which("uv")
     if not uv:
         raise FileNotFoundError("uv executable unavailable")
-    command = (f'{quote_command(Path(uv).resolve())} run --no-project '
+    # The statusLine runs in the session's working directory; ignore its
+    # .venv, .python-version, and uv.toml/pyproject.toml.
+    command = (f'{quote_command(Path(uv).resolve())} run --isolated --no-project '
+               f'--no-config --python {quote_command(">=3.10")} '
                f'{quote_command(script)} statusline '
                f'--state-dir {quote_command(root.resolve())} '
                f'--previous-config {quote_command(previous_file.resolve())}')
