@@ -24,6 +24,12 @@ The reviewer's own stdout/stderr never reaches the script's output. It goes to
 a temp log that is always removed; on failure its last 40 lines go to stderr,
 each cut to 300 characters and marked `... [truncated <n> chars]` when cut.
 
+Option of both review scripts:
+
+| Option | Notes |
+|--------|-------|
+| `--extra-review` | Run one review beyond `MAX_REVIEWS`, only after the user approved it. Rejected (exit 1) while the PR has fewer than `MAX_REVIEWS` cross-reviews. The success output then shows a count above the limit, e.g. `review-count: 4/3` |
+
 ## run_codex_review.sh
 
 | Option | config.conf key | Notes |
@@ -49,7 +55,9 @@ The reviewer log's path is printed to stderr at start, so it can be tailed.
 ## review_status.sh
 
 `review_status.sh <pr-number>` takes no options. It reads `MAX_REVIEWS` from
-config.conf and prints `review-count: <count>/<max>` and
+config.conf and prints `review-count: <count>/<max>`,
+`review-extra: <count>` (cross-reviews beyond `<max>`, which only
+`--extra-review` runs can add; `0` otherwise), and
 `review-latest: <comment-url>` (`none` without a cross-review). Exit codes:
 0 success, 1 usage/config error, 2 GitHub lookup failed.
 
@@ -58,7 +66,7 @@ config.conf and prints `review-count: <count>/<max>` and
 | Code | Meaning |
 |------|---------|
 | 0 | Review posted (`review-posted: <url>` and `review-count: <count>/<max>` on stdout) |
-| 1 | Usage/config error, review limit reached, no new commits since the last review, or the reviewer exited without posting |
+| 1 | Usage/config error, review limit reached (or `--extra-review` below the limit), no new commits since the last review, or the reviewer exited without posting |
 | 2 | GitHub lookup failed (PR head or comment history) |
 | 124 | Codex hard timeout |
 | 125 | Codex heartbeat timeout (hang suspected) |

@@ -14,6 +14,7 @@
 #   --timeout-seconds <n>             CODEX_TIMEOUT_SECONDS; exit 124 on expiry
 #   --heartbeat-timeout-seconds <n>   CODEX_HEARTBEAT_TIMEOUT_SECONDS; exit 125 when
 #                                     the progress log stops growing that long
+#   --extra-review                    Run one user-approved review beyond MAX_REVIEWS
 #
 # Anything after a literal `--` is appended to the review prompt.
 
@@ -42,10 +43,15 @@ network_access=$CODEX_NETWORK_ACCESS
 timeout_seconds=$CODEX_TIMEOUT_SECONDS
 heartbeat_timeout_seconds=$CODEX_HEARTBEAT_TIMEOUT_SECONDS
 approve_for_me="false"
+extra_review="false"
 extra_instructions=""
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
+        --extra-review)
+            extra_review="true"
+            shift
+            ;;
         --model)
             require_value "$@"
             model=$2
@@ -97,7 +103,7 @@ require_positive_int "heartbeat timeout seconds" "$heartbeat_timeout_seconds"
 command -v codex >/dev/null 2>&1 || die "codex command not found in PATH"
 
 repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
-prepare_review_context "$repo" "$pr_number" codex
+prepare_review_context "$repo" "$pr_number" codex "$extra_review"
 prepare_body_file "$pr_number" codex
 build_review_prompt "$pr_number" codex "$extra_instructions"
 export_review_environment

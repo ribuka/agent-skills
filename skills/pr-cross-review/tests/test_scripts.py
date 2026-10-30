@@ -350,6 +350,7 @@ def test_review_status_reports_count_and_latest_review(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     assert result.stdout.startswith(
         "review-count: 2/3\n"
+        "review-extra: 0\n"
         "review-latest: https://github.com/owner/repo/pull/123#issuecomment-902\n"
     )
     assert "api-calls: 1" in result.stdout
@@ -360,7 +361,7 @@ def test_review_status_without_review(tmp_path: Path) -> None:
     result = run_review_script(tmp_path, "review_status.sh", post_comment=False)
 
     assert result.returncode == 0, result.stderr
-    assert result.stdout.startswith("review-count: 0/3\nreview-latest: none\n")
+    assert result.stdout.startswith("review-count: 0/3\nreview-extra: 0\nreview-latest: none\n")
 
 
 def test_review_status_reports_api_failure(tmp_path: Path) -> None:
@@ -644,3 +645,69 @@ def test_post_comment_rejects_unassigned_body_file(tmp_path: Path, body_arg: str
     assert result.returncode == 1
     assert "the body file must be" in result.stderr
     assert "body" not in result.stdout
+
+
+@pytest.mark.parametrize("script_name", SCRIPT_NAMES)
+def test_review_script_runs_extra_review_over_limit(tmp_path: Path, script_name: str) -> None:
+    """--extra-review runs one review beyond MAX_REVIEWS without editing config.conf."""
+    config = (SCRIPTS_DIR.parent / "config.conf").read_text(encoding="utf-8")
+    result = run_review_script(
+        tmp_path,
+        script_name,
+        post_comment=True,
+        existing_review_commits=("1" * 40, "2" * 40, PREVIOUS_COMMIT),
+        extra_args=("--extra-review",),
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "review-count: 4/3\n" in result.stdout
+    assert f"{PREVIOUS_COMMIT}..{HEAD_COMMIT}" in result.stdout
+    assert "--extra-review" not in result.stdout.split("args: ", 1)[1]
+    assert (SCRIPTS_DIR.parent / "config.conf").read_text(encoding="utf-8") == config
+
+
+@pytest.mark.parametrize("script_name", SCRIPT_NAMES)
+def test_review_script_rejects_extra_review_below_limit(tmp_path: Path, script_name: str) -> None:
+    """--extra-review is rejected before launch while the PR is below MAX_REVIEWS."""
+    result = run_review_script(
+        tmp_path,
+        script_name,
+        post_comment=True,
+        existing_review_commits=(PREVIOUS_COMMIT,),
+        extra_args=("--extra-review",),
+    )
+
+    assert result.returncode == 1
+    assert "--extra-review is only for a review beyond the limit" in result.stderr
+    assert "prompt:" not in result.stdout
+
+
+@pytest.mark.parametrize("script_name", SCRIPT_NAMES)
+def test_review_script_limit_error_names_extra_review(tmp_path: Path, script_name: str) -> None:
+    """The limit error points to the option instead of the config file."""
+    result = run_review_script(
+        tmp_path,
+        script_name,
+        post_comment=False,
+        existing_review_commits=("1" * 40, "2" * 40, "3" * 40),
+    )
+
+    assert result.returncode == 1
+    assert "needs --extra-review" in result.stderr
+
+
+def test_review_status_reports_extra_reviews(tmp_path: Path) -> None:
+    """Reviews beyond MAX_REVIEWS are shown as review-extra."""
+    result = run_review_script(
+        tmp_path,
+        "review_status.sh",
+        post_comment=False,
+        existing_review_commits=("1" * 40, "2" * 40, "3" * 40, "4" * 40, HEAD_COMMIT),
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.startswith(
+        "review-count: 5/3\n"
+        "review-extra: 2\n"
+        "review-latest: https://github.com/owner/repo/pull/123#issuecomment-905\n"
+    )

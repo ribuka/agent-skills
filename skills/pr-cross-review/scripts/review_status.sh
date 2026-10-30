@@ -7,6 +7,8 @@
 #
 # Output (stdout):
 #   review-count: <count>/<max>    cross-reviews on the PR and MAX_REVIEWS
+#   review-extra: <count>          reviews beyond MAX_REVIEWS (each one ran with
+#                                  --extra-review after user approval)
 #   review-latest: <comment-url>   the latest cross-review comment, or `none`
 
 set -euo pipefail
@@ -40,4 +42,5 @@ latest_url=$(
 )
 
 echo "review-count: ${review_count}/${MAX_REVIEWS}"
+echo "review-extra: $((review_count > MAX_REVIEWS ? review_count - MAX_REVIEWS : 0))"
 echo "review-latest: ${latest_url:-none}"

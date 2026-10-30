@@ -97,6 +97,10 @@ If the review has findings, go back to step 2.
   the script rejects further runs.
 - If the limit is reached, or the script exits with an error, do **not**
   merge. Report the situation and ask the user how to proceed.
+- Run a review beyond the limit only when the user (in worker mode, the
+  Coordinator's handoff) approved one extra review: add `--extra-review` to
+  the review script, once per approval. Never edit `pr-cross-review`'s
+  config file to raise the limit.
 
 ### 8. Sync with the latest `main`
 

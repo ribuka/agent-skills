@@ -126,13 +126,16 @@ find_new_review_comment_url() {
     return 1
 }
 
+# prepare_review_context <repo> <pr-number> <agent> <extra-review: true|false>
 # Sets REVIEW_HEAD_COMMIT, REVIEW_COUNT, PREVIOUS_REVIEW_COMMIT and
-# REVIEW_COMMENT_IDS_BEFORE, and rejects the run when the PR already reached
-# MAX_REVIEWS or has no commits since the previous review.
+# REVIEW_COMMENT_IDS_BEFORE, and rejects the run when the PR has no commits
+# since the previous review, or when it already reached MAX_REVIEWS (without
+# --extra-review) or has not reached it yet (with --extra-review).
 prepare_review_context() {
     local repo=$1
     local pr_number=$2
     local agent=$3
+    local extra_review=$4
     local agent_label
     local review_history
 
@@ -152,8 +155,13 @@ prepare_review_context() {
     REVIEW_COUNT=$(
         printf '%s\n' "$review_history" | awk 'NF { count++ } END { print count + 0 }'
     )
-    if [ "$REVIEW_COUNT" -ge "$MAX_REVIEWS" ]; then
-        echo "error: PR #${pr_number} already has ${REVIEW_COUNT} cross-reviews; the maximum is ${MAX_REVIEWS}" >&2
+    if [ "$extra_review" = "true" ]; then
+        if [ "$REVIEW_COUNT" -lt "$MAX_REVIEWS" ]; then
+            echo "error: --extra-review is only for a review beyond the limit; PR #${pr_number} has ${REVIEW_COUNT} of ${MAX_REVIEWS} cross-reviews" >&2
+            return 1
+        fi
+    elif [ "$REVIEW_COUNT" -ge "$MAX_REVIEWS" ]; then
+        echo "error: PR #${pr_number} already has ${REVIEW_COUNT} cross-reviews; the maximum is ${MAX_REVIEWS} (a user-approved extra review needs --extra-review)" >&2
         return 1
     fi
 

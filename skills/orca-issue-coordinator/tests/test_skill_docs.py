@@ -334,3 +334,15 @@ def test_preconditions_take_agent_and_update_prompt_stops_dispatch() -> None:
         "check_preconditions.py")
     assert "Agent startup blocked: agent-update-prompt" in skill
     assert "Never answer the prompt by\nsending keys to the worker terminal" in skill
+
+
+def test_review_limit_exception_uses_script_option() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    assert "**Limit reached with unreviewed fix commits:**" in skill
+    rule = skill.split("**Limit reached with unreviewed fix commits:**", 1)[1].split("\n- ", 1)[0]
+    for option in ("**Merge as is:**", "**One extra review:**", "**Stop:**"):
+        assert option in rule
+    assert "run_codex_review.sh <pr-number> --extra-review" in rule
+    assert "Never edit another skill's config file" in rule
+    assert "review-extra: <count>" in skill
+    assert "pr-cross-review/config.conf" not in skill
