@@ -2,17 +2,21 @@
 
 ## Windows / Claude Code
 
-Use a persistent Python 3.10+ interpreter (for example the user's installed 3.12).
+Requires `uv` and Python 3.10+.
 Use the already-placed skill folder. A link from `.claude/skills/quota-guard` to
-this repository's `skills/quota-guard` is sufficient; do not copy the files again. Do not keep the script in a uv
-throwaway environment: configure stores the current interpreter's absolute path.
+this repository's `skills/quota-guard` is sufficient; do not copy the files again.
+configure writes a statusLine command that launches the helper through the
+absolute path of `uv` (`"<uv>" run --isolated --no-project --no-config --python ">=3.10" ...`),
+never the interpreter that ran configure, so the command is the same from every
+repository. The session's working directory (its `.venv`, `.python-version`, and
+uv configuration) does not affect which Python runs the statusLine.
 
 The invoking agent performs configure once on entry; the user need not run a
 separate installer. Equivalent commands in PowerShell:
 
 ```powershell
-python "$HOME/.claude/skills/quota-guard/scripts/quota_guard.py" configure
-python "$HOME/.claude/skills/quota-guard/scripts/quota_guard.py" check
+uv run --no-project "$HOME/.claude/skills/quota-guard/scripts/quota_guard.py" configure
+uv run --no-project "$HOME/.claude/skills/quota-guard/scripts/quota_guard.py" check
 ```
 
 Configuration updates only `statusLine` in the user settings file. It keeps a

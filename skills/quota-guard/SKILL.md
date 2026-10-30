@@ -22,7 +22,7 @@ The following initialization steps apply only to Claude Code.
    this skill to another directory.
 2. Read [integration.md](references/integration.md) when setting up or integrating.
    On first invocation for a caller Run, execute
-   `python "<skill-dir>/scripts/quota_guard.py" configure` in the target Claude
+   `uv run --no-project "<skill-dir>/scripts/quota_guard.py" configure` in the target Claude
    Code environment. Perform this authorized setup yourself; do not stop to ask
    the user to run it. The helper makes no settings writes or backups when the
    same configuration is already present (`changed: false`).
