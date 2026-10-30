@@ -349,3 +349,41 @@ def test_review_limit_exception_uses_script_option() -> None:
     assert "`<count>` ≤ `<max>`" not in verify_step
     assert "`4/3` with\n      `review-extra: 1`" in verify_step
     assert "pr-cross-review/config.conf" not in skill
+
+
+def test_implementation_dispatch_names_new_top_level_worktree() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    dispatch_section = skill.split("## 1. Plan and dispatch", 1)[1].split("## 2.", 1)[0]
+    assert ("<start> --worktree new-top-level --name issue-<n> --setup run "
+            "--agent <agent> --model <impl-model> --effort <impl-effort>") in dispatch_section
+    assert 'worker-start --spec "<brief>" --task-title "#<n> <title>"' in dispatch_section
+    assert "`--worktree new` does not exist" in dispatch_section
+    assert "omitting `--name` gives a random name" in dispatch_section
+
+
+def test_workers_stop_only_their_own_processes_by_pid() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    worker_step = skill.split("7. Instruct each worker", 1)[1].split("8. ", 1)[0]
+    assert "stop only processes it started itself, by PID" in worker_step
+    assert "never by image name" in worker_step
+
+
+def test_failed_ci_reruns_once_only_when_unrelated() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    verify_step = skill.split("14. Independently verify", 1)[1].split("15. ", 1)[0]
+    rule = verify_step.split("**If a CI check fails:**", 1)[1]
+    assert "unrelated to the PR's diff" in rule
+    assert "rerun the failed jobs once yourself" in rule
+    assert "`gh run rerun <run-id> --failed`" in rule
+    assert "or the rerun fails again, do not rerun further" in rule
+    assert "suggest an\n      Issue for a test that failed this way more than once" in rule
+
+
+def test_waiter_undocumented_exit_is_inspected_then_restarted() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    section = skill.split("**Claude Code:** run the bundled waiter", 1)[1].split("\n## ", 1)[0]
+    rule = section.split("- Any other code", 1)[1].split("\n- ", 1)[0]
+    assert "`1` with no output" in rule
+    assert "Read its output" in rule
+    assert "`worker-list`" in rule
+    assert "restart the waiter after\n    a READY `<quota-check>`" in rule

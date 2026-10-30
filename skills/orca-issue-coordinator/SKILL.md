@@ -129,6 +129,13 @@ with `--retry-of` only after the user confirms.
    - Never create a Task you will not start. Never start a worker with
      `--spec` for an Issue that already has a Task; that leaves an unused
      Task in the Run, and cancelling it leaves a `failed` one.
+   - Every implementation dispatch starts a new top-level worktree named
+     after the Issue. Use exactly this form (only the first part differs):
+     `<start> --worktree new-top-level --name issue-<n> --setup run --agent <agent> --model <impl-model> --effort <impl-effort>`,
+     where `<start>` is `worker-start --spec "<brief>" --task-title "#<n> <title>"`
+     or `worker-start --task <task_id>`. `--worktree new` does not exist
+     (`selector_not_found`), and omitting `--name` gives a random name; do
+     not load the placement reference for this.
 5. Represent actual dependencies in the task DAG, including the
    same-part overlaps from step 3. Orca unblocks a dependent
    Task as soon as its dependency Task completes, and an Implementation Task
@@ -176,6 +183,9 @@ with `--retry-of` only after the user confirms.
      the worker stops and reports the `reviewer-quota-exhausted`,
      `reviewer-quota-detected-at`, and `reviewer-quota-reset` lines unchanged
      in `worker_done`.
+   - Tell the worker to stop only processes it started itself, by PID, and
+     never by image name (e.g. `taskkill /IM uv.exe`, `pkill python`): that
+     also kills the Coordinator's waiter and other workers' processes.
 8. Fill available worker slots before waiting for completions.
    Dispatch additional tasks as slots become available, holding back
    dependent Tasks until their dependency PRs are merged (step 5).
@@ -263,6 +273,16 @@ with `--retry-of` only after the user confirms.
       or timeout report `monitor-error: <reason>` and block this PR. Use
       only `gh` built-in features, never external `jq` or custom CI loops.
       Recheck the current head and all CI checks before merging.
+    - **If a CI check fails:** read only the failed part
+      (`gh run view <run-id> --log-failed`, tail). Only when the failure is
+      unrelated to the PR's diff (e.g. a timeout or network error in a test
+      the PR does not touch), rerun the failed jobs once yourself
+      (`gh run rerun <run-id> --failed`), note the rerun and the test name
+      for the Issue's report, and wait for CI again. If the failure relates
+      to the diff, or the rerun fails again, do not rerun further: start
+      merge preparation (step 13) with the failure in the handoff, or block
+      the PR and ask the user. In step 17, list every rerun and suggest an
+      Issue for a test that failed this way more than once.
 15. Merge the PR yourself only when all conditions are met and the quota
     `check` immediately before the merge is READY.
 16. After each merge, fetch the latest `origin/main` and repeat
@@ -421,6 +441,11 @@ non-zero exit, handle the pause as in **Quota control** instead.
   - `4`: no in-progress worker remains; check `task-list` and `worker-list`.
   - `5`: `--max-minutes` (default 240) elapsed; restart the waiter.
   - `2`: an `orca` call failed; inspect before retrying.
+  - Any other code (e.g. `1` with no output when a worker killed the
+    `uv` process): the waiter did not finish its loop. Read its output, run
+    `check --json` and `worker-list` once each to find any message or worker
+    it missed, process and acknowledge those, then restart the waiter after
+    a READY `<quota-check>`.
 - Do not re-read message bodies with `check --peek`. Use `worker-read` only
   after the waiter has exited and a worker's terminal output is needed.
 - While the quota is paused, do not start or restart the waiter; handle any
