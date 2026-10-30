@@ -9,6 +9,7 @@
 #   --model <model>            CLAUDE_MODEL
 #   --effort <effort>          CLAUDE_EFFORT (low|medium|high|xhigh|max)
 #   --permission-mode <mode>   CLAUDE_PERMISSION_MODE
+#   --extra-review             Run one user-approved review beyond MAX_REVIEWS
 #
 # Anything after a literal `--` is appended to the review prompt.
 
@@ -32,10 +33,15 @@ load_config REVIEW_LANGUAGE MAX_REVIEWS REVIEW_BODY_DIR REVIEW_BODY_NOT_IGNORED 
 model=$CLAUDE_MODEL
 effort=$CLAUDE_EFFORT
 permission_mode=$CLAUDE_PERMISSION_MODE
+extra_review="false"
 extra_instructions=""
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
+        --extra-review)
+            extra_review="true"
+            shift
+            ;;
         --model)
             require_value "$@"
             model=$2
@@ -65,7 +71,7 @@ done
 command -v claude >/dev/null 2>&1 || die "claude command not found in PATH"
 
 repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
-prepare_review_context "$repo" "$pr_number" claude
+prepare_review_context "$repo" "$pr_number" claude "$extra_review"
 prepare_body_file "$pr_number" claude
 build_review_prompt "$pr_number" claude "$extra_instructions"
 export_review_environment

@@ -50,8 +50,9 @@ example when resuming work on a PR), run:
 bash ~/.agents/skills/pr-cross-review/scripts/review_status.sh <pr-number>
 ```
 
-It prints `review-count: <count>/<max>` and `review-latest: <comment-url>`
-(`none` when the PR has no cross-review) and exits 0 (other exit codes are in
+It prints `review-count: <count>/<max>`, `review-extra: <count>` (reviews
+beyond `<max>`, see below), and `review-latest: <comment-url>` (`none` when
+the PR has no cross-review) and exits 0 (other exit codes are in
 references/options.md). Read the latest review the same way as above.
 
 ## Rules the scripts enforce
@@ -59,6 +60,11 @@ references/options.md). Read the latest review the same way as above.
 - The first review covers the whole PR; later reviews cover only commits added
   since the previous review. Re-running without new commits is rejected.
 - At most `MAX_REVIEWS` (config.conf) cross-reviews per PR, Codex and Claude combined.
+- Extra review beyond the limit: only when the user approved one more review
+  for this PR, add `--extra-review` to the review script. It runs exactly one
+  review and is rejected while the PR is still below the limit. Each further
+  extra review needs a new approval. Never edit `config.conf` to raise the
+  limit.
 - A reviewer cannot launch another review (nested runs are rejected).
 - The reviewer must post through `scripts/post_pr_comment.sh`, which adds the
   footer the scripts use to count reviews. Do not post review comments by hand
