@@ -46,6 +46,9 @@ PREFIX_POSITIONALS = {"timeout": 1}
 CHDIR_OPTIONS = {"env": {"-C", "--chdir"}, "sudo": {"-D", "--chdir"}}
 BLOCK_OPENERS = {"if", "while", "until", "for", "case", "select"}
 BLOCK_CLOSERS = {"fi", "done", "esac"}
+SUBST_MARKER = r"\$__HOOK_SUBST_(\d+)__"
+# Prefix of a word that only carries substitutions from a redirection target.
+REDIRECT = "\0redirect:"
 KEYWORDS = {
     "if",
     "then",
@@ -338,6 +341,8 @@ def split_commands(tokens: list[str]) -> list[list[str] | str]:
     for token in tokens:
         if skip:
             skip = False
+            # A redirection target is not an argument, but its substitutions still run.
+            current.extend(REDIRECT + m[0] for m in re.finditer(SUBST_MARKER, token))
             continue
         if token in OPERATORS:
             if "<" in token or ">" in token:
@@ -585,36 +590,40 @@ def check_command(command: list[str], cwd: str | None, found: Found) -> str | No
     str or None
         Working directory after the command (changed by `cd`).
     """
-    # Substitutions and heredocs run in this command's working directory.
-    words = []
+    # The calling shell expands substitutions in this command's working directory.
+    words, heredocs = [], []
     for word in command:
         heredoc = re.fullmatch(r"\$__HOOK_HEREDOC_(\d+)__", word)
         if heredoc:
             receiver, body, expands = found.heredocs[int(heredoc.group(1))]
-            if receiver == "shell":
-                check_shell(body, cwd)
-            elif receiver == "interpreter":
-                scan_raw(body)
+            heredocs.append((receiver, body))
             if expands:
                 for inner in mark_substitutions(body, quotes=False)[1]:
                     check_shell(inner, cwd)
             continue
-        for index in re.findall(r"\$__HOOK_SUBST_(\d+)__", word):
+        for index in re.findall(SUBST_MARKER, word):
             check_shell(found.substitutions[int(index)], cwd)
-        words.append(word)
+        if not word.startswith(REDIRECT):
+            words.append(word)
 
     command, wrapped, chdir = strip_prefix(words)
+    after = cwd
+    if chdir is not None:
+        cwd = resolve_dir(chdir, cwd)
+    # The program reading a heredoc runs where a wrapper (`env -C`) moved it.
+    for receiver, body in heredocs:
+        if receiver == "shell":
+            check_shell(body, cwd)
+        elif receiver == "interpreter":
+            scan_raw(body)
     if not command:
-        return cwd
+        return after
     name = os.path.basename(command[0]).lower().removesuffix(".exe")
     args = command[1:]
 
     if name == "cd":
-        return os.path.expanduser("~") if not args else resolve_dir(args[0], cwd)
+        return os.path.expanduser("~") if not args else resolve_dir(args[0], after)
 
-    after = cwd
-    if chdir is not None:
-        cwd = resolve_dir(chdir, cwd)
     if wrapped and name != "rm":
         # The wrapper's arguments were not understood; check any rm it may run.
         for i, arg in enumerate(args):

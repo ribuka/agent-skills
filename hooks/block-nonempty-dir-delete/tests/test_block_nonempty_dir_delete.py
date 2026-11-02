@@ -69,6 +69,8 @@ ALLOWED = [
     'cd full; echo "$(ls sub)"',
     "env -C full ls",
     "git status && cd full; rm -rf nonexistent",
+    'echo ok > "$(echo out.txt)"',
+    "env -C full bash <<'EOF'\nrm -rf nonexistent\nEOF",
 ]
 
 DENIED = [
@@ -129,6 +131,10 @@ DENIED = [
     "env -C full rm -rf sub",
     "env --chdir=full rm -rf sub",
     "sudo -D full rm -rf sub",
+    'echo ok > "$(rm -rf full)"',
+    'cat < "$(rm -rf full)"',
+    "env -C full bash <<'EOF'\nrm -rf sub\nEOF",
+    "env --chdir=full bash <<'EOF'\nrm -rf sub\nEOF",
 ]
 
 
