@@ -51,14 +51,19 @@ as open points until they are made concrete.
 
 ### 4. Interview the user
 
-Resolve the open points with the agent's multiple-choice question tool
-(Claude Code: `AskUserQuestion`; Codex: `request_user_input`). Only if no such
-tool is available, ask with numbered options in plain text.
+Resolve the open points with a multiple-choice question tool, within that
+tool's limits:
 
-- Ask up to 4 questions per round, most fundamental first; later questions
-  often depend on earlier answers.
-- Give 2-4 concrete, mutually exclusive options. Put your recommendation
-  first and mark it `(Recommended)`; explain each option's trade-off in its
+| Tool | Available | Questions per round | Options per question |
+|------|-----------|---------------------|----------------------|
+| `AskUserQuestion` (Claude Code) | Always | 1-4 | 2-4 |
+| `request_user_input` (Codex) | Plan mode only | 1-3 | 2-3 |
+| Numbered options in plain text | When neither tool is available | 1-4 | 2-4 |
+
+- Ask the most fundamental questions first; later questions often depend on
+  earlier answers.
+- Give concrete, mutually exclusive options. Put your recommendation first
+  and mark it `(Recommended)`; explain each option's trade-off in its
   description.
 - Read free-text answers carefully: they may add requirements or open new
   points.
@@ -97,6 +102,8 @@ gh issue edit <number> --body-file tmp/issue-body.md [--title "<title>"]
 **Create mode:** use GitHub only when all of these succeed; otherwise save
 a markdown file.
 
+`git remote` must also print at least one remote.
+
 ```bash
 git remote
 gh auth status
@@ -111,6 +118,9 @@ gh repo view --json nameWithOwner --jq .nameWithOwner
   - File name: `issue_<yyyy-mm-ddTHHmm>.md` in local time, e.g.
     `issue_2026-11-02T1430.md`. Get it with `date +%Y-%m-%dT%H%M` (bash) or
     `Get-Date -Format "yyyy-MM-dd'T'HHmm"` (PowerShell).
+  - Never overwrite an existing file. If the name is taken (e.g. several
+    issues saved in the same minute), append `_2`, `_3`, ... before `.md`
+    (`issue_2026-11-02T1430_2.md`), using the first free one.
   - Put the title as the first line (`# <title>`), followed by the body.
 
 ### 8. Report
