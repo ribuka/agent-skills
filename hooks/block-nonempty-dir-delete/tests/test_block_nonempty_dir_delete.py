@@ -63,6 +63,12 @@ ALLOWED = [
     "if [ -d empty ]; then rmdir empty; fi",
     "timeout 10 ls",
     "find <tree> -type d -empty -delete -print",
+    "echo '$(rm -rf full)'",
+    "echo ok # $(rm -rf full)",
+    "cd full && rm -f sub/b.txt && rmdir sub",
+    'cd full; echo "$(ls sub)"',
+    "env -C full ls",
+    "git status && cd full; rm -rf nonexistent",
 ]
 
 DENIED = [
@@ -113,6 +119,16 @@ DENIED = [
     "find full ! -empty -delete",
     "find full -not -empty -delete",
     "find full -empty -o -delete",
+    "find full -delete -empty",
+    "if false; then cd empty; fi; rm -rf full",
+    "git status && cd empty; rm -rf full",
+    'cd full; echo "$(rm -rf sub)"',
+    "cd full; echo `rm -rf sub`",
+    "cd full; bash <<'EOF'\nrm -rf sub\nEOF",
+    "cd full; cat <<EOF\n$(rm -rf sub)\nEOF",
+    "env -C full rm -rf sub",
+    "env --chdir=full rm -rf sub",
+    "sudo -D full rm -rf sub",
 ]
 
 
@@ -154,7 +170,9 @@ def test_variable_pointing_to_full_directory_is_denied(tree, monkeypatch, capsys
     assert json.loads(out)["hookSpecificOutput"]["permissionDecision"] == "deny"
 
 
-@pytest.mark.skipif(os.name != "nt", reason="Git Bash drive paths exist only on Windows")
+@pytest.mark.skipif(
+    os.name != "nt", reason="Git Bash drive paths exist only on Windows"
+)
 def test_git_bash_drive_path_is_resolved(tree, monkeypatch, capsys):
     drive, rest = tree.as_posix().split(":", 1)
     out = run_hook(

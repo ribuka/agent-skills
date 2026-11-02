@@ -19,7 +19,7 @@ import os
 import re
 import shlex
 import sys
-from typing import NoReturn
+from typing import NamedTuple, NoReturn
 
 PUNCTUATION = ";&|()<>\n"
 PREFIXES = {
@@ -43,6 +43,9 @@ PREFIX_OPTIONS = {
     "time": {"-f", "-o", "--format", "--output"},
 }
 PREFIX_POSITIONALS = {"timeout": 1}
+CHDIR_OPTIONS = {"env": {"-C", "--chdir"}, "sudo": {"-D", "--chdir"}}
+BLOCK_OPENERS = {"if", "while", "until", "for", "case", "select"}
+BLOCK_CLOSERS = {"fi", "done", "esac"}
 KEYWORDS = {
     "if",
     "then",
@@ -116,6 +119,13 @@ class DeniedError(Exception):
     """The command must not run. The message is the reason shown to the agent."""
 
 
+class Found(NamedTuple):
+    """Command substitutions and heredocs taken out of a command line."""
+
+    substitutions: list[str]
+    heredocs: list[tuple[str, str, bool]]
+
+
 def deny(reason: str) -> NoReturn:
     """Stop checking and deny the command.
 
@@ -148,7 +158,10 @@ def scan_raw(text: str) -> None:
 
 
 def split_heredocs(text: str) -> tuple[str, list[tuple[str, str, bool]]]:
-    """Separate heredoc bodies from the command text.
+    """Move heredoc bodies out of the command text, leaving a marker word.
+
+    The marker ``$__HOOK_HEREDOC_<n>__`` is placed right after the heredoc
+    operator, so the body is checked with the command that reads it.
 
     Parameters
     ----------
@@ -167,62 +180,94 @@ def split_heredocs(text: str) -> tuple[str, list[tuple[str, str, bool]]]:
     i = 0
     while i < len(lines):
         line = lines[i]
-        kept.append(line)
         i += 1
-        for quote, word in re.findall(r"<<-?\s*(['\"]?)(\w+)\1", line):
+        words = {
+            os.path.basename(w).lower().removesuffix(".exe")
+            for w in re.findall(r"[\w./\\-]+", line)
+        }
+        receiver = (
+            "shell" if words & SHELLS else "interpreter" if words & INTERPRETERS else ""
+        )
+        marked, end = [], 0
+        for match in re.finditer(r"<<-?\s*(['\"]?)(\w+)\1", line):
             body = []
-            while i < len(lines) and lines[i].strip() != word:
+            while i < len(lines) and lines[i].strip() != match.group(2):
                 body.append(lines[i])
                 i += 1
             i += 1
-            words = {
-                os.path.basename(w).lower().removesuffix(".exe")
-                for w in re.findall(r"[\w./\-]+", line)
-            }
-            receiver = (
-                "shell"
-                if words & SHELLS
-                else "interpreter"
-                if words & INTERPRETERS
-                else ""
-            )
-            heredocs.append((receiver, "\n".join(body), not quote))
+            marked.append(line[end : match.end()])
+            marked.append(f" $__HOOK_HEREDOC_{len(heredocs)}__")
+            end = match.end()
+            heredocs.append((receiver, "\n".join(body), not match.group(1)))
+        kept.append("".join(marked) + line[end:])
     return "\n".join(kept), heredocs
 
 
-def find_substitutions(text: str) -> list[str]:
-    """Find the commands inside ``$(...)`` and backquotes, quoted or not.
+def mark_substitutions(text: str, quotes: bool = True) -> tuple[str, list[str]]:
+    """Replace each command substitution the shell runs with a marker word.
+
+    ``$(...)`` and backquotes run unless they are inside single quotes or a
+    comment. Each one becomes ``$__HOOK_SUBST_<n>__``, a variable that is never
+    set, so a path built from it stays unknown.
 
     Parameters
     ----------
     text : str
         Shell command text.
+    quotes : bool
+        False for a heredoc body, where quotes are literal characters.
 
     Returns
     -------
-    list[str]
-        Text of each outermost command substitution.
+    tuple[str, list[str]]
+        The text with markers, and the commands inside each substitution.
     """
-    found = []
+    out, found = [], []
+    single = double = False
     i = 0
     while i < len(text):
-        if text.startswith("$(", i):
-            depth, j = 1, i + 2
-            while j < len(text) and depth:
-                depth += {"(": 1, ")": -1}.get(text[j], 0)
-                j += 1
-            found.append(text[i + 2 : j - 1])
-            i = j
-        elif text[i] == "`":
-            j = text.find("`", i + 1)
-            if j < 0:
-                found.append(text[i + 1 :])
-                break
-            found.append(text[i + 1 : j])
-            i = j + 1
-        else:
+        c = text[i]
+        if single:
+            single = c != "'"
+            out.append(c)
             i += 1
-    return found
+        elif c == "\\":
+            out.append(text[i : i + 2])
+            i += 2
+        elif quotes and c == "'" and not double:
+            single = True
+            out.append(c)
+            i += 1
+        elif quotes and c == '"':
+            double = not double
+            out.append(c)
+            i += 1
+        elif (
+            quotes
+            and c == "#"
+            and not double
+            and (i == 0 or text[i - 1] in " \t\n;&|()")
+        ):
+            end = text.find("\n", i)
+            i = len(text) if end < 0 else end
+        elif text.startswith("$(", i) or c == "`":
+            if c == "`":
+                end = text.find("`", i + 1)
+                end = len(text) if end < 0 else end
+                found.append(text[i + 1 : end])
+                i = end + 1
+            else:
+                depth, j = 1, i + 2
+                while j < len(text) and depth:
+                    depth += {"(": 1, ")": -1}.get(text[j], 0)
+                    j += 1
+                found.append(text[i + 2 : j - 1 if depth == 0 else j])
+                i = j
+            out.append(f"$__HOOK_SUBST_{len(found) - 1}__")
+        else:
+            out.append(c)
+            i += 1
+    return "".join(out), found
 
 
 def split_operators(token: str) -> list[str]:
@@ -430,7 +475,33 @@ def check_rm(args: list[str], cwd: str | None) -> None:
             check_target(arg, cwd)
 
 
-def strip_prefix(command: list[str]) -> tuple[list[str], bool]:
+def resolve_dir(path: str, cwd: str | None) -> str | None:
+    """Resolve the directory a `cd`-like change moves to.
+
+    Parameters
+    ----------
+    path : str
+        Directory as written in the command.
+    cwd : str or None
+        Working directory before the change, or None when it is unknown.
+
+    Returns
+    -------
+    str or None
+        The new working directory, or None when it is unknown or does not exist
+        (a failed change leaves the directory as it was).
+    """
+    if path == "-" or "$" in path or "`" in path:
+        return None
+    target = to_native(path)
+    if not os.path.isabs(target):
+        if cwd is None:
+            return None
+        target = os.path.join(cwd, target)
+    return os.path.normpath(target) if os.path.isdir(target) else None
+
+
+def strip_prefix(command: list[str]) -> tuple[list[str], bool, str | None]:
     """Remove keywords, variable assignments and wrappers such as `sudo` and `timeout`.
 
     Parameters
@@ -440,11 +511,12 @@ def strip_prefix(command: list[str]) -> tuple[list[str], bool]:
 
     Returns
     -------
-    tuple[list[str], bool]
-        The command starting at the program that actually runs, and whether a
-        wrapper was removed.
+    tuple[list[str], bool, str or None]
+        The command starting at the program that actually runs, whether a
+        wrapper was removed, and the directory a wrapper runs it in
+        (`env -C`, `sudo -D`), if any.
     """
-    wrapped = False
+    wrapped, chdir = False, None
     while command:
         name = os.path.basename(command[0]).lower()
         if command[0] in KEYWORDS or re.match(r"^\w+=", command[0]):
@@ -460,10 +532,15 @@ def strip_prefix(command: list[str]) -> tuple[list[str], bool]:
             command = command[1:]
             if option == "--":
                 break
+            value = None
             if option in takes_value:
-                command = command[1:]
+                value, command = (command[0] if command else ""), command[1:]
+            elif "=" in option:
+                option, value = option.split("=", 1)
+            if option in CHDIR_OPTIONS.get(name, set()):
+                chdir = value or ""
         command = command[PREFIX_POSITIONALS.get(name, 0) :]
-    return command, wrapped
+    return command, wrapped, chdir
 
 
 def check_find(args: list[str]) -> None:
@@ -474,9 +551,12 @@ def check_find(args: list[str]) -> None:
     args : list[str]
         Arguments after `find`.
     """
-    # Allow -delete only when every match must be empty: no negation or alternative.
+    # find evaluates left to right, so -delete is safe only after -empty has
+    # matched, with no negation or alternative that could skip -empty.
     if "-delete" in args and (
-        "-empty" not in args or any(a in ("!", "-not", "-o", "-or", ",") for a in args)
+        "-empty" not in args
+        or args.index("-empty") > args.index("-delete")
+        or any(a in ("!", "-not", "-o", "-or", ",") for a in args)
     ):
         deny(f"find -delete は中身ごと消せるので禁止です。{HOW_TO}")
     for i, arg in enumerate(args[:-1]):
@@ -488,7 +568,7 @@ def check_find(args: list[str]) -> None:
             deny(f"find -exec rm -r は中身ごと消せるので禁止です。{HOW_TO}")
 
 
-def check_command(command: list[str], cwd: str | None) -> str | None:
+def check_command(command: list[str], cwd: str | None, found: Found) -> str | None:
     """Check one simple command.
 
     Parameters
@@ -497,31 +577,44 @@ def check_command(command: list[str], cwd: str | None) -> str | None:
         Simple command.
     cwd : str or None
         Working directory before the command, or None when it is unknown.
+    found : Found
+        Command substitutions and heredocs replaced by markers in the text.
 
     Returns
     -------
     str or None
         Working directory after the command (changed by `cd`).
     """
-    command, wrapped = strip_prefix(command)
+    # Substitutions and heredocs run in this command's working directory.
+    words = []
+    for word in command:
+        heredoc = re.fullmatch(r"\$__HOOK_HEREDOC_(\d+)__", word)
+        if heredoc:
+            receiver, body, expands = found.heredocs[int(heredoc.group(1))]
+            if receiver == "shell":
+                check_shell(body, cwd)
+            elif receiver == "interpreter":
+                scan_raw(body)
+            if expands:
+                for inner in mark_substitutions(body, quotes=False)[1]:
+                    check_shell(inner, cwd)
+            continue
+        for index in re.findall(r"\$__HOOK_SUBST_(\d+)__", word):
+            check_shell(found.substitutions[int(index)], cwd)
+        words.append(word)
+
+    command, wrapped, chdir = strip_prefix(words)
     if not command:
         return cwd
     name = os.path.basename(command[0]).lower().removesuffix(".exe")
     args = command[1:]
 
     if name == "cd":
-        if not args:
-            return os.path.expanduser("~")
-        if args[0] == "-" or "$" in args[0] or "`" in args[0]:
-            return None
-        target = to_native(args[0])
-        if not os.path.isabs(target):
-            if cwd is None:
-                return None
-            target = os.path.join(cwd, target)
-        # A failed cd leaves the directory unchanged, so the cwd is unknown.
-        return os.path.normpath(target) if os.path.isdir(target) else None
+        return os.path.expanduser("~") if not args else resolve_dir(args[0], cwd)
 
+    after = cwd
+    if chdir is not None:
+        cwd = resolve_dir(chdir, cwd)
     if wrapped and name != "rm":
         # The wrapper's arguments were not understood; check any rm it may run.
         for i, arg in enumerate(args):
@@ -554,7 +647,7 @@ def check_command(command: list[str], cwd: str | None) -> str | None:
             for arg in args:
                 if " " in arg:
                     check_shell(arg, cwd)
-    return cwd
+    return after
 
 
 def check_shell(text: str, cwd: str | None) -> None:
@@ -568,40 +661,40 @@ def check_shell(text: str, cwd: str | None) -> None:
         Working directory, or None when it is unknown.
     """
     stripped, heredocs = split_heredocs(text)
-    for receiver, body, expands in heredocs:
-        if receiver == "shell":
-            check_shell(body, cwd)
-        elif receiver == "interpreter":
-            scan_raw(body)
-        if expands:
-            for inner in find_substitutions(body):
-                check_shell(inner, cwd)
-    # Command substitutions run even inside double quotes (`echo "$(rm -rf x)"`).
-    for inner in find_substitutions(stripped):
-        check_shell(inner, cwd)
+    marked, substitutions = mark_substitutions(stripped)
+    found = Found(substitutions, heredocs)
     try:
-        tokens = tokenize(stripped)
+        tokens = tokenize(marked)
     except ValueError:
         if re.search(r"\brm\s[^\n;|&]*(-[a-zA-Z]*[rR]|--recursive)", stripped):
             deny(f"コマンドを解析できず、再帰的な rm を含むので止めました。{HOW_TO}")
         scan_raw(stripped)
+        check_command(re.findall(r"\$__HOOK_\w+", marked), cwd, found)
         return
     items = split_commands(tokens)
-    saved = []
+    # Every directory the shell may be in; a cd that may not run keeps the old ones.
+    cwds: list[str | None] = [cwd]
+    saved: list[list[str | None]] = []
+    depth = 0
     for i, item in enumerate(items):
         if item == "(":
-            saved.append(cwd)
+            saved.append(cwds)
         elif item == ")":
             if saved:
-                cwd = saved.pop()
+                cwds = saved.pop()
         elif isinstance(item, list):
-            after_cd = check_command(item, cwd)
+            if item[0] in BLOCK_OPENERS:
+                depth += 1
+            elif item[0] in BLOCK_CLOSERS:
+                depth = max(depth - 1, 0)
+            after_cd = [check_command(item, c, found) for c in cwds]
             before = items[i - 1] if i else ""
             after = items[i + 1] if i + 1 < len(items) else ""
             if before in SUBSHELL_OPERATORS or after in SUBSHELL_OPERATORS:
                 continue  # Pipelines and background jobs run in a subshell.
-            # After `cd x || cmd`, cmd runs only when cd failed.
-            cwd = None if after == "||" and after_cd != cwd else after_cd
+            if depth or before in ("&&", "||") or after == "||":
+                after_cd = cwds + after_cd
+            cwds = list(dict.fromkeys(after_cd))
 
 
 def main() -> None:
