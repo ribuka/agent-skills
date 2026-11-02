@@ -25,6 +25,8 @@ def tree(tmp_path: Path) -> Path:
     (tmp_path / "full" / "sub").mkdir(parents=True)
     (tmp_path / "full" / "a.txt").write_text("a")
     (tmp_path / "full" / "sub" / "b.txt").write_text("b")
+    (tmp_path / "full[1]").mkdir()
+    (tmp_path / "full[1]" / "c.txt").write_text("c")
     (tmp_path / "empty").mkdir()
     (tmp_path / "file.txt").write_text("f")
     (tmp_path / "x.jpg").write_text("x")
@@ -56,6 +58,11 @@ ALLOWED = [
     "git clean -n",
     "git clean --dry-run -d",
     "uv run - <<'EOF'\ns = s.replace('shutil.rmtree(x)', 'shutil.rmtree(y)')\nEOF",
+    "(cd full) && rm -rf empty",
+    "cat <<'EOF'\n$(rm -rf full)\nEOF",
+    "if [ -d empty ]; then rmdir empty; fi",
+    "timeout 10 ls",
+    "find <tree> -type d -empty -delete -print",
 ]
 
 DENIED = [
@@ -87,6 +94,25 @@ DENIED = [
     "npx rimraf tmp",
     "node -e \"require('fs').rmSync('full', {recursive: true})\"",
     "rm -rf 'full",
+    "if true; then rm -rf full; fi",
+    "for item in full; do rm -rf full; done",
+    'echo "$(rm -rf full)"',
+    'echo "`rm -rf full`"',
+    "(cd empty); rm -rf full",
+    "cd missing; rm -rf full",
+    "cd empty | true; rm -rf full",
+    "cd empty || rm -rf full",
+    "bash <<'EOF'\nrm -rf full\nEOF",
+    "cat <<EOF\n$(rm -rf full)\nEOF",
+    "rm -rf 'full[1]'",
+    "timeout 10 rm -rf full",
+    "timeout -s KILL 10 bash -c 'rm -rf full'",
+    "nice -n 10 rm -rf full",
+    "sudo -u root rm -rf full",
+    "watch_wrapper=1 timeout --foreground 5s rm -rf full",
+    "find full ! -empty -delete",
+    "find full -not -empty -delete",
+    "find full -empty -o -delete",
 ]
 
 

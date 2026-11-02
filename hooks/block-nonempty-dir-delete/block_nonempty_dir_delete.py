@@ -33,6 +33,51 @@ PREFIXES = {
     "nice",
     "timeout",
 }
+# Options of a prefix that take a separate value, and positional arguments before the program.
+PREFIX_OPTIONS = {
+    "sudo": {"-u", "-g", "-C", "-D", "-h", "-p", "-r", "-t", "-T", "-U"},
+    "env": {"-u", "-C", "-S", "--unset", "--chdir", "--split-string"},
+    "nice": {"-n", "--adjustment"},
+    "timeout": {"-s", "-k", "--signal", "--kill-after"},
+    "exec": {"-a"},
+    "time": {"-f", "-o", "--format", "--output"},
+}
+PREFIX_POSITIONALS = {"timeout": 1}
+KEYWORDS = {
+    "if",
+    "then",
+    "else",
+    "elif",
+    "fi",
+    "do",
+    "done",
+    "while",
+    "until",
+    "!",
+    "{",
+    "}",
+}
+OPERATORS = [
+    "&&",
+    "||",
+    ";;",
+    "|&",
+    "<<",
+    ">>",
+    "<&",
+    ">&",
+    "&>",
+    "<>",
+    ";",
+    "&",
+    "|",
+    "(",
+    ")",
+    "<",
+    ">",
+    "\n",
+]
+SUBSHELL_OPERATORS = {"|", "|&", "&"}
 SHELLS = {"bash", "sh", "zsh", "dash"}
 INTERPRETERS = {
     "python",
@@ -102,7 +147,7 @@ def scan_raw(text: str) -> None:
             deny(f"中身ごと消す削除（{label}）は禁止です。{HOW_TO}")
 
 
-def split_heredocs(text: str) -> tuple[str, list[str]]:
+def split_heredocs(text: str) -> tuple[str, list[tuple[str, str, bool]]]:
     """Separate heredoc bodies from the command text.
 
     Parameters
@@ -112,17 +157,19 @@ def split_heredocs(text: str) -> tuple[str, list[str]]:
 
     Returns
     -------
-    tuple[str, list[str]]
-        The text without heredoc bodies, and the bodies fed to interpreters or shells.
+    tuple[str, list[tuple[str, str, bool]]]
+        The text without heredoc bodies, and for each heredoc its receiver
+        (``"shell"``, ``"interpreter"`` or ``""``), its body, and whether the shell
+        expands ``$(...)`` in it (the delimiter is not quoted).
     """
     lines = text.split("\n")
-    kept, scanned = [], []
+    kept, heredocs = [], []
     i = 0
     while i < len(lines):
         line = lines[i]
         kept.append(line)
         i += 1
-        for _, word in re.findall(r"<<-?\s*(['\"]?)(\w+)\1", line):
+        for quote, word in re.findall(r"<<-?\s*(['\"]?)(\w+)\1", line):
             body = []
             while i < len(lines) and lines[i].strip() != word:
                 body.append(lines[i])
@@ -130,15 +177,77 @@ def split_heredocs(text: str) -> tuple[str, list[str]]:
             i += 1
             words = {
                 os.path.basename(w).lower().removesuffix(".exe")
-                for w in re.findall(r"[\w./\\-]+", line)
+                for w in re.findall(r"[\w./\-]+", line)
             }
-            if words & (INTERPRETERS | SHELLS):
-                scanned.append("\n".join(body))
-    return "\n".join(kept), scanned
+            receiver = (
+                "shell"
+                if words & SHELLS
+                else "interpreter"
+                if words & INTERPRETERS
+                else ""
+            )
+            heredocs.append((receiver, "\n".join(body), not quote))
+    return "\n".join(kept), heredocs
+
+
+def find_substitutions(text: str) -> list[str]:
+    """Find the commands inside ``$(...)`` and backquotes, quoted or not.
+
+    Parameters
+    ----------
+    text : str
+        Shell command text.
+
+    Returns
+    -------
+    list[str]
+        Text of each outermost command substitution.
+    """
+    found = []
+    i = 0
+    while i < len(text):
+        if text.startswith("$(", i):
+            depth, j = 1, i + 2
+            while j < len(text) and depth:
+                depth += {"(": 1, ")": -1}.get(text[j], 0)
+                j += 1
+            found.append(text[i + 2 : j - 1])
+            i = j
+        elif text[i] == "`":
+            j = text.find("`", i + 1)
+            if j < 0:
+                found.append(text[i + 1 :])
+                break
+            found.append(text[i + 1 : j])
+            i = j + 1
+        else:
+            i += 1
+    return found
+
+
+def split_operators(token: str) -> list[str]:
+    """Split a run of punctuation characters into shell operators.
+
+    Parameters
+    ----------
+    token : str
+        Token made only of `PUNCTUATION` characters, such as ``");"``.
+
+    Returns
+    -------
+    list[str]
+        Operators such as ``")"`` and ``";"``.
+    """
+    operators = []
+    while token:
+        operator = next(o for o in OPERATORS if token.startswith(o))
+        operators.append(operator)
+        token = token[len(operator) :]
+    return operators
 
 
 def tokenize(text: str) -> list[str]:
-    """Split shell text into words and operator tokens (newline is an operator).
+    """Split shell text into words and operators (newline is an operator).
 
     Parameters
     ----------
@@ -158,11 +267,17 @@ def tokenize(text: str) -> list[str]:
     lexer = shlex.shlex(text, posix=True, punctuation_chars=PUNCTUATION)
     lexer.whitespace = " \t\r"
     lexer.whitespace_split = True
-    return list(lexer)
+    tokens = []
+    for token in lexer:
+        if token and all(c in PUNCTUATION for c in token):
+            tokens.extend(split_operators(token))
+        else:
+            tokens.append(token)
+    return tokens
 
 
-def split_commands(tokens: list[str]) -> list[list[str]]:
-    """Group tokens into simple commands, dropping redirections.
+def split_commands(tokens: list[str]) -> list[list[str] | str]:
+    """Group tokens into simple commands and control operators, dropping redirections.
 
     Parameters
     ----------
@@ -171,26 +286,29 @@ def split_commands(tokens: list[str]) -> list[list[str]]:
 
     Returns
     -------
-    list[list[str]]
-        Non-empty simple commands in order.
+    list[list[str] | str]
+        Simple commands (lists) and the operators between them (strings), in order.
     """
-    commands, current, skip = [], [], False
+    items, current, skip = [], [], False
     for token in tokens:
         if skip:
             skip = False
             continue
-        if token and all(c in PUNCTUATION for c in token):
+        if token in OPERATORS:
             if "<" in token or ">" in token:
                 if current and current[-1].isdigit():
                     current.pop()
                 skip = True
-            else:
-                commands.append(current)
+                continue
+            if current:
+                items.append(current)
                 current = []
+            items.append(token)
             continue
         current.append(token)
-    commands.append(current)
-    return [c for c in commands if c]
+    if current:
+        items.append(current)
+    return items
 
 
 def to_native(path: str) -> str:
@@ -260,7 +378,8 @@ def check_target(target: str, cwd: str | None) -> None:
                     f"作業ディレクトリが分からないので止めました（{target}）。絶対パスで書いてください。"
                 )
             path = os.path.join(cwd, path)
-        for match in glob.glob(path) if glob.has_magic(path) else [path]:
+        # Quotes are already removed, so also check the literal path (`rm -rf 'a[1]'`).
+        for match in [path, *(glob.glob(path) if glob.has_magic(path) else [])]:
             if os.path.islink(match) or not os.path.isdir(match):
                 continue
             with os.scandir(match) as entries:
@@ -311,8 +430,8 @@ def check_rm(args: list[str], cwd: str | None) -> None:
             check_target(arg, cwd)
 
 
-def strip_prefix(command: list[str]) -> list[str]:
-    """Remove variable assignments and wrappers such as `sudo` and `env`.
+def strip_prefix(command: list[str]) -> tuple[list[str], bool]:
+    """Remove keywords, variable assignments and wrappers such as `sudo` and `timeout`.
 
     Parameters
     ----------
@@ -321,18 +440,30 @@ def strip_prefix(command: list[str]) -> list[str]:
 
     Returns
     -------
-    list[str]
-        The command starting at the program that actually runs.
+    tuple[list[str], bool]
+        The command starting at the program that actually runs, and whether a
+        wrapper was removed.
     """
+    wrapped = False
     while command:
         name = os.path.basename(command[0]).lower()
-        if re.match(r"^\w+=", command[0]) or name in PREFIXES:
+        if command[0] in KEYWORDS or re.match(r"^\w+=", command[0]):
             command = command[1:]
-            while command and command[0].startswith("-"):
-                command = command[1:]
-        else:
+            continue
+        if name not in PREFIXES:
             break
-    return command
+        wrapped = True
+        command = command[1:]
+        takes_value = PREFIX_OPTIONS.get(name, set())
+        while command and command[0].startswith("-") and command[0] != "-":
+            option = command[0]
+            command = command[1:]
+            if option == "--":
+                break
+            if option in takes_value:
+                command = command[1:]
+        command = command[PREFIX_POSITIONALS.get(name, 0) :]
+    return command, wrapped
 
 
 def check_find(args: list[str]) -> None:
@@ -343,7 +474,10 @@ def check_find(args: list[str]) -> None:
     args : list[str]
         Arguments after `find`.
     """
-    if "-delete" in args and "-empty" not in args:
+    # Allow -delete only when every match must be empty: no negation or alternative.
+    if "-delete" in args and (
+        "-empty" not in args or any(a in ("!", "-not", "-o", "-or", ",") for a in args)
+    ):
         deny(f"find -delete は中身ごと消せるので禁止です。{HOW_TO}")
     for i, arg in enumerate(args[:-1]):
         if (
@@ -369,7 +503,7 @@ def check_command(command: list[str], cwd: str | None) -> str | None:
     str or None
         Working directory after the command (changed by `cd`).
     """
-    command = strip_prefix(command)
+    command, wrapped = strip_prefix(command)
     if not command:
         return cwd
     name = os.path.basename(command[0]).lower().removesuffix(".exe")
@@ -381,12 +515,18 @@ def check_command(command: list[str], cwd: str | None) -> str | None:
         if args[0] == "-" or "$" in args[0] or "`" in args[0]:
             return None
         target = to_native(args[0])
-        return os.path.normpath(
-            target
-            if os.path.isabs(target) or cwd is None
-            else os.path.join(cwd, target)
-        )
+        if not os.path.isabs(target):
+            if cwd is None:
+                return None
+            target = os.path.join(cwd, target)
+        # A failed cd leaves the directory unchanged, so the cwd is unknown.
+        return os.path.normpath(target) if os.path.isdir(target) else None
 
+    if wrapped and name != "rm":
+        # The wrapper's arguments were not understood; check any rm it may run.
+        for i, arg in enumerate(args):
+            if os.path.basename(arg) == "rm":
+                check_rm(args[i + 1 :], cwd)
     if name == "rm":
         check_rm(args, cwd)
     elif name == "find":
@@ -427,9 +567,18 @@ def check_shell(text: str, cwd: str | None) -> None:
     cwd : str or None
         Working directory, or None when it is unknown.
     """
-    stripped, bodies = split_heredocs(text)
-    for body in bodies:
-        scan_raw(body)
+    stripped, heredocs = split_heredocs(text)
+    for receiver, body, expands in heredocs:
+        if receiver == "shell":
+            check_shell(body, cwd)
+        elif receiver == "interpreter":
+            scan_raw(body)
+        if expands:
+            for inner in find_substitutions(body):
+                check_shell(inner, cwd)
+    # Command substitutions run even inside double quotes (`echo "$(rm -rf x)"`).
+    for inner in find_substitutions(stripped):
+        check_shell(inner, cwd)
     try:
         tokens = tokenize(stripped)
     except ValueError:
@@ -437,8 +586,22 @@ def check_shell(text: str, cwd: str | None) -> None:
             deny(f"コマンドを解析できず、再帰的な rm を含むので止めました。{HOW_TO}")
         scan_raw(stripped)
         return
-    for command in split_commands(tokens):
-        cwd = check_command(command, cwd)
+    items = split_commands(tokens)
+    saved = []
+    for i, item in enumerate(items):
+        if item == "(":
+            saved.append(cwd)
+        elif item == ")":
+            if saved:
+                cwd = saved.pop()
+        elif isinstance(item, list):
+            after_cd = check_command(item, cwd)
+            before = items[i - 1] if i else ""
+            after = items[i + 1] if i + 1 < len(items) else ""
+            if before in SUBSHELL_OPERATORS or after in SUBSHELL_OPERATORS:
+                continue  # Pipelines and background jobs run in a subshell.
+            # After `cd x || cmd`, cmd runs only when cd failed.
+            cwd = None if after == "||" and after_cd != cwd else after_cd
 
 
 def main() -> None:
