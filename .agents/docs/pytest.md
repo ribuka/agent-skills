@@ -10,4 +10,4 @@
 ## Command
 
 - Use `uv run --no-project --with pytest -m pytest <test-path>` for a targeted test.
-- Use `uv run --no-project --with pytest -m pytest skills/quota-guard/tests skills/pr-cross-review/tests skills/orca-issue-coordinator/tests --tb=short -q` for the full suite (the same paths CI runs).
+- Use `uv run --no-project --with pytest -m pytest skills/quota-guard/tests skills/pr-cross-review/tests skills/orca-issue-coordinator/tests hooks/block-nonempty-dir-delete/tests --tb=short -q` for the full suite (the same paths CI runs).

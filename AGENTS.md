@@ -1,6 +1,6 @@
 # instructions
 
-- A monorepo of agent skills shared by Claude Code and Codex.
+- A monorepo of agent skills (shared by Claude Code and Codex) and Claude Code hooks.
   - Each skill lives in `skills/<name>/` with a `SKILL.md` (YAML frontmatter + instructions) and optional `scripts/`, `references/`, `tests/`.
   - Skills are symlinked directly from this repository into both `~/.agents/skills/<name>` and `~/.claude/skills/<name>` (never chained through each other), so edits here take effect immediately. Skills referenced as `~/.agents/skills/...` resolve to this repository.
 - Always respond in Japanese.
@@ -18,6 +18,12 @@
   - A caller must not name: the provider's config file names or paths, internal step numbers, or internal values (retry intervals, storage paths). If the caller needs such a value, make the provider's script output it.
   - A provider must not know its callers: no caller skill names, caller frontmatter, or copies of caller-specific text. Never keep the same text in two places with an instruction to keep them consistent.
 
+## Hooks
+
+- Each Claude Code hook lives in `hooks/<name>/` as a single script, with optional `tests/`.
+- Install a hook by creating a junction `~/.claude/hooks/<name>` → `hooks/<name>/` in this repository, then registering it in `~/.claude/settings.json` by its installed path (never this repository's path).
+- Append `|| exit 1` to the registered command so that a missing script (exit 2 from `uv run`) does not block every tool call; return decisions as JSON on stdout with exit 0.
+
 ## Python
 
 - Always use `uv run`.
@@ -28,7 +34,7 @@
 
 - Validate skill frontmatter: `uv run --no-project --with pyyaml .github/scripts/validate_skills.py`
 - Run tests: `uv run --no-project --with pytest -m pytest <test-path>`
-  - Full suite: `uv run --no-project --with pytest -m pytest skills/quota-guard/tests skills/pr-cross-review/tests skills/orca-issue-coordinator/tests --tb=short -q`
+  - Full suite: `uv run --no-project --with pytest -m pytest skills/quota-guard/tests skills/pr-cross-review/tests skills/orca-issue-coordinator/tests hooks/block-nonempty-dir-delete/tests --tb=short -q`
   - When adding a `tests/` directory to a skill, add it to the pytest job in `.github/workflows/validate.yml`.
 - Before running any pytest command, read `.agents/docs/pytest.md` and follow it.
 - CI (`.github/workflows/validate.yml`) also runs shellcheck (`--severity=warning`) on `*.sh` and PSScriptAnalyzer on `*.ps1`; run them locally when available, otherwise rely on CI.
