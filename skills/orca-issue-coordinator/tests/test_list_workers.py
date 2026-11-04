@@ -124,6 +124,12 @@ def missing(field: str) -> dict:
      "malformed nextAction"),
     ([page([worker(1)], "c1"), (1, "")], "exited 1 on page 2"),
     ([page([worker(1)], "")], "no new nextCursor"),
+    ([(0, json.dumps({"ok": True, "result": {"workers": [], "page": {
+        "nextCursor": "remaining-page"}}}))], "no boolean page.hasMore"),
+    ([(0, json.dumps({"ok": True, "result": {"workers": [], "page": {
+        "hasMore": None, "nextCursor": "c1"}}}))], "no boolean page.hasMore"),
+    ([(0, json.dumps({"ok": True, "result": {"workers": [], "page": {
+        "hasMore": "false"}}}))], "no boolean page.hasMore"),
     ([page([worker(1)], "c1"), page([worker(2)], "c1")], "no new nextCursor"),
 ])
 def test_incomplete_list_is_an_error(lw, capsys: pytest.CaptureFixture[str], pages,

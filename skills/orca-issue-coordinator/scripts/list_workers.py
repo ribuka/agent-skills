@@ -103,7 +103,9 @@ def list_workers(orca: str, run_id: str, terminal_state: str | None) -> tuple[li
         if result.get("partialHostErrors"):
             raise ListError("worker-list reports an incomplete host inventory")
         rows.extend(worker_row(worker, orca) for worker in workers)
-        if not page.get("hasMore"):
+        if not isinstance(page.get("hasMore"), bool):
+            raise ListError(f"worker-list page {page_number} has no boolean page.hasMore")
+        if not page["hasMore"]:
             return rows, page_number
         cursor = page.get("nextCursor")
         if not isinstance(cursor, str) or not cursor or cursor in seen:
