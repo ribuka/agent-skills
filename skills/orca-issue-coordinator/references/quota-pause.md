@@ -1,8 +1,9 @@
 # Quota pause and resume
 
 Read this when `<quota-check>` returns PAUSED_QUOTA or UNKNOWN, or when the
-Coordinator is woken while a Run is paused. `<quota-check>`, `<run-id>`, and
-`<skill-dir>` mean the same as in `SKILL.md`. While paused, no new work starts:
+Coordinator is woken while a Run is paused. `<quota-check>`, `<run-id>`,
+`<orca>`, and `<skill-dir>` mean the same as in `SKILL.md`. While paused, no
+new work starts:
 no dispatch, merge preparation, merge, or re-dispatch, and the normal rule to
 continue other independent Tasks does not apply.
 
@@ -28,12 +29,17 @@ command in `SKILL.md` step 17; never delete it by path.
    Dispatch (`send --to dispatch:<dispatch_id>`, see `SKILL.md`
    **Messaging workers**), to stop at a safe boundary (after a commit/push
    or a finished review, never mid-rebase) and report its state. Verify the
-   reported states with `worker-list`. Never kill worker processes or claim
-   that all work has stopped.
-3. **Codex:** remove the Run's waiting automation first. Follow the
+   reported states with `list_workers.py` (`SKILL.md` step 10). Never kill
+   worker processes or claim that all work has stopped.
+3. For either agent, first remove the Run's `coordinator-wait:<run-id>`
+   reservation, if any, and confirm it is gone; keep its `wake-at:` lines in
+   the Run checkpoint ([Waiting](waiting.md)). The quota wake-up is then the
+   Run's only reservation.
+   **Codex:** follow the
    `quota-guard` skill's Codex Orca automation procedure: deduplicate the
    `quota-guard:<run-id>` name, use its `wake` precheck with the saved terminal
-   and absolute Orca executable, record the automation ID, and verify it.
+   and the absolute `<orca>` from the checkpoint, record the automation ID,
+   and verify it.
    Include this reference's installed path and the checkpoint in the wake text.
    On wake-up remove that automation before checking quota. Do not use
    `CronCreate` / `CronList` in Codex.
@@ -43,7 +49,7 @@ command in `SKILL.md` step 17; never delete it by path.
    path, the path of this file
    (`~/.agents/skills/orca-issue-coordinator/references/quota-pause.md`),
    and the instruction to follow **On wake-up** in it: run `<quota-check>`,
-   reconcile the checkpoint with live `task-list` / `worker-list` / PR
+   reconcile the checkpoint with live `task-list` / `list_workers.py` / PR
    state, and resume this Run only on READY. For UNKNOWN right after setup
    or a wake-up, first wait the result's `local_retry_seconds` and re-run
    `<quota-check>` once (no model request); only if it is still UNKNOWN,
@@ -55,19 +61,18 @@ the user that manual resumption is required.
 
 ## While paused
 
-Whatever wakes the Coordinator (a worker message, the waiter exiting, or a
-heartbeat nudge):
+Whatever wakes the Coordinator (a worker message, a user message, or any
+other notification):
 
-1. In Codex, reconcile the recorded automation with `orca automations list
+1. In Codex, reconcile the recorded automation with `<orca> automations list
    --json` and keep exactly one quota wake-up per Run, following `quota-guard`.
    In Claude Code, run `CronList` and look for `quota-guard:<run-id>`. If it exists, do not
    create another; never create a second wake-up for one Run. If it is
    missing, create it as in **On PAUSED_QUOTA or UNKNOWN** step 3.
-2. In Codex, run one non-waiting `check`, record delivered worker states,
-   and acknowledge the Delivery after recording every row. Do not restart the
-   waiting automation while paused. In Claude Code, only record delivered worker states in the checkpoint. After a waiter exit
-   `0`, also `check --ack` the Delivery. Do not start a new waiter, and do
-   not restart it after exit `5`.
+2. Receive the messages as in **Receive messages** in [Waiting](waiting.md)
+   and record every delivered worker state in the checkpoint. Answer
+   questions, but start no new work. Do not create a `coordinator-wait`
+   reservation while paused.
 3. Reply with one short line and end the turn.
 
 ## On wake-up
@@ -77,7 +82,7 @@ resolve removal failures before creating another. In Claude Code, the fired
 one-shot is gone. Run `<quota-check>`. If it is not READY, create
 exactly one new provider-specific wake-up as in **On PAUSED_QUOTA or UNKNOWN** and end
 the turn. On READY, reconcile the checkpoint with live `task-list`,
-`worker-list`, branches, and PRs, then resume without repeating completed
+`list_workers.py`, branches, and PRs, then resume without repeating completed
 phases or duplicating dispatches:
 
 - A stopped worker whose phase is unfinished and whose terminal is still
@@ -87,5 +92,5 @@ phases or duplicating dispatches:
   PR what was already done, then start one fresh worker for the same phase
   with a handoff of that state and the review count. Never run two workers on
   one Task.
-- Then continue dispatching ready Tasks and resume the current agent's waiting procedure
-  (`SKILL.md` **Waiting**).
+- Then continue dispatching ready Tasks, reserve the earliest remaining
+  `wake-at:` time again, and wait as in [Waiting](waiting.md).

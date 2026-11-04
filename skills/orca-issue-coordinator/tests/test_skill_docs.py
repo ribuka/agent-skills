@@ -5,10 +5,14 @@ Run with: uv run --no-project --with pytest -m pytest <skill-dir>/tests
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
 SKILL_MD = SKILL_DIR / "SKILL.md"
+WAITING = SKILL_DIR / "references" / "waiting.md"
+REVIEW_RETRY = SKILL_DIR / "references" / "review-quota-retry.md"
+QUOTA_GUARD_MD = SKILL_DIR.parent / "quota-guard" / "SKILL.md"
 QUOTA_PAUSE = SKILL_DIR / "references" / "quota-pause.md"
 QUOTA_PAUSE_INSTALLED = "~/.agents/skills/orca-issue-coordinator/references/quota-pause.md"
 
@@ -34,11 +38,12 @@ def test_wake_up_carries_reference_path() -> None:
 
 def test_merge_prep_worker_starts_from_spec_in_pr_worktree() -> None:
     skill = SKILL_MD.read_text(encoding="utf-8")
-    assert 'worker-start --spec "<handoff>" --task-title' in skill
-    assert "--worktree branch:<branch>" in skill
     merge_prep_step = skill.split("13. When a worker slot is free", 1)[1].split("14. ", 1)[0]
-    assert "worker-start --spec" in merge_prep_step
-    assert "worker-start --task" not in merge_prep_step
+    assert "`start_worker.py`" in merge_prep_step
+    assert ('`--spec "<handoff>" --task-title "#<issue> PR #<pr> merge prep" '
+            "--worktree branch:<branch> --agent <agent> --model <merge-model> "
+            "--effort <merge-effort>`") in merge_prep_step
+    assert "do not pass `--task <task_id>`" in merge_prep_step
 
 
 def test_merge_prep_skipped_when_pr_is_already_ready() -> None:
@@ -53,7 +58,7 @@ def test_merge_prep_skipped_when_pr_is_already_ready() -> None:
 def test_worker_messages_go_to_dispatch() -> None:
     skill = SKILL_MD.read_text(encoding="utf-8")
     assert "## Messaging workers" in skill
-    assert "orca orchestration send --to dispatch:<dispatch_id>" in skill
+    assert "<orca> orchestration send --to dispatch:<dispatch_id>" in skill
     assert "A bare `--to ctx_…` fails with" in skill
     assert "<terminalHandle>" not in skill
     reference = QUOTA_PAUSE.read_text(encoding="utf-8")
@@ -81,10 +86,6 @@ def test_quota_check_gates_by_exit_code_only() -> None:
     assert "**Judge READY by exit code only:**" in skill
     assert "`<quota-check> && <command>`" in skill
     assert "Never grep the JSON output to decide READY" in skill
-    assert (
-        "uv run --no-project ~/.agents/skills/quota-guard/scripts/quota_guard.py check --provider claude && "
-        "uv run --no-project <skill-dir>/scripts/wait_actionable.py" in skill
-    )
     assert "grep -o" not in skill
 
 
@@ -117,11 +118,6 @@ def test_temporary_files_are_scoped_to_run_directory() -> None:
     assert "`tmp/<run-id>/`" in skill
     assert "delete only that directory" in skill
 
-
-def test_run_end_requires_no_reclaimable_worker_terminals() -> None:
-    skill = SKILL_MD.read_text(encoding="utf-8")
-    assert "ORCA has no command that closes a Run" in skill
-    assert "worker-list --run <run-id> --terminal-state reclaimable --json" in skill
 
 
 def test_each_task_is_created_and_started_in_one_way() -> None:
@@ -185,24 +181,6 @@ def test_provider_is_explicit_for_config_workers_and_quota() -> None:
     assert "Workers must not merge or schedule resumption wake-ups" in skill
 
 
-def test_codex_waiting_and_recovery_lifecycle() -> None:
-    skill = SKILL_MD.read_text(encoding="utf-8")
-    reference = (SKILL_DIR / "references/codex-waiting.md").read_text(encoding="utf-8")
-    assert "**Codex:** follow [Codex waiting]" in skill
-    assert "**Claude Code:** run the bundled waiter" in skill
-    assert "If CI checks are pending in **Codex**" in skill
-    for contract in ("coordinator-wait:<run-id>", "*/15 * * * *",
-                     "--precheck-timeout 120", "wake --orca", "--terminal",
-                     "best-effort", "Heartbeat-only", "absolute deadline",
-                     "orca automations remove <id>", "end the turn"):
-        assert contract in reference
-
-
-def test_codex_quota_uses_automation_and_removes_waiting_wake() -> None:
-    reference = QUOTA_PAUSE.read_text(encoding="utf-8")
-    assert "remove the Run's waiting automation first" in reference
-    assert "Do not use `CronCreate` / `CronList` in Codex" in " ".join(reference.split())
-    assert "remove the recorded quota automation first" in reference
 
 
 def test_codex_disallows_implicit_invocation() -> None:
@@ -221,8 +199,7 @@ def test_user_questions_are_written_in_full_in_final_message() -> None:
     assert "Explain terms the user may not know" in section
     assert "Ask related pending questions together" in section
     assert "one-line reminder" in section
-    reference = (SKILL_DIR / "references/codex-waiting.md").read_text(encoding="utf-8")
-    assert "**Asking the user**" in reference
+    assert "**Asking the user**" in WAITING.read_text(encoding="utf-8")
 
 
 def test_worker_questions_that_change_the_issue_go_to_the_user() -> None:
@@ -238,66 +215,8 @@ def test_worker_questions_that_change_the_issue_go_to_the_user() -> None:
     assert "acceptance criteria is never routine" in " ".join(skill.split())
 
 
-def test_codex_waiting_modes_keep_one_wake_up_per_run() -> None:
-    reference = (SKILL_DIR / "references/codex-waiting.md").read_text(encoding="utf-8")
-    section = reference.split("## Waiting modes", 1)[1].split("\n## ", 1)[0]
-    assert "Keep exactly one wake-up per Run" in section
-    assert "`waiting-mode: <mode>`" in section
-    for mode in ("- `recurring`:", "- `known-time <local-time> <reason>`:", "- `user-only`:"):
-        assert mode in section
-    assert "every remaining Task waits for a user answer" in section
-    assert "`automation: none`" in section
-    assert "--missed-run-grace-minutes" in section
-    assert "Returning to `recurring`" in section
-    assert "Recreate exactly one waiting automation only if the Run still needs to\nwait" in section
-    assert "the waiting mode\n(see **Waiting modes**)" in reference
-    on_wake = reference.split("## On an orchestration notification", 1)[1].split("\n## ", 1)[0]
-    assert "mode is\n   `known-time`" in on_wake
-    assert "choose the waiting\n   mode (**Waiting modes**)" in on_wake
-    skill = SKILL_MD.read_text(encoding="utf-8")
-    assert "Keep exactly one wake-up per Run" in skill
 
 
-def test_codex_review_retry_uses_known_time_waiting_mode() -> None:
-    retry = (SKILL_DIR / "references/review-quota-retry.md").read_text(encoding="utf-8")
-    assert "do not create a separate automation" in retry
-    assert "**Waiting modes** in\n     [Codex waiting](codex-waiting.md)" in retry
-    assert "quota-guard` skill's Codex Orca automation" not in retry
-    assert "Remove the retry time\n   from the checkpoint" in retry
-    reference = (SKILL_DIR / "references/codex-waiting.md").read_text(encoding="utf-8")
-    assert "`review-quota-retry.md`" in reference
-
-
-def test_codex_recovery_wake_uses_actionable_precheck() -> None:
-    skill = SKILL_MD.read_text(encoding="utf-8")
-    section = skill.split("## Waiting", 1)[1].split("\n## ", 1)[0]
-    assert "<skill-dir>/scripts/wake_if_actionable.py" in section
-    for contract in ('{"wake": <bool>, "reasons": [...], "sent": <bool|null>}',
-                     "always exits non-zero", "`1` nothing new", "`2` wake text sent",
-                     "`3` wake needed but sending failed", "wake-at: <ISO-8601 time> <reason>"):
-        assert contract in section
-    reference = (SKILL_DIR / "references/codex-waiting.md").read_text(encoding="utf-8")
-    setup = reference.split("## Set up a recovery wake-up", 1)[1].split("\n## ", 1)[0]
-    assert '"<absolute-skill-dir>/scripts/wake_if_actionable.py" --orca' in setup
-    assert '--run "<run-id>" --checkpoint "<absolute-checkpoint-path>"' in setup
-    assert "`wake-at: <ISO-8601 time with offset> <reason>`" in setup
-    assert "permits one Coordinator turn every 15 minutes even when idle" not in reference
-    modes = reference.split("## Waiting modes", 1)[1].split("\n## ", 1)[0]
-    assert "quota_guard.py\" wake --orca" in modes
-    ci = reference.split("## Pending CI", 1)[1]
-    assert "a `wake-at:` line for the next inspection" in ci
-    retry = (SKILL_DIR / "references/review-quota-retry.md").read_text(encoding="utf-8")
-    assert "a `wake-at:` line" in retry
-
-
-def test_codex_waiting_resolves_orca_path_without_loading_orca_cli() -> None:
-    reference = (SKILL_DIR / "references/codex-waiting.md").read_text(encoding="utf-8")
-    setup = reference.split("## Set up a recovery wake-up", 1)[1].split("\n## ", 1)[0]
-    assert "Load `orca-cli`" not in setup
-    assert "Resolve only the absolute path of the `orca` executable" in setup
-    assert "(Get-Command orca).Source" in setup
-    assert "Do not load `orca-cli` or its automation guide" in setup
-    assert "orca automations create --help" in setup
 
 
 def test_guides_and_references_are_read_once_per_run() -> None:
@@ -369,7 +288,8 @@ def test_implementation_dispatch_names_new_top_level_worktree() -> None:
     dispatch_section = skill.split("## 1. Plan and dispatch", 1)[1].split("## 2.", 1)[0]
     assert ("<start> --worktree new-top-level --name issue-<n> --setup run "
             "--agent <agent> --model <impl-model> --effort <impl-effort>") in dispatch_section
-    assert 'worker-start --spec "<brief>" --task-title "#<n> <title>"' in dispatch_section
+    assert '`--spec "<brief>" --task-title "#<n> <title>"`' in dispatch_section
+    assert "Orca keeps a new-worktree worker open" in dispatch_section
     assert "`--worktree new` does not exist" in dispatch_section
     assert "omitting `--name` gives a random name" in dispatch_section
 
@@ -392,11 +312,210 @@ def test_failed_ci_reruns_once_only_when_unrelated() -> None:
     assert "suggest an\n      Issue for a test that failed this way more than once" in rule
 
 
-def test_waiter_undocumented_exit_is_inspected_then_restarted() -> None:
+def all_docs() -> list[Path]:
+    return [SKILL_MD, *(SKILL_DIR / "references").glob("*.md")]
+
+
+def test_old_waiters_and_ack_procedures_are_gone() -> None:
+    assert not (SKILL_DIR / "scripts/wait_actionable.py").exists()
+    assert not (SKILL_DIR / "scripts/wake_if_actionable.py").exists()
+    assert not (SKILL_DIR / "references/codex-waiting.md").exists()
+    for doc in all_docs():
+        text = doc.read_text(encoding="utf-8")
+        for stale in ("wait_actionable", "wake_if_actionable", "codex-waiting",
+                      "check --ack", "acknowledge", "Heartbeat-only", "heartbeat-only",
+                      "ignore heartbeat", "*/15 * * * *", "safety-minutes", "waiting-mode",
+                      "review-retry:<run-id>:<pr>", "Get-Command orca", "command -v orca",
+                      "--interval 30"):
+            assert stale not in text, (doc.name, stale)
+
+
+def test_cli_is_selected_once_and_used_by_absolute_path() -> None:
     skill = SKILL_MD.read_text(encoding="utf-8")
-    section = skill.split("**Claude Code:** run the bundled waiter", 1)[1].split("\n## ", 1)[0]
-    rule = section.split("- Any other code", 1)[1].split("\n- ", 1)[0]
-    assert "`1` with no output" in rule
-    assert "Read its output" in rule
-    assert "`worker-list`" in rule
-    assert "restart the waiter after\n    a READY `<quota-check>`" in rule
+    step0 = skill.split("## 0.", 1)[1].split("## 1.", 1)[0]
+    assert "check_preconditions.py --agent <agent> --orca <selected-executable>" in step0
+    for selector in ("ORCA_CLI_COMMAND", "orca-dev", "ORCA_DEV_REPO_ROOT", "orca-ide"):
+        assert selector in step0
+    assert "`orca-executable: <path>`" in step0
+    assert "never select\nthe executable again" in step0
+    assert "do not try another Orca\nexecutable" in step0
+    assert "orchestration.worker-auto-release.v1" in step0
+    assert "outside the sandbox" in step0
+    for doc in all_docs():
+        text = doc.read_text(encoding="utf-8")
+        assert re.search(r"`orca (orchestration|automations|skills|terminal)", text) is None, \
+            doc.name
+
+
+def test_guide_and_dag_reference_are_read_before_use() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    step0 = skill.split("## 0.", 1)[1].split("## 1.", 1)[0]
+    assert "`<orca> skills get orchestration`" in step0
+    assert ("`<orca> skills get orchestration --reference references/coordinator-loop.md`"
+            in step0)
+    assert "Do **not** use `--full`" in step0
+
+
+def test_workers_start_through_detailed_receipt_classifier() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    section = skill.split("### Starting workers", 1)[1].split("## 1.", 1)[0]
+    flat = " ".join(section.split())
+    assert "<skill-dir>/scripts/start_worker.py --orca <orca> -- <worker-start arguments>" \
+        in section
+    assert "`worker-start ... --json --full`" in flat
+    assert "not by `worker-start`'s exit code" in flat
+    for code in ("- `0` ready", "- `3` unobserved", "- `1` failed", "- `2` invalid",
+                 "- `4` launch mismatch"):
+        assert code in section
+    assert "do not rerun" in section
+    assert "never route around the breaker" in flat.lower()
+    assert "record the dispatch ID in the checkpoint at once" in flat
+
+
+def test_worker_list_reads_every_detailed_page() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    step = skill.split("10. Track each Task", 1)[1].split("11. ", 1)[0]
+    flat = " ".join(step.split())
+    assert "<skill-dir>/scripts/list_workers.py --orca <orca> --run <run-id>" in step
+    assert "`worker-list --json --full` page by page" in flat
+    assert 'never read it as "no workers"' in flat
+    assert "a failed `worker_done` is never a completed Task" in flat
+
+
+def test_auto_released_and_kept_open_workers_are_told_apart() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    step = " ".join(skill.split("11. Workers in an existing", 1)[1].split("## 3.", 1)[0].split())
+    assert "close on their own after `worker_done` (`autoReleaseAt`); do not release them" in step
+    assert "new top-level worktree, which Orca keeps open" in step
+    assert "`worker-release --dispatch <dispatch_id>`" in step
+    assert "`release_pending` or `release_unknown`" in step
+    assert "Never release a worker the user kept open or took over" in step
+
+
+def test_run_end_reconciles_every_worker() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    step = " ".join(skill.split("17. Mark only confirmed", 1)[1].split("## Quota control", 1)[0]
+                    .split())
+    assert "ORCA has no command that closes a Run" in step
+    assert "Run `list_workers.py` (step 10) for the whole Run" in step
+    assert "`release_pending` / `release_unknown`" in step
+    assert "`stop_unknown`" in step
+    assert "intentionally retained" in step
+    assert "Do not report the Run complete while a release or an unknown state remains" in step
+
+
+def test_waiting_ends_turn_and_receives_without_ack() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    section = skill.split("## Waiting", 1)[1].split("\n## ", 1)[0]
+    assert "[Waiting](references/waiting.md) in both Claude Code and Codex" in section
+    assert "there is no `--ack` step" in section
+    waiting = WAITING.read_text(encoding="utf-8")
+    receive = " ".join(waiting.split("## Receive messages", 1)[1].split("\n## ", 1)[0].split())
+    for rule in ("carries the whole message: act on it",
+                 "names a `check` command: run exactly that command",
+                 "marks the batch it returns as read; there is no `--ack` step",
+                 "Process every row of that batch before the next `check`",
+                 "never treat it as succeeded",
+                 "<orca> orchestration reply --id <message-id>",
+                 "`escalation` with `stopReason`",
+                 "Do not assume how often they arrive",
+                 "`--retry-request <id>`",
+                 "<orca> orchestration inbox --terminal run:<run-id> --limit 50",
+                 "add `--full` only when a preview cuts off",
+                 "Mail being read does not mean it was processed"):
+        assert rule in receive, rule
+    end = " ".join(waiting.split("## Wait by ending the turn", 1)[1].split("\n## ", 1)[0].split())
+    for rule in ("end the turn", "No waiter, watcher, or polling script",
+                 "no `check --wait`", "No `gh pr checks --watch`",
+                 "wait for a worker message or a user answer"):
+        assert rule in end, rule
+
+
+def test_resume_reconciles_once_without_duplicate_dispatch() -> None:
+    waiting = WAITING.read_text(encoding="utf-8")
+    resume = " ".join(waiting.split("## On every resume", 1)[1].split("\n## ", 1)[0].split())
+    assert resume.index("follow `quota-pause.md` first") < resume.index("Run `<quota-check>`")
+    assert "Never repeat a dispatch, phase, or merge" in resume
+    assert "a second wake for the same event is not a new event" in resume
+    assert ("A missing notification, silence, a timeout, or `unverifiable` liveness alone is "
+            "never a reason to stop, retry, abandon, or release a worker") in resume
+    skill = " ".join(SKILL_MD.read_text(encoding="utf-8").split())
+    assert "check the checkpoint and live state for a dispatch already started" in skill
+
+
+def test_timed_wake_ups_are_limited_and_exclusive() -> None:
+    waiting = WAITING.read_text(encoding="utf-8")
+    section = " ".join(waiting.split("## Timed wake-ups", 1)[1].split("\n## ", 1)[0].split())
+    assert "Only these times get a reservation" in section
+    assert ("Keep **at most one** future reservation per Run, at the earliest `wake-at:` time"
+            in section)
+    assert "`quota-guard:<run-id>` (from `quota-pause.md`) is the only reservation" in section
+    assert "remove `coordinator-wait:<run-id>` first" in section
+    assert "If removal fails, resolve that before creating another" in section
+    assert "Never touch another Run's reservations" in section
+    assert "one-shot (`recurring: false`) `CronCreate`" in section
+    assert "do not use `CronCreate` / `CronList`" in section
+    assert 'quota_guard.py" wake --orca "<orca>" --terminal "<handle>"' in section
+    assert "recurs every year" in section
+    pause = QUOTA_PAUSE.read_text(encoding="utf-8")
+    flat_pause = " ".join(pause.split())
+    assert "first remove the Run's `coordinator-wait:<run-id>`" in flat_pause
+    assert "Do not create a `coordinator-wait` reservation while paused" in flat_pause
+    assert "remove the recorded quota automation first" in flat_pause
+    assert "Do not use `CronCreate` / `CronList` in Codex" in flat_pause
+
+
+def test_ci_pending_uses_one_shot_reservation_with_deadline() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    verify = " ".join(skill.split("14. Independently verify", 1)[1].split("15. ", 1)[0].split())
+    assert "**Pending CI** in [Waiting](references/waiting.md) in both Claude Code and Codex" \
+        in verify
+    assert "Never run `gh pr checks --watch`" in verify
+    assert "gh pr checks <pr> --watch" not in skill
+    waiting = WAITING.read_text(encoding="utf-8")
+    ci = " ".join(waiting.split("## Pending CI", 1)[1].split("\n## ", 1)[0].split())
+    assert "absolute deadline 30 minutes after the first pending observation" in ci
+    assert "the earlier of 15 minutes from now and the deadline" in ci
+    assert "never reset the deadline" in ci
+    assert "`monitor-error: CI deadline exceeded`" in ci
+    assert "an empty check set is not success" in ci
+
+
+def test_review_retry_shares_the_runs_reservation() -> None:
+    retry = " ".join(REVIEW_RETRY.read_text(encoding="utf-8").split())
+    assert "do not create a separate wake-up" in retry
+    assert "**Timed wake-ups** in [Waiting](waiting.md)" in retry
+    assert "`wake-at:` line" in retry
+    assert "`start_worker.py`" in retry
+    assert "Remove the retry time's `wake-at:` line" in retry
+    assert "`review-quota-retry.md`" in WAITING.read_text(encoding="utf-8")
+
+
+def test_checkpoint_holds_resume_state() -> None:
+    waiting = WAITING.read_text(encoding="utf-8")
+    section = " ".join(waiting.split("## Checkpoint", 1)[1].split("\n## ", 1)[0].split())
+    for item in ("Run ID, Coordinator terminal handle, agent, absolute `<orca>` path",
+                 "dispatch ID, worktree, branch, PR URL, review count",
+                 "IDs of the messages already processed",
+                 "head SHA, and absolute deadline",
+                 "`wake-at: <ISO-8601 time with offset> <reason>`",
+                 "`reservation: <id> <time>` or `reservation: none`"):
+        assert item in section, item
+
+
+def test_token_budget_defers_to_common_receive_rules() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    budget = skill.split("## Token budget", 1)[1].split("\n## ", 1)[0]
+    flat = " ".join(budget.split())
+    assert "**Receive messages** in [Waiting](references/waiting.md)" in flat
+    assert "Do not assume how often heartbeats arrive or what they say" in flat
+    for stale in ("ignore heartbeat", "ACK", "acknowledge", "**Codex:**", "**Claude Code:"):
+        assert stale not in budget
+
+
+def test_quota_guard_documents_wake_contract() -> None:
+    quota = " ".join(QUOTA_GUARD_MD.read_text(encoding="utf-8").split())
+    assert "wake --orca <absolute-orca-executable> --terminal <handle> --text <text>`" in quota
+    assert "always exits `1`" in quota
+    assert "exit `2` means invalid arguments" in quota
+    assert "orca-issue-coordinator" not in quota

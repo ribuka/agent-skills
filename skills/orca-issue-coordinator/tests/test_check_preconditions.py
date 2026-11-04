@@ -7,14 +7,18 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "check_preconditions.py"
 CHECKOUT = "/home/user/repos/agent-skills"
+ORCA = os.path.abspath("/opt/orca/bin/orca")
+AUTO_RELEASE = "orchestration.worker-auto-release.v1"
 
 
 def load_module():
@@ -24,8 +28,10 @@ def load_module():
     return module
 
 
-def status_json(reachable: bool = True) -> str:
-    return json.dumps({"ok": True, "result": {"runtime": {"reachable": reachable}}})
+def status_json(reachable: bool = True, capabilities: list[str] | None = None) -> str:
+    runtime = {"reachable": reachable,
+               "capabilities": [AUTO_RELEASE] if capabilities is None else capabilities}
+    return json.dumps({"ok": True, "result": {"runtime": runtime}})
 
 
 @pytest.fixture
@@ -45,22 +51,36 @@ def cp(monkeypatch: pytest.MonkeyPatch):
     def fake_run(cmd: list[str]) -> tuple[int, str]:
         calls.append(cmd)
         # git commands are keyed by subcommand: git -C <dir> <subcommand> ...
-        return responses[cmd[3] if cmd[0] == "git" else cmd[0]]
+        if cmd[0] == "git":
+            return responses[cmd[3]]
+        return responses["orca" if cmd[0] == ORCA else cmd[0]]
 
+    executables = {"orca": ORCA}
+    monkeypatch.setattr(module.shutil, "which", executables.get)
     monkeypatch.setattr(module, "run", fake_run)
     monkeypatch.setenv("ORCA_TERMINAL_HANDLE", "term_test")
     module.responses = responses
     module.calls = calls
+    module.executables = executables
     return module
 
 
+def claude(*extra: str) -> list[str]:
+    return ["--agent", "claude", "--orca", "orca", *extra]
+
+
+def codex() -> list[str]:
+    return ["--agent", "codex", "--orca", "orca"]
+
+
 def test_all_checks_pass(cp, capsys: pytest.CaptureFixture[str]) -> None:
-    assert cp.main(["--agent", "claude"]) == 0
+    assert cp.main(claude()) == 0
     assert capsys.readouterr().out.splitlines() == [
         "preconditions: ok",
         f"skill-checkout: {CHECKOUT}",
+        f"orca-executable: {ORCA}",
     ]
-    assert ["orca", "status", "--json"] in cp.calls
+    assert [ORCA, "status", "--json"] in cp.calls
     assert ["gh", "auth", "status"] in cp.calls
     assert ["git", "-C", str(cp.SKILL_DIR), "rev-parse", "--show-toplevel"] in cp.calls
     assert ["git", "-C", CHECKOUT, "fetch", "--quiet", "origin",
@@ -83,7 +103,7 @@ def test_skill_dir_is_the_resolved_script_parent(cp) -> None:
 def test_stale_skill_checkout_stops(cp, capsys: pytest.CaptureFixture[str],
                                     counts: str, expected: str) -> None:
     cp.responses["rev-list"] = (0, counts)
-    assert cp.main(["--agent", "claude"]) == 1
+    assert cp.main(claude()) == 1
     out = capsys.readouterr().out
     assert f"STOP: the skill checkout {CHECKOUT} {expected}" in out
     assert "stale skills" in out
@@ -91,7 +111,7 @@ def test_stale_skill_checkout_stops(cp, capsys: pytest.CaptureFixture[str],
 
 def test_uncommitted_skill_changes_stop(cp, capsys: pytest.CaptureFixture[str]) -> None:
     cp.responses["status"] = (0, " M skills/example/SKILL.md")
-    assert cp.main(["--agent", "claude"]) == 1
+    assert cp.main(claude()) == 1
     assert (f"STOP: the skill checkout {CHECKOUT} has uncommitted changes under its skills,"
             in capsys.readouterr().out)
 
@@ -107,14 +127,14 @@ def test_uncommitted_skill_changes_stop(cp, capsys: pytest.CaptureFixture[str]) 
 def test_unverifiable_skill_checkout_stops(cp, capsys: pytest.CaptureFixture[str], key: str,
                                            response: tuple[int, str], expected: str) -> None:
     cp.responses[key] = response
-    assert cp.main(["--agent", "claude"]) == 1
+    assert cp.main(claude()) == 1
     assert expected in capsys.readouterr().out
 
 
 def test_outside_orca_terminal_stops(cp, monkeypatch: pytest.MonkeyPatch,
                                      capsys: pytest.CaptureFixture[str]) -> None:
     monkeypatch.delenv("ORCA_TERMINAL_HANDLE")
-    assert cp.main(["--agent", "claude"]) == 1
+    assert cp.main(claude()) == 1
     out = capsys.readouterr().out
     assert "STOP: not running inside an Orca terminal" in out
     assert "Do not work around it." in out
@@ -122,25 +142,26 @@ def test_outside_orca_terminal_stops(cp, monkeypatch: pytest.MonkeyPatch,
 
 def test_blank_terminal_handle_stops(cp, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ORCA_TERMINAL_HANDLE", "  ")
-    assert cp.main(["--agent", "claude"]) == 1
+    assert cp.main(claude()) == 1
 
 
 @pytest.mark.parametrize("response, expected", [
-    ((1, "connection refused"), "`orca status --json` failed (exit 1)"),
-    ((127, "orca: command not found"), "`orca status --json` failed (exit 127)"),
+    ((1, "connection refused"), f"`{ORCA} status --json` failed (exit 1)"),
+    ((127, "orca: command not found"), f"`{ORCA} status --json` failed (exit 127)"),
     ((0, "not json"), "unexpected output"),
+    ((0, json.dumps({"ok": True, "result": {"runtime": []}})), "unexpected output"),
     ((0, status_json(reachable=False)), "Orca runtime is not reachable"),
 ])
 def test_orca_runtime_failure_stops(cp, capsys: pytest.CaptureFixture[str],
                                     response: tuple[int, str], expected: str) -> None:
     cp.responses["orca"] = response
-    assert cp.main(["--agent", "claude"]) == 1
+    assert cp.main(claude()) == 1
     assert expected in capsys.readouterr().out
 
 
 def test_gh_auth_failure_stops(cp, capsys: pytest.CaptureFixture[str]) -> None:
     cp.responses["gh"] = (1, "HTTP 401: Bad credentials")
-    assert cp.main(["--agent", "claude"]) == 1
+    assert cp.main(claude()) == 1
     out = capsys.readouterr().out
     assert "STOP: `gh auth status` failed (exit 1): HTTP 401: Bad credentials" in out
 
@@ -149,7 +170,7 @@ def test_reports_every_failure(cp, monkeypatch: pytest.MonkeyPatch,
                                capsys: pytest.CaptureFixture[str]) -> None:
     monkeypatch.delenv("ORCA_TERMINAL_HANDLE")
     cp.responses["gh"] = (1, "not logged in")
-    assert cp.main(["--agent", "claude"]) == 1
+    assert cp.main(claude()) == 1
     assert capsys.readouterr().out.count("STOP:") == 2
 
 
@@ -168,7 +189,7 @@ def write_version(home: Path, latest: str, dismissed: str | None = None) -> None
 def test_codex_pending_update_prompt_stops(cp, codex_home: Path,
                                            capsys: pytest.CaptureFixture[str]) -> None:
     write_version(codex_home, "0.163.0")
-    assert cp.main(["--agent", "codex"]) == 1
+    assert cp.main(codex()) == 1
     out = capsys.readouterr().out
     assert ("STOP: Codex 0.162.1 will show an update prompt for 0.163.0 when a worker starts"
             in out)
@@ -178,7 +199,7 @@ def test_codex_pending_update_prompt_stops(cp, codex_home: Path,
 
 def test_claude_agent_skips_codex_check(cp, codex_home: Path) -> None:
     write_version(codex_home, "0.163.0")
-    assert cp.main(["--agent", "claude"]) == 0
+    assert cp.main(claude()) == 0
     assert ["codex", "--version"] not in cp.calls
 
 
@@ -196,13 +217,13 @@ def test_agent_is_required(cp) -> None:
 def test_codex_without_update_prompt_passes(cp, codex_home: Path, latest: str,
                                             dismissed: str | None) -> None:
     write_version(codex_home, latest, dismissed)
-    assert cp.main(["--agent", "codex"]) == 0
+    assert cp.main(codex()) == 0
 
 
 def test_codex_source_build_passes(cp, codex_home: Path) -> None:
     write_version(codex_home, "0.163.0")
     cp.responses["codex"] = (0, "codex-cli 0.0.0")
-    assert cp.main(["--agent", "codex"]) == 0
+    assert cp.main(codex()) == 0
 
 
 @pytest.mark.parametrize("content", [
@@ -218,7 +239,7 @@ def test_codex_without_cached_latest_version_passes(cp, codex_home: Path,
                                                     content: str | None) -> None:
     if content is not None:
         (codex_home / "version.json").write_text(content, encoding="utf-8")
-    assert cp.main(["--agent", "codex"]) == 0
+    assert cp.main(codex()) == 0
     assert ["codex", "--version"] not in cp.calls
 
 
@@ -226,14 +247,14 @@ def test_codex_update_check_disabled_in_config_passes(cp, codex_home: Path) -> N
     write_version(codex_home, "0.163.0")
     (codex_home / "config.toml").write_text("check_for_update_on_startup = false\n",
                                             encoding="utf-8")
-    assert cp.main(["--agent", "codex"]) == 0
+    assert cp.main(codex()) == 0
 
 
 def test_codex_version_failure_stops(cp, codex_home: Path,
                                      capsys: pytest.CaptureFixture[str]) -> None:
     write_version(codex_home, "0.163.0")
     cp.responses["codex"] = (127, "codex: command not found")
-    assert cp.main(["--agent", "codex"]) == 1
+    assert cp.main(codex()) == 1
     assert "STOP: `codex --version` failed (exit 127)" in capsys.readouterr().out
 
 
@@ -272,3 +293,55 @@ def test_real_checkout_compares_with_fetched_main(tmp_path: Path,
     assert module.check_skill_checkout()[1] is None
     (checkout / skill_md).write_text("stale", encoding="utf-8")
     assert "has uncommitted changes under its skills" in module.check_skill_checkout()[1]
+
+
+@pytest.mark.parametrize("capabilities", [[], ["orchestration.worker-keep-open.v1"]])
+def test_runtime_without_auto_release_stops(cp, capsys: pytest.CaptureFixture[str],
+                                            capabilities: list[str]) -> None:
+    cp.responses["orca"] = (0, status_json(capabilities=capabilities))
+    assert cp.main(claude()) == 1
+    out = capsys.readouterr().out
+    assert f"STOP: the Orca runtime does not advertise {AUTO_RELEASE}" in out
+    assert "update Orca" in out
+
+
+def test_runtime_status_without_capabilities_stops(cp) -> None:
+    cp.responses["orca"] = (0, json.dumps({"ok": True, "result": {"runtime": {
+        "reachable": True}}}))
+    assert cp.main(claude()) == 1
+
+
+def test_orca_is_required(cp) -> None:
+    with pytest.raises(SystemExit):
+        cp.main(["--agent", "claude"])
+
+
+def test_unresolvable_orca_stops_without_fallback(cp, capsys: pytest.CaptureFixture[str]) -> None:
+    assert cp.main(["--agent", "claude", "--orca", "orca-dev"]) == 1
+    out = capsys.readouterr().out
+    assert "STOP: the selected Orca executable `orca-dev` cannot be resolved" in out
+    assert "do not fall back to another executable" in out
+    assert not any(cmd[0] in ("orca", ORCA) for cmd in cp.calls)
+
+
+def test_selected_orca_is_the_only_candidate(cp, capsys: pytest.CaptureFixture[str]) -> None:
+    ide = os.path.abspath("/usr/local/bin/orca-ide")
+    cp.executables["orca-ide"] = ide
+    cp.responses[ide] = (0, status_json())
+    assert cp.main(["--agent", "claude", "--orca", "orca-ide"]) == 0
+    assert f"orca-executable: {ide}" in capsys.readouterr().out
+    assert [ide, "status", "--json"] in cp.calls
+    assert not any(cmd[0] in ("orca", ORCA) for cmd in cp.calls)
+
+
+def test_resolve_orca_returns_absolute_path_of_a_real_file(tmp_path: Path) -> None:
+    module = load_module()
+    windows = sys.platform == "win32"
+    exe = tmp_path / ("orca-test.cmd" if windows else "orca-test")
+    exe.write_text("@echo off" if windows else "#!/bin/sh", encoding="utf-8")
+    exe.chmod(0o755)
+    resolved, failure = module.resolve_orca(str(exe))
+    assert failure is None
+    assert os.path.isabs(resolved)
+    assert Path(resolved).samefile(exe)
+    assert module.resolve_orca(str(tmp_path / "missing"))[0] is None

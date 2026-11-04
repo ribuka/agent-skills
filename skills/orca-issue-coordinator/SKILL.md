@@ -21,30 +21,49 @@ disable-model-invocation: true
 
 First identify this Coordinator's runtime as `<agent>` (`claude` or `codex`).
 Workers always use that same agent; do not offer an independent worker-agent
-override. Before anything else, run:
+override.
+
+Then select the Orca executable once, as the installed `orchestration`
+skill's `SKILL.md` says: the value of `ORCA_CLI_COMMAND` if set, otherwise
+`orca-dev` in a dev checkout that exposes `ORCA_DEV_REPO_ROOT`, otherwise
+`orca-ide` on Linux outside an Orca terminal, otherwise `orca`. Never run bare
+`orca` when that procedure selects another executable. Before anything else,
+run:
 
 ```bash
-uv run <skill-dir>/scripts/check_preconditions.py --agent <agent>
+uv run <skill-dir>/scripts/check_preconditions.py --agent <agent> --orca <selected-executable>
 ```
 
-It verifies that this conversation runs inside an Orca terminal, that the Orca
-runtime is reachable, that `gh auth status` succeeds, and that the git checkout
-the skills are installed from is neither behind `origin/main` nor carrying
-commits or uncommitted skill changes not on it (so no one runs stale skills).
-With `--agent codex` it also verifies that Codex will not show its update
-prompt when a worker starts.
-If it exits non-zero,
-or `orca orchestration run-create` later fails with
+It verifies that this conversation runs inside an Orca terminal, that the
+selected executable resolves and its runtime is reachable and advertises
+`orchestration.worker-auto-release.v1`, that `gh auth status` succeeds, and
+that the git checkout the skills are installed from is neither behind
+`origin/main` nor carrying commits or uncommitted skill changes not on it (so
+no one runs stale skills). With `--agent codex` it also verifies that Codex
+will not show its update prompt when a worker starts.
+If it exits non-zero, the sender is unknown, or `run-create` later fails with
 `no_active_sender_terminal`, **stop immediately** and report the `STOP:` lines
-to the user. Never work around a failed precondition: do not create a
-substitute Coordinator terminal (`orca terminal create`), do not pass another
-terminal's handle to `--from`, and do not unset, replace, or switch `gh`
-credentials (e.g. clearing `GH_TOKEN`).
+to the user. Never work around a failed precondition: do not try another Orca
+executable, do not create a substitute Coordinator terminal
+(`terminal create`), do not pass another terminal's handle to `--from`, and do
+not unset, replace, or switch `gh` credentials (e.g. clearing `GH_TOKEN`). If
+a sandbox denies access (e.g. `runtime_access_denied`), rerun the same command
+outside the sandbox; that is not a failed precondition.
 
-On success it prints `skill-checkout: <path>`; keep that path. Never update
-(pull, rebase, or check out) that checkout during the Run, even when merged
-PRs change skills: every worker must run the same skill version. Report it as
-stale at the end instead (step 17).
+On success it prints `skill-checkout: <path>` and `orca-executable: <path>`;
+keep both. `<orca>` below is that absolute executable path: use it for every
+Orca command, in the checkpoint, and in every reservation, and never select
+the executable again (e.g. with `Get-Command`). Never update (pull, rebase, or
+check out) the skill checkout during the Run, even when merged PRs change
+skills: every worker must run the same skill version. Report it as stale at
+the end instead (step 17).
+
+Then read Orca's version-matched compact guide and its DAG reference, once
+each: `<orca> skills get orchestration` and
+`<orca> skills get orchestration --reference references/coordinator-loop.md`.
+Do **not** use `--full`. Load another bundled reference (recovery, placement,
+messaging) only when its action gate applies, with the same `--reference`
+form.
 
 Then resolve the worker settings for `<agent>`.
 
@@ -70,31 +89,61 @@ model/effort on every `worker-start`, and never exceed `MAX_WORKERS`.
 Claude effort values: `low`, `medium`, `high`, `xhigh`, `max`;
 Codex: `minimal`, `low`, `medium`, `high`, `xhigh` (no `max`).
 
-For every implementation and merge-preparation dispatch, verify
-`launch.effective`. A ready receipt confirms launch preferences, not successful
-model execution. On a recovery wake or a worker-status inspection, if no
-assistant result has appeared, inspect bounded worker output for provider
-errors even if the fleet projection says live/working. A positive provider
-rejection blocks that attempt: load Orca's orchestration recovery guide, stop
-the failed attempt with `worker-stop --dispatch <dispatch-id>` following its
-authority rules, report the blocker and ask the user for a supported model.
-Do not retry the rejected model or automatically fall back to another model.
-Silence alone is not evidence of failure and does not authorize stopping.
+### Starting workers
+
+Start every worker through the bundled script, never with a bare
+`worker-start`:
+
+```bash
+uv run --no-project <skill-dir>/scripts/start_worker.py --orca <orca> -- <worker-start arguments>
+```
+
+It runs `worker-start ... --json --full` once and judges the detailed receipt
+by its `state` / `stage` fields, not by `worker-start`'s exit code. It prints
+`start: <class>` and the `dispatch:`, `task:`, `run:`, and `effective:` lines;
+record the dispatch ID in the checkpoint at once. Exit codes:
+
+- `0` ready: the receipt's `launch.effective` matches the requested agent,
+  model, and effort.
+- `3` unobserved: the task was typed in but the worker was not yet seen
+  starting. Do not resend or abandon it; save the checkpoint and end the turn.
+  Orca wakes you when it reports.
+- `1` failed (`failed`, or `outcome_unknown` otherwise): do not rerun. Read its
+  `failed-stage:`, `error:`, and `next:` lines and load Orca's
+  `references/recovery-and-cleanup.md`.
+- `2` invalid (no detailed receipt, or a field the decision needs is missing):
+  treat it as a failed start and do not rerun; reconcile with
+  `list_workers.py` (step 10) before anything else.
+- `4` launch mismatch: the worker runs with other launch preferences than
+  requested. Handle it like a provider rejection (below).
+
+A ready receipt confirms launch preferences, not successful model execution.
+When resuming or inspecting a worker that has produced no assistant result,
+inspect bounded worker output for provider errors even if the worker list says
+live/working. A positive provider rejection blocks that attempt: load Orca's
+`references/recovery-and-cleanup.md`, stop the failed attempt with
+`worker-stop --dispatch <dispatch-id>` following its authority rules, report
+the blocker and ask the user for a supported model. Do not retry the rejected
+model or automatically fall back to another model. Silence alone is not
+evidence of failure and does not authorize stopping.
+
+After three failed starts of one Task, Orca circuit-breaks it: stop automatic
+retries and report the failure. Never route around the breaker with a new Task
+or Run, and reopen the Task only when the user explicitly asks.
 
 If a `worker-start` fails with `Agent startup blocked: agent-update-prompt`,
 the agent CLI showed its update prompt in the worker terminal. The
 precondition check cannot rule this out for the whole Run: Codex refreshes
 its cached latest version in the background. Never answer the prompt by
-sending keys to the worker terminal (`orca terminal send`); its menu options
+sending keys to the worker terminal (`<orca> terminal send`); its menu options
 change between versions. Stop dispatching, release the failed dispatch, and
 ask the user to update the agent CLI or dismiss the prompt. Retry the Task
 with `--retry-of` only after the user confirms.
 
 ## 1. Plan and dispatch
 
-1. Read the compact guide: `orca skills get orchestration`. Do **not** use
-   `--full`; load a bundled reference only when the guide's action gate needs
-   it: `orca skills get orchestration --reference <name>`.
+1. Run every Orca command as `<orca> orchestration <command>` (shortened to
+   `<command>` below), using the guide and DAG reference loaded in step 0.
 2. Inspect only what planning needs: Issue number, title, labels, and stated
    dependencies (e.g. `gh issue list --json number,title,labels` or
    `gh issue view <n> --json number,title,labels`), plus existing PRs and
@@ -114,9 +163,8 @@ with `--retry-of` only after the user confirms.
    - If the overlap is still unclear after reading the Issue bodies, run the
      Tasks in order.
 4. Create one Orchestration Run. Then, before any dispatch, set up the
-   quota guard with this Run ID (see **Quota control**). In Codex, after READY,
-   set up the recovery automation in [Codex waiting](references/codex-waiting.md)
-   before dispatching. Plan one Task per
+   quota guard with this Run ID (see **Quota control**), and save the Run
+   checkpoint described in [Waiting](references/waiting.md). Plan one Task per
    Issue by default, and create each Task in exactly one way:
    - **Independent Task** (no dependencies): do not create it in advance.
      `worker-start --spec "<brief>" --task-title "#<issue> <title>" --agent <agent>`
@@ -130,10 +178,12 @@ with `--retry-of` only after the user confirms.
      `--spec` for an Issue that already has a Task; that leaves an unused
      Task in the Run, and cancelling it leaves a `failed` one.
    - Every implementation dispatch starts a new top-level worktree named
-     after the Issue. Use exactly this form (only the first part differs):
+     after the Issue. Pass exactly these `start_worker.py` arguments (only
+     the first part differs):
      `<start> --worktree new-top-level --name issue-<n> --setup run --agent <agent> --model <impl-model> --effort <impl-effort>`,
-     where `<start>` is `worker-start --spec "<brief>" --task-title "#<n> <title>"`
-     or `worker-start --task <task_id>`. `--worktree new` does not exist
+     where `<start>` is `--spec "<brief>" --task-title "#<n> <title>"`
+     or `--task <task_id>`. Orca keeps a new-worktree worker open after it
+     reports (step 11). `--worktree new` does not exist
      (`selector_not_found`), and omitting `--name` gives a random name; do
      not load the placement reference for this.
 5. Represent actual dependencies in the task DAG, including the
@@ -141,7 +191,8 @@ with `--retry-of` only after the user confirms.
    Task as soon as its dependency Task completes, and an Implementation Task
    completes when its PR is opened, before the PR is merged. Dispatch a
    dependent Task only after every dependency's PR has been **merged**; never
-   dispatch on Orca's ready state alone. Tell its worker to start from the
+   dispatch on Orca's ready state (`task-list --ready`) alone. Tell its
+   worker to start from the
    latest `origin/main`, which includes those merges.
 6. Before the first dispatch, briefly present the execution plan to the
    user: Task dependencies, dispatch order, and the resolved worker model,
@@ -152,13 +203,14 @@ with `--retry-of` only after the user confirms.
    **`MAX_WORKERS` workers running concurrently**. Merge-preparation workers
    count toward this limit. With `MAX_WORKERS=1`, run fully serially:
    implement one Issue, prepare and merge its PR, and only then dispatch the
-   next Issue. Start each worker as step 4 decided for its Task:
-   `worker-start --spec` for an independent Task,
-   `worker-start --task <task_id>` for a Task created with `task-create`.
+   next Issue. Start each worker with `start_worker.py` (**Starting
+   workers**) as step 4 decided for its Task: `--spec` for an independent
+   Task, `--task <task_id>` for a Task created with `task-create`.
    Run the quota `check` before each
    dispatch and dispatch only on READY. Always pass `--agent <agent>` and the implementation
-   `--model` and `--effort` from step 0, and confirm `launch.effective` in the
-   receipt.
+   `--model` and `--effort` from step 0. Before any dispatch, check the
+   checkpoint and live state for a dispatch already started for that Task and
+   phase; never start a second one.
 
 ## 2. Parallel implementation
 
@@ -185,18 +237,38 @@ with `--retry-of` only after the user confirms.
      in `worker_done`.
    - Tell the worker to stop only processes it started itself, by PID, and
      never by image name (e.g. `taskkill /IM uv.exe`, `pkill python`): that
-     also kills the Coordinator's waiter and other workers' processes.
+     also kills the Coordinator's and other workers' processes.
 8. Fill available worker slots before waiting for completions.
    Dispatch additional tasks as slots become available, holding back
    dependent Tasks until their dependency PRs are merged (step 5).
-9. Wait with the bundled script (see **Waiting**), never with a hand-rolled
-   `check` loop.
+9. Then save the checkpoint and end the turn; Orca wakes you (see
+   **Waiting**). Never run a watcher, a waiter, or a `check` loop.
 10. Track each Task's worktree, branch, PR URL, review status, review count,
     and blockers. Verify reports rather than treating `worker_done`
-    as proof of completion. Run the quota `check` after processing each
-    `worker_done`.
-11. After verifying an Implementation `worker_done`, release that worker's
-    terminal (`worker-release`); merge preparation starts a fresh worker.
+    as proof of completion; a failed `worker_done` is never a completed Task.
+    Run the quota `check` after processing each `worker_done`. To inspect
+    workers, list every worker of the Run, across all pages:
+
+    ```bash
+    uv run --no-project <skill-dir>/scripts/list_workers.py --orca <orca> --run <run-id> [--terminal-state <state>]
+    ```
+
+    It reads `worker-list --json --full` page by page and prints one JSON row
+    per worker (`dispatch`, `task`, `state`, `terminalState`, `liveness`,
+    `autoReleaseAt`, `next`), then `{"workers": <n>, "pages": <n>}`, and exits
+    `0`. Exit `1` with `{"error": ...}` means the list is incomplete (a CLI
+    error, malformed JSON, a missing field, or an incomplete host inventory):
+    never read it as "no workers". When a row's `next` is not empty, follow
+    that command.
+11. Workers in an existing worktree (merge preparation, review retry) close
+    on their own after `worker_done` (`autoReleaseAt`); do not release them.
+    An Implementation worker runs in a new top-level worktree, which Orca
+    keeps open. After verifying its `worker_done`, release it
+    (`worker-release --dispatch <dispatch_id>`); merge preparation starts a
+    fresh worker. On `release_pending` or `release_unknown`, follow the
+    receipt's recovery action and Orca's `references/recovery-and-cleanup.md`;
+    never close the terminal another way. Never release a worker the user
+    kept open or took over.
 
 ## 3. Sequential merge
 
@@ -217,8 +289,9 @@ with `--retry-of` only after the user confirms.
 13. When a worker slot is free (within `MAX_WORKERS`) and after a READY
     quota `check`, start a **new** worker for
     **Orchestration worker / Merge preparation** mode in the PR's existing
-    worktree, with `--agent <agent>` and the merge-preparation `--model` / `--effort` from step 0:
-    `worker-start --spec "<handoff>" --task-title "#<issue> PR #<pr> merge prep" --worktree branch:<branch> --agent <agent>`.
+    worktree, with `start_worker.py` (**Starting workers**) and these
+    arguments, using the merge-preparation model and effort from step 0:
+    `--spec "<handoff>" --task-title "#<issue> PR #<pr> merge prep" --worktree branch:<branch> --agent <agent> --model <merge-model> --effort <merge-effort>`.
     The Implementation Task is already completed and cannot be started again,
     so do not pass `--task <task_id>`. Do not reuse the implementation
     worker's conversation. The `<handoff>` is short:
@@ -260,19 +333,14 @@ with `--retry-of` only after the user confirms.
     - The PR branch includes the latest `origin/main`.
     - Required tests and CI have passed on the current PR commit.
     - GitHub merge requirements are satisfied.
-    - If CI checks are pending in **Codex**, follow
-      [Codex waiting](references/codex-waiting.md): save the PR/head/deadline,
-      end the turn, and inspect once on the next wake-up. Do not run a foreground
-      watcher or merge while pending. In **Claude Code**, use
-      `gh pr checks <pr> --watch --interval 30` with an overall timeout
-      (default: 30 minutes) set before starting. Use automatic completion
-      notifications only when the harness guarantees them and enforces a
-      hard timeout; otherwise collect the same background process's output
-      and exit status at least once per minute. A session yield is not a
-      timeout. On timeout terminate it; on monitoring error
-      or timeout report `monitor-error: <reason>` and block this PR. Use
-      only `gh` built-in features, never external `jq` or custom CI loops.
-      Recheck the current head and all CI checks before merging.
+    - If CI checks are pending, follow **Pending CI** in
+      [Waiting](references/waiting.md) in both Claude Code and Codex: record
+      the PR, head, and 30-minute deadline, reserve one wake-up at the
+      earlier of 15 minutes from now and the deadline, end the turn, and
+      inspect once on that wake-up. Never run `gh pr checks --watch` or merge
+      while pending. Past the deadline, report `monitor-error: <reason>` and
+      block this PR. Recheck the current head and all CI checks before
+      merging.
     - **If a CI check fails:** read only the failed part
       (`gh run view <run-id> --log-failed`, tail). Only when the failure is
       unrelated to the PR's diff (e.g. a timeout or network error in a test
@@ -293,11 +361,17 @@ with `--retry-of` only after the user confirms.
     outcome and PR URL for each Issue. If any merged PR belongs to the
     repository of the `skill-checkout` path from step 0, ask the user to
     update that checkout to the latest `origin/main`.
-    Remove this Run's waiting automation, if any (see **Waiting**).
+    Remove this Run's reservation, if any (**Run completion** in
+    [Waiting](references/waiting.md)).
     Then end the Run. ORCA has no command that closes a Run; the Run ends
-    when no worker terminal still owes a decision:
-    `orca orchestration worker-list --run <run-id> --terminal-state reclaimable --json`
-    must return none (release any it lists). Finally delete this Run's
+    when no worker terminal still owes a decision. Run `list_workers.py`
+    (step 10) for the whole Run and reconcile every row: no worker may be
+    `active`; follow every non-empty `next`; release a `reclaimable` worker
+    nobody will use; report `release_pending` / `release_unknown` and
+    unresolved `stop_unknown` results as unresolved blockers, not as done.
+    A worker the user kept open or took over stays open: name it in the
+    report as intentionally retained. Do not report the Run complete while
+    a release or an unknown state remains. Finally delete this Run's
     files with these commands only, from the Coordinator's working
     repository:
     - Temporary directory:
@@ -330,7 +404,7 @@ new work near the 5-hour limit. `<quota-check>` below means
   one-line JSON result.
 - **Boundaries:** run `<quota-check>` before every Task dispatch, before
   every merge-preparation dispatch, before every merge, after processing
-  each `worker_done`, and before starting the waiter. Continue only on
+  each `worker_done`, and on every resume. Continue only on
   READY. PAUSED_QUOTA and UNKNOWN block all new work (dispatch, merge
   preparation, merge, re-dispatch).
 - **Judge READY by exit code only:** `<quota-check>` exits `0` only on
@@ -343,20 +417,20 @@ new work near the 5-hour limit. `<quota-check>` below means
   `-Command` (used by Codex) reports any failing native command as `1`.
   A non-zero exit without a parseable `state` counts as UNKNOWN.
 - **Ownership:** the Coordinator alone owns the Run checkpoint and the
-  resumption wake-up. Workers never create wake-ups.
+  timed wake-ups. Workers never create wake-ups.
 - **On PAUSED_QUOTA or UNKNOWN:** stop starting all new work, then read
   `~/.agents/skills/orca-issue-coordinator/references/quota-pause.md` and
   follow it (checkpoint, stopping workers, exactly one wake-up, end the turn).
 - **While paused or on wake-up:** whatever wakes the Coordinator (the quota
-  wake-up, a worker message, the waiter exiting, or a heartbeat nudge), first
+  wake-up, a worker message, a user message, or any other notification), first
   follow that same reference before doing anything else, even if this
   conversation's context has been compacted.
 
 ## Messaging workers
 
 Send every message to a worker (follow-ups, stop requests, resume requests)
-to its Dispatch: `orca orchestration send --to dispatch:<dispatch_id> ...`.
-Take the dispatch ID (`ctx_…`) from the `worker-start` receipt and record it
+to its Dispatch: `<orca> orchestration send --to dispatch:<dispatch_id> ...`.
+Take the dispatch ID (`ctx_…`) from the `start_worker.py` output and record it
 with the Task; no terminal handle is needed.
 
 - Always keep the `dispatch:` prefix. A bare `--to ctx_…` fails with
@@ -381,7 +455,7 @@ Code Coordinators (blockers, decisions, model choices, or anything else).
 
 - **Write the full question in the final message of the turn.** Never rely
   only on `request_user_input_async`, `AskUserQuestion`, or another
-  input UI: later terminal input (heartbeat nudges, recovery wake text) and
+  input UI: later terminal input (Orca notifications, wake text) and
   later turns can hide or scroll it away. You may also open such a UI, but
   the final message must stand on its own.
 - Use this format:
@@ -395,98 +469,47 @@ Code Coordinators (blockers, decisions, model choices, or anything else).
 - Ask related pending questions together in one message, numbered, instead
   of one at a time.
 - While a question is unanswered, end every later turn (including
-  heartbeat-only and wake-up turns) with a one-line reminder that names the
+  notification-only and wake-up turns) with a one-line reminder that names the
   pending question and the expected reply, instead of an empty or
   waiting-only message.
 
 ## Waiting
 
-**Codex:** follow [Codex waiting](references/codex-waiting.md). End the turn
-while idle; never run or poll `wait_actionable.py`, even in the background.
-Keep exactly one wake-up per Run: the 15-minute recovery wake while workers or
-CI are pending, one wake at the time when the Run waits only for a known time
-(e.g. a reviewer quota retry), and none while it waits only for the user.
+Follow [Waiting](references/waiting.md) in both Claude Code and Codex
+(`~/.agents/skills/orca-issue-coordinator/references/waiting.md`):
 
-The 15-minute recovery wake runs this precheck, which reads Orca state and the
-Run checkpoint without starting a model:
-
-```bash
-uv run --no-project <skill-dir>/scripts/wake_if_actionable.py --orca <orca> --terminal <handle> --run <run-id> --checkpoint <checkpoint> --text "<wake text>" [--safety-minutes 60]
-```
-
-- It sends `<wake text>` to the Coordinator terminal only when there is an
-  unread `worker_done` / `escalation` / `question` (peeked, not
-  acknowledged), a worker requiring action per `worker-list`, no worker in
-  progress while Tasks remain, a passed `wake-at: <ISO-8601 time> <reason>`
-  line in the checkpoint, an `orca` failure or unreadable checkpoint, or
-  `--safety-minutes` since its last wake. A condition already seen on its
-  previous run wakes again only after it clears and returns. It reads every
-  `worker-list` page and caps its `orca` queries at 60 seconds in total, so
-  the wake is still sent within the automation's 120-second precheck timeout.
-- It prints one JSON line `{"wake": <bool>, "reasons": [...], "sent": <bool|null>}`
-  (plus `errors` when a check failed) and always exits non-zero, so the
-  automation never starts its own agent: `1` nothing new (no input sent),
-  `2` wake text sent, `3` wake needed but sending failed.
-
-**Claude Code:** run the bundled waiter as a **background** command whenever you are waiting
-for workers, and only after a READY `<quota-check>`:
-
-```bash
-uv run --no-project ~/.agents/skills/quota-guard/scripts/quota_guard.py check --provider claude && uv run --no-project <skill-dir>/scripts/wait_actionable.py [--terminal <handle>] [--run <run_id>]
-```
-
-The `&&` starts the waiter only when the check exits `0` (READY); on a
-non-zero exit, handle the pause as in **Quota control** instead.
-
-- It loops `check --wait --types "worker_done,escalation,question"`,
-  acknowledges heartbeat-only batches itself, and runs `worker-list` after
-  repeated empty waits.
-- It exits only when something needs the Coordinator, printing a compact
-  summary:
-  - `0`: actionable messages; the Delivery is left **unacknowledged**.
-    The body of every `worker_done`, `escalation`, and `question` message is
-    printed in full, so read the worker handoff fields from this output.
-    Process every row, then `check --ack <delivery_id>`.
-  - `3`: a worker requires action (per `worker-list`).
-  - `4`: no in-progress worker remains; check `task-list` and `worker-list`.
-  - `5`: `--max-minutes` (default 240) elapsed; restart the waiter.
-  - `2`: an `orca` call failed; inspect before retrying.
-  - Any other code (e.g. `1` with no output when a worker killed the
-    `uv` process): the waiter did not finish its loop. Read its output, run
-    `check --json` and `worker-list` once each to find any message or worker
-    it missed, process and acknowledge those, then restart the waiter after
-    a READY `<quota-check>`.
-- Do not re-read message bodies with `check --peek`. Use `worker-read` only
-  after the waiter has exited and a worker's terminal output is needed.
-- While the quota is paused, do not start or restart the waiter; handle any
-  waiter exit as in the quota pause reference (see **Quota control**).
+- After starting the workers the Run can start, save the checkpoint and end
+  the turn. Orca wakes you when a worker reports; never run a waiter,
+  watcher, `check --wait`, or `check` loop, and never schedule a wake-up just
+  to look at workers or wait for the user.
+- A consuming `check` marks its batch read; there is no `--ack` step.
+- Reserve a timed wake-up only for a known time (pending CI, a reviewer quota
+  retry, the quota resumption), at most one per Run, at the earliest such
+  time.
+- Every resume (notification, user message, or timed wake-up) checks quota,
+  reconciles the checkpoint with live state once, and never repeats a
+  dispatch, phase, or merge already done.
 
 ## Token budget
 
-- **Codex:** consume one non-waiting Delivery per notification as specified in
-  the waiting reference, acknowledge heartbeat-only batches, then end the turn.
-  Do not assume a heartbeat nudge carries actionable work.
-
-- **Claude Code: ignore heartbeat nudges.** While the waiter is running, ORCA still types
-  `You have N orchestration message(s). Run orca orchestration check ...` into
-  this terminal on every heartbeat. Do not call any tool for it. Reply with
-  one short line (e.g. `待機中`) and end the turn. Act only when the waiter
-  exits. If a question to the user is pending, that line is the reminder
-  from **Asking the user**.
+- Handle every notification as **Receive messages** in
+  [Waiting](references/waiting.md) says, then end the turn. Do not assume
+  how often heartbeats arrive or what they say; one with no work needs no
+  tool call, only one short line (e.g. `待機中`). If a question to the user
+  is pending, that line is the reminder from **Asking the user**.
 - **While the quota is paused,** handle every wake-up as in the quota pause
   reference (see **Quota control**).
 - Report to the user only when state changes (dispatch, worker_done, merge,
   blocker, question). Never post "no news yet" updates.
 - Keep reports short: Issue, PR URL, state, next step.
 - **Read each guide or reference at most once per Run:** a skill's
-  `SKILL.md`, an `orca skills get` guide or `--reference`, and this skill's
+  `SKILL.md`, an `<orca> skills get` guide or `--reference`, and this skill's
   `references/`. Never load the same one again through another command (e.g.
-  `Get-Content` after `orca skills get`). Read it again only when it is no
+  `Get-Content` after `skills get`). Read it again only when it is no
   longer in this conversation (after compaction or in a new conversation).
 - Load only the skills and references this skill tells you to load. Do not
   read `--help` output for commands whose usage this skill or its references
-  already give (e.g. `orca automations create`,
-  `orca orchestration worker-start`).
+  already give (e.g. `automations create`, `worker-start`).
 - Do not re-read large outputs (full guides, Issue bodies, full worker
   transcripts, raw JSON) that the summaries already cover.
 
