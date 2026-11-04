@@ -1,9 +1,8 @@
 # Reviewer quota retry
 
 Read this when a worker report contains `reviewer-quota-exhausted: <agent>`
-from `pr-cross-review`, when a Claude Code `review-retry:<run-id>:<pr>` wake-up
-fires, or when [Codex waiting](codex-waiting.md) finds a recorded retry time
-that has passed.
+from `pr-cross-review`, or when a resume ([Waiting](waiting.md)) finds a
+recorded retry time that has passed.
 `<quota-check>`, `<run-id>`, and `<agent>` mean the same as in `SKILL.md`.
 
 A reviewer quota failure with a known reset time is transient: the answer is
@@ -29,20 +28,13 @@ always "retry after the reset", so do not ask the user.
    process the report. If the retry time has already passed, skip the
    wake-up and retry now as in **On wake-up** step 3.
 4. Record in the Run checkpoint: PR, branch, worktree, the interrupted phase
-   (Implementation or Merge preparation), review count, and retry time
-   (in Claude Code also the wake-up marker `review-retry:<run-id>:<pr>`; in
-   Codex the retry time as a `wake-at:` line, see [Codex waiting](codex-waiting.md)).
-   Release the worker terminal (`worker-release`).
-5. Make sure the Coordinator wakes at the retry time:
-   - **Claude Code:** run `CronList`; if the marker already exists, do not
-     create another. Otherwise create one one-shot (`recurring: false`)
-     `CronCreate` prompt containing the marker, the checkpoint path, this
-     file's path
-     (`~/.agents/skills/orca-issue-coordinator/references/review-quota-retry.md`),
-     and the instruction to follow **On wake-up** in it.
-   - **Codex:** do not create a separate automation. The retry time is a
-     known-time wait: choose the waiting mode as in **Waiting modes** in
-     [Codex waiting](codex-waiting.md), which keeps one wake-up per Run.
+   (Implementation or Merge preparation), review count, and the retry time
+   as a `wake-at:` line (e.g. `wake-at: <time> review-retry #<pr>`).
+   Release the worker terminal only when it is kept open (`SKILL.md`
+   step 11).
+5. Make sure the Coordinator wakes at the retry time: do not create a
+   separate wake-up. Set the Run's one reservation to the earliest
+   `wake-at:` time as in **Timed wake-ups** in [Waiting](waiting.md).
 6. Continue other Tasks and keep waiting as in `SKILL.md` **Waiting**.
 
 ## On wake-up
@@ -53,12 +45,13 @@ always "retry after the reset", so do not ask the user.
    checkpoint.
 3. After a READY `<quota-check>`, and within `MAX_WORKERS`, start one fresh
    worker for the interrupted phase in the PR's worktree, with the model and
-   effort of that phase:
-   `worker-start --spec "<handoff>" --task-title "#<issue> PR #<pr> review retry" --worktree branch:<branch> --agent <agent>`.
+   effort of that phase, through `start_worker.py` (`SKILL.md` **Starting
+   workers**) with these arguments:
+   `--spec "<handoff>" --task-title "#<issue> PR #<pr> review retry" --worktree branch:<branch> --agent <agent> --model <model> --effort <effort>`.
    The handoff gives the mode and phase, the Issue, PR URL, branch,
    worktree, and review count, and tells the worker to resume at the
    cross-review: run `pr-cross-review`, address its findings, and report
-   `worker_done` with the handoff fields as usual. Remove the retry time
-   from the checkpoint.
+   `worker_done` with the handoff fields as usual. Remove the retry
+   time's `wake-at:` line from the checkpoint.
 4. If that review fails again on reviewer quota, follow **On the report**,
    which blocks the PR and asks the user.

@@ -4,7 +4,11 @@
 Checks:
   1. This process runs inside an Orca terminal (ORCA_TERMINAL_HANDLE is set),
      so ORCA Orchestration can identify the Coordinator as the sender.
-  2. The Orca runtime is reachable (`orca status --json`).
+  2. The Orca executable the Coordinator selected (`--orca`, a name or a path)
+     resolves to an absolute path, its runtime is reachable
+     (`<orca> status --json`), and it advertises
+     `orchestration.worker-auto-release.v1`. Only that candidate is tried;
+     a failure never falls back to another executable.
   3. GitHub CLI authentication works (`gh auth status`).
   4. The git checkout this skill is installed from (the symlink source) matches
      `origin/main`: it is neither behind it nor carrying commits that are not on
@@ -35,6 +39,7 @@ from datetime import datetime
 from pathlib import Path
 
 TIMEOUT_SECONDS = 60
+AUTO_RELEASE_CAPABILITY = "orchestration.worker-auto-release.v1"
 # Resolving follows the ~/.agents/skills symlink to the real checkout.
 SKILL_DIR = Path(__file__).resolve().parents[1]
 # An explicit refspec updates origin/main whatever remote.origin.fetch says.
@@ -63,17 +68,30 @@ def check_orca_terminal() -> str | None:
             "start this skill from an Orca terminal")
 
 
-def check_orca_runtime() -> str | None:
-    code, out = run(["orca", "status", "--json"])
+def resolve_orca(selected: str) -> tuple[str | None, str | None]:
+    """Return (absolute executable path, failure message) for the selected Orca CLI."""
+    found = shutil.which(selected)
+    if found is None:
+        return None, (f"the selected Orca executable `{selected}` cannot be resolved; "
+                      "do not fall back to another executable")
+    return os.path.abspath(found), None
+
+
+def check_orca_runtime(orca: str) -> str | None:
+    code, out = run([orca, "status", "--json"])
     if code != 0:
-        return f"`orca status --json` failed (exit {code}): {out}"
+        return f"`{orca} status --json` failed (exit {code}): {out}"
     try:
-        result = json.loads(out)["result"]
-        reachable = bool(result["runtime"]["reachable"])
-    except (ValueError, KeyError, TypeError):
-        return f"`orca status --json` returned unexpected output: {out[:200]}"
+        runtime = json.loads(out)["result"]["runtime"]
+        reachable = bool(runtime["reachable"])
+        capabilities = runtime.get("capabilities", [])
+    except (ValueError, KeyError, TypeError, AttributeError):
+        return f"`{orca} status --json` returned unexpected output: {out[:200]}"
     if not reachable:
-        return "the Orca runtime is not reachable (`orca status --json`)"
+        return f"the Orca runtime is not reachable (`{orca} status --json`)"
+    if not isinstance(capabilities, list) or AUTO_RELEASE_CAPABILITY not in capabilities:
+        return (f"the Orca runtime does not advertise {AUTO_RELEASE_CAPABILITY}; "
+                "ask the user to update Orca")
     return None
 
 
@@ -186,15 +204,20 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--agent", required=True, choices=("claude", "codex"),
                         help="the Coordinator's runtime; workers use the same agent")
+    parser.add_argument("--orca", required=True,
+                        help="the Orca executable selected for this session (name or path)")
     args = parser.parse_args(argv)
     checkout, checkout_failure = check_skill_checkout()
-    checks = [check_orca_terminal(), check_orca_runtime(), check_gh_auth(), checkout_failure]
+    orca, orca_failure = resolve_orca(args.orca)
+    checks = [check_orca_terminal(), orca_failure or check_orca_runtime(orca), check_gh_auth(),
+              checkout_failure]
     if args.agent == "codex":
         checks.append(check_codex_update_prompt())
     failures = [msg for msg in checks if msg]
     if not failures:
         print("preconditions: ok")
         print(f"skill-checkout: {checkout}")
+        print(f"orca-executable: {orca}")
         return 0
     for msg in failures:
         print(f"STOP: {msg}")

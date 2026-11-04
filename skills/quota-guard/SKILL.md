@@ -94,6 +94,14 @@ The following initialization steps apply only to Claude Code.
    and remove the recurring automation first on wake-up. Without
    `ORCA_TERMINAL_HANDLE`, save the checkpoint and report manual resumption;
    do not create an automation.
+   `wake` is the precheck command:
+   `uv run --no-project "<skill-dir>/scripts/quota_guard.py" wake --orca <absolute-orca-executable> --terminal <handle> --text <text>`.
+   All three arguments are required. It sends `<text>` with Enter to the Orca
+   terminal `<handle>` with that executable's `terminal send`, prints
+   `{"sent": <bool>}`, and always exits `1`, whether delivery succeeded,
+   failed, or timed out, so the automation never starts its own agent
+   (exit `2` means invalid arguments). It reads no quota, inbox, or worker
+   state.
 4. End this turn. Do not wait using `/loop`, repeated model calls, or long sleeps.
 5. On wake-up, run `check` again. Resume only on READY after reconciling the
    saved state with the actual repositories/workers. Otherwise schedule one retry;
