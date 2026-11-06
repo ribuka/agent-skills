@@ -27,10 +27,12 @@ of `worker_quota_guard.py` for the full decision order.
 
 ## Install
 
-Create the junction once (from this repository's root, in PowerShell):
+Create one junction per agent once (from this repository's root, in PowerShell):
 
 ```powershell
 New-Item -ItemType Junction -Path "$HOME\.claude\hooks\worker-quota-guard" -Target "$PWD\hooks\worker-quota-guard"
+New-Item -ItemType Directory -Force -Path "$HOME\.codex\hooks"
+New-Item -ItemType Junction -Path "$HOME\.codex\hooks\worker-quota-guard" -Target "$PWD\hooks\worker-quota-guard"
 ```
 
 ### Claude Code
@@ -52,15 +54,15 @@ Add to `~/.claude/settings.json` `hooks.PreToolUse`, using the installed path:
 
 ### Codex
 
-Add the same installed path to `~/.codex/hooks.json` `hooks.PreToolUse`, with
-`--provider codex`:
+Add to `~/.codex/hooks.json` `hooks.PreToolUse`, using the Codex installed path
+and `--provider codex`:
 
 ```json
 {
   "hooks": [
     {
       "type": "command",
-      "command": "uv run --isolated --no-project --no-config --quiet --python \">=3.10\" C:/Users/<user>/.claude/hooks/worker-quota-guard/worker_quota_guard.py --provider codex || exit 1",
+      "command": "uv run --isolated --no-project --no-config --quiet --python \">=3.10\" C:/Users/<user>/.codex/hooks/worker-quota-guard/worker_quota_guard.py --provider codex || exit 1",
       "timeout": 60
     }
   ]
