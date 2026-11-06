@@ -86,22 +86,25 @@ def test_missing_or_invalid_config_is_unknown(tmp_path, config, monkeypatch, cap
     assert code == 20
     assert result["state"] == "UNKNOWN"
     assert "config.conf" in result["reason"]
-    assert "threshold" not in result
-    assert result["checkpoint_dir"] == str(tmp_path / "state" / "checkpoints")
-    assert result["local_retry_seconds"] == guard.LOCAL_RETRY_SECONDS
-    assert result["wake_at"] == guard.wakeup(NOW + 900)["wake_at"]
-    assert {"wake_local", "cron"} <= result.keys()
+    assert result == {
+        "state": "UNKNOWN", "reason": result["reason"],
+        "checkpoint_dir": str(tmp_path / "state" / "checkpoints"),
+        "local_retry_seconds": guard.LOCAL_RETRY_SECONDS,
+        **guard.wakeup(NOW + 900)}
 
 
 def test_missing_config_fails_codex_without_reading_limits(tmp_path, config, monkeypatch,
                                                            capsys) -> None:
     monkeypatch.setattr(guard, "read_codex_limits",
                         lambda: pytest.fail("must not read limits without a threshold"))
+    monkeypatch.setattr(guard.time, "time", lambda: NOW)
     monkeypatch.setattr(sys, "argv", [str(SCRIPT), "check", "--provider", "codex",
                                       "--state-dir", str(tmp_path)])
     assert guard.main() == 20
     result = json.loads(capsys.readouterr().out)
     assert "config.conf" in result["reason"]
-    assert result["provider"] == "codex"
-    assert result["checkpoint_dir"] == str(tmp_path / "checkpoints")
-    assert {"local_retry_seconds", "wake_at", "wake_local", "cron"} <= result.keys()
+    assert result == {
+        "state": "UNKNOWN", "reason": result["reason"], "provider": "codex",
+        "checkpoint_dir": str(tmp_path / "checkpoints"),
+        "local_retry_seconds": guard.LOCAL_RETRY_SECONDS,
+        **guard.wakeup(NOW + 900)}
