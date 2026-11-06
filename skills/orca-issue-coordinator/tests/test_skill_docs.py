@@ -58,13 +58,15 @@ def test_merge_prep_skipped_when_pr_is_already_ready() -> None:
                     "git merge-base --is-ancestor origin/main origin/<branch>",
                     "gh pr checks <pr>"):
         assert command in common
-        assert skill.count(command) == 1
+        for step in (shortcut, verify):
+            assert command not in step
     assert "exits `0`" in common
     assert "even when no required checks" in common
     assert "Exit `8` means pending" in common
     assert "inspect any other non-zero result" in common
     assert "report monitoring errors as blockers" in common
-    assert "An empty check set is not" in common
+    assert "instead of treating them as\n  pending" in common
+    assert "An empty check set is not proof of success" in common
     assert "No review findings are open" in common
     assert "per the worker handoff and the latest" in common
     assert "If CI is empty, pending, or has a monitoring error, do not take" in shortcut
@@ -568,20 +570,22 @@ def test_merge_requires_latest_review_to_cover_head() -> None:
     assert "`review-latest-commit: <sha>`" in common
     assert "bash ~/.agents/skills/pr-cross-review/scripts/review_status.sh <pr-number>" in common
     assert head_check in common
-    assert skill.count(head_check) == 1
     assert "**Merge as is** (Run checkpoint)" in common
     assert "that approval applies only to that SHA" in common
     assert "Do not read review comment bodies for this comparison" in common
     assert "**Unreviewed head**" in common
     shortcut_step = skill.split("12. Select the next PR", 1)[1].split("13. When", 1)[0]
+    assert head_check not in shortcut_step
     assert "**Unreviewed head:**" in shortcut_step
     assert "do not take this shortcut: run step 13" in shortcut_step
     verify_step = skill.split("14. Independently verify", 1)[1].split("15. ", 1)[0]
+    assert head_check not in verify_step
+    assert "use the same `review_status.sh` output" in verify_step
     assert "`review-latest-commit`" in verify_step
     assert "`none`\n      or `mechanical` resolution" in verify_step
     assert "its head before the rebase equals" in verify_step
-    assert "`review-latest-commit` or that approved head" in verify_step
-    assert "rebase equals the current head" in verify_step
+    assert "`review-latest-commit` or the head approved with **Merge as is**" in verify_step
+    assert "its head after the rebase equals the current\n      head" in verify_step
     assert "Only if the merge-preparation worker reported a `newly written`" in verify_step
     assert "a cross-review ran after it with no outstanding findings" in verify_step
     assert "start merge preparation\n      (step 13)" in verify_step

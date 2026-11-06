@@ -320,8 +320,8 @@ Use these checks in steps 12 and 14, against the current PR head:
 - All CI checks have passed on the current head commit
   (`gh pr checks <pr>`). Check all CI even when no required checks are
   configured. Exit `8` means pending; inspect any other non-zero result
-  and report monitoring errors as blockers. An empty check set is not
-  proof of success.
+  and report monitoring errors as blockers instead of treating them as
+  pending. An empty check set is not proof of success.
 - No review findings are open, per the worker handoff and the latest
   cross-review.
 - The latest cross-review saw the current head: run
@@ -390,17 +390,18 @@ Use these checks in steps 12 and 14, against the current PR head:
       review; accept that
       difference only when the merge-preparation worker reported a `none`
       or `mechanical` resolution, its head before the rebase equals
-      `review-latest-commit` or that approved head, and its head after the
-      rebase equals the current head. Any other difference is an
+      `review-latest-commit` or the head approved with **Merge as is**
+      (Run checkpoint), and its head after the rebase equals the current
+      head. Any other difference is an
       **Unreviewed head**: under the limit, start merge preparation
       (step 13) with the reviewed commit and the head in the handoff; once
       the limit is reached, follow
       **Limit reached with unreviewed fix commits** (**Rules**). Do not
       merge until this check passes.
     - No more than `<max>` cross-reviews on the PR, plus the extra reviews
-      the user approved for it: run
-      `bash ~/.agents/skills/pr-cross-review/scripts/review_status.sh <pr-number>`
-      and check its `review-extra: <count>` line: it must not exceed the
+      the user approved for it: use the same `review_status.sh` output
+      from **Common verification conditions** and check its
+      `review-extra: <count>` line: it must not exceed the
       extra reviews the user approved for this PR (`0` without approval).
       Do not compare `review-count: <count>/<max>` with `<max>` alone; after
       an approved extra review it is above `<max>` (e.g. `4/3` with
