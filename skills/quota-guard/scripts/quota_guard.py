@@ -141,6 +141,13 @@ def wakeup(epoch: float):
             "cron": f"{local.minute} {local.hour} {local.day} {local.month} *"}
 
 
+def unknown_result(root: Path, now: float, reason: str) -> dict:
+    """Build the shared UNKNOWN response with its local retry and wake-up fields."""
+    return {"state": "UNKNOWN", "reason": reason,
+            "checkpoint_dir": str(root / "checkpoints"),
+            "local_retry_seconds": LOCAL_RETRY_SECONDS, **wakeup(now + 900)}
+
+
 def check(root: Path, now: float, threshold: float, max_age: float = 180.0) -> dict:
     """Use fresh evidence for READY; latch high usage until its reset."""
     records = []
@@ -162,21 +169,19 @@ def check(root: Path, now: float, threshold: float, max_age: float = 180.0) -> d
     fresh = [r for r in records if 0 <= now - r["source_at"] <= max_age
              and r["window"]["resets_at"] > now]
     high = [r for r in records if r["window"]["used_percentage"] >= threshold]
-    result = {"state": "UNKNOWN", "reason": "missing_or_stale_telemetry",
-              "threshold": threshold, "upstream_freshness": "not_guaranteed",
-              "checkpoint_dir": str(root / "checkpoints")}
     if high:
         chosen = max(high, key=lambda r: r["window"]["used_percentage"])
-        result.update(state="PAUSED_QUOTA", reason="threshold_reached",
-                      **chosen["window"])
+        result = {"state": "PAUSED_QUOTA", "reason": "threshold_reached",
+                  "checkpoint_dir": str(root / "checkpoints"), **chosen["window"]}
         result["resets_at"] = reset
         result.update(wakeup(reset + RESET_TOLERANCE))
     elif fresh:
         chosen = max(fresh, key=lambda r: r["window"]["used_percentage"])
-        result.update(state="READY", reason="recent_local_evidence", **chosen["window"])
+        result = {"state": "READY", "reason": "recent_local_evidence",
+                  "checkpoint_dir": str(root / "checkpoints"), **chosen["window"]}
     else:
-        result["local_retry_seconds"] = LOCAL_RETRY_SECONDS
-        result.update(wakeup(now + 900))
+        result = unknown_result(root, now, "missing_or_stale_telemetry")
+    result.update(threshold=threshold, upstream_freshness="not_guaranteed")
     return result
 
 
@@ -264,9 +269,7 @@ def read_codex_limits(timeout: float = 20.0) -> dict:
 
 def config_unknown(root: Path, now: float, reason: str, provider: str) -> dict:
     """UNKNOWN for an unusable config.conf, with the usual pause/resume fields."""
-    result = {"state": "UNKNOWN", "reason": reason,
-              "checkpoint_dir": str(root / "checkpoints"),
-              "local_retry_seconds": LOCAL_RETRY_SECONDS, **wakeup(now + 900)}
+    result = unknown_result(root, now, reason)
     if provider == "codex":
         result["provider"] = "codex"
     return result
@@ -274,11 +277,6 @@ def config_unknown(root: Path, now: float, reason: str, provider: str) -> dict:
 
 def check_codex(root: Path, now: float, threshold: float) -> dict:
     """Fail closed on unavailable limits; also block exhausted weekly usage."""
-    result = {"state": "UNKNOWN", "reason": "codex_telemetry_unavailable",
-              "provider": "codex", "threshold": threshold,
-              "checkpoint_dir": str(root / "checkpoints"),
-              "local_retry_seconds": LOCAL_RETRY_SECONDS,
-              **wakeup(now + 900)}
     try:
         snapshot = read_codex_limits()["rateLimits"]
         if not isinstance(snapshot, dict) or snapshot.get("limitId") != "codex":
@@ -305,19 +303,19 @@ def check_codex(root: Path, now: float, threshold: float) -> dict:
         if blocked:
             name, chosen = max(blocked, key=lambda item: item[1]["resets_at"])
             schedule = wakeup(chosen["resets_at"] + RESET_TOLERANCE)
-            result.update(state="PAUSED_QUOTA", reason="threshold_reached" if name == "primary"
-                          else "secondary_exhausted", blocking_window=name, **chosen)
+            result = {"state": "PAUSED_QUOTA",
+                      "reason": "threshold_reached" if name == "primary" else "secondary_exhausted",
+                      "checkpoint_dir": str(root / "checkpoints"),
+                      "blocking_window": name, **chosen}
             result.update(schedule)
         elif snapshot.get("rateLimitReachedType") is not None:
-            result["reason"] = "server_limit_reached"
-            return result
+            result = unknown_result(root, now, "server_limit_reached")
         else:
-            result.update(state="READY", reason="live_account_rate_limits", **windows[0][2])
-            for key in ("wake_at", "wake_local", "cron"):
-                result.pop(key)
-        result.pop("local_retry_seconds")
+            result = {"state": "READY", "reason": "live_account_rate_limits",
+                      "checkpoint_dir": str(root / "checkpoints"), **windows[0][2]}
     except (OSError, ValueError, TypeError, KeyError, OverflowError, subprocess.SubprocessError):
-        pass
+        result = unknown_result(root, now, "codex_telemetry_unavailable")
+    result.update(provider="codex", threshold=threshold)
     return result
 
 

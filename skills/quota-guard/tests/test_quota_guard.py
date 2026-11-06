@@ -225,11 +225,32 @@ def test_check_reports_checkpoint_dir(tmp_path, used):
     assert result["checkpoint_dir"] == str(tmp_path / "checkpoints")
 
 
-def test_unknown_reports_local_retry_wait(tmp_path):
+@pytest.mark.parametrize("stale", [False, True])
+def test_unknown_reports_local_retry_wait(tmp_path: Path, stale: bool) -> None:
+    if stale:
+        guard.record(tmp_path, payload("a", 42, 1800005000), 1800000800)
     result = guard.check(tmp_path, 1800001002, 95)
-    assert result["state"] == "UNKNOWN"
-    assert result["local_retry_seconds"] == guard.LOCAL_RETRY_SECONDS
-    assert "cron" in result
+    assert result == {
+        "state": "UNKNOWN", "reason": "missing_or_stale_telemetry",
+        "threshold": 95, "upstream_freshness": "not_guaranteed",
+        "checkpoint_dir": str(tmp_path / "checkpoints"),
+        "local_retry_seconds": guard.LOCAL_RETRY_SECONDS,
+        **guard.wakeup(1800001902)}
+
+
+@pytest.mark.parametrize("used,state,reason", [
+    (42, "READY", "recent_local_evidence"),
+    (96, "PAUSED_QUOTA", "threshold_reached")])
+def test_known_states_keep_response_fields(tmp_path: Path, used: int,
+                                          state: str, reason: str) -> None:
+    guard.record(tmp_path, payload("a", used, 1800005000), 1800001000)
+    expected = {"state": state, "reason": reason, "threshold": 95,
+                "upstream_freshness": "not_guaranteed",
+                "checkpoint_dir": str(tmp_path / "checkpoints"),
+                "used_percentage": used, "resets_at": 1800005000}
+    if state == "PAUSED_QUOTA":
+        expected.update(guard.wakeup(1800005120))
+    assert guard.check(tmp_path, 1800001002, 95) == expected
 
 
 def run_clear(state, operation, provider="claude"):
