@@ -20,7 +20,7 @@
 
 ## Hooks
 
-- Each Claude Code hook lives in `hooks/<name>/` as a single script, with optional `tests/`.
+- Each Claude Code hook lives in `hooks/<name>/` with its script and, as needed, supporting files (e.g. `config.conf`) and `tests/`.
 - Install a hook by creating a junction `~/.claude/hooks/<name>` → `hooks/<name>/` in this repository, then registering it in `~/.claude/settings.json` by its installed path (never this repository's path).
 - Append `|| exit 1` to the registered command so that a missing script (exit 2 from `uv run`) does not block every tool call; return decisions as JSON on stdout with exit 0.
 
