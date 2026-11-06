@@ -262,6 +262,16 @@ def read_codex_limits(timeout: float = 20.0) -> dict:
                 process.stdout.close()
 
 
+def config_unknown(root: Path, now: float, reason: str, provider: str) -> dict:
+    """UNKNOWN for an unusable config.conf, with the usual pause/resume fields."""
+    result = {"state": "UNKNOWN", "reason": reason,
+              "checkpoint_dir": str(root / "checkpoints"),
+              "local_retry_seconds": LOCAL_RETRY_SECONDS, **wakeup(now + 900)}
+    if provider == "codex":
+        result["provider"] = "codex"
+    return result
+
+
 def check_codex(root: Path, now: float, threshold: float) -> dict:
     """Fail closed on unavailable limits; also block exhausted weekly usage."""
     result = {"state": "UNKNOWN", "reason": "codex_telemetry_unavailable",
@@ -494,7 +504,14 @@ def main():
             print(json.dumps(result))
             return 0
         if args.threshold is None:
-            args.threshold = load_threshold()
+            try:
+                args.threshold = load_threshold()
+            except ValueError as error:
+                if args.action == "statusline":
+                    raise
+                result = config_unknown(args.state_dir, time.time(), str(error), args.provider)
+                print(json.dumps(result, separators=(",", ":")))
+                return 20
         if not (valid_threshold(args.threshold) and args.max_age > 0
                 and math.isfinite(args.max_age)):
             raise ValueError("threshold must be (0,100]; max-age must be positive")

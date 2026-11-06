@@ -69,8 +69,10 @@ The following initialization steps apply only to Claude Code.
 - Threshold: `THRESHOLD` in this skill's `config.conf` (shipped as 95);
   `--threshold` overrides it. The script has no built-in threshold: when
   `config.conf` is missing or its `THRESHOLD` is missing or not a number in
-  (0, 100], `check` returns UNKNOWN with a `config.conf` reason. The result's
-  `threshold` is the value applied; callers that need it read it there.
+  (0, 100], `check` returns UNKNOWN with a `config.conf` reason and the
+  usual UNKNOWN fields (`checkpoint_dir`, `wake_at`, ...) but no `threshold`.
+  Otherwise the result's `threshold` is the value applied; callers that need
+  it read it there.
   Claude local evidence age limit: 180 seconds.
   Codex also blocks an exhausted secondary window (100%). A server limit signal
   without an identifiable blocking window is UNKNOWN; never continue on it.
