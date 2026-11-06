@@ -519,3 +519,23 @@ def test_quota_guard_documents_wake_contract() -> None:
     assert "always exits `1`" in quota
     assert "exit `2` means invalid arguments" in quota
     assert "orca-issue-coordinator" not in quota
+
+
+def test_merge_requires_latest_review_to_cover_head() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    head_check = "`gh pr view <pr> --json headRefOid --jq .headRefOid`"
+    shortcut_step = skill.split("12. Select the next PR", 1)[1].split("13. ", 1)[0]
+    assert "`review-latest-commit: <sha>`" in shortcut_step
+    assert head_check in shortcut_step
+    assert "**Unreviewed head:**" in shortcut_step
+    assert "do not take this shortcut: run step 13" in shortcut_step
+    verify_step = skill.split("14. Independently verify", 1)[1].split("15. ", 1)[0]
+    assert "`review-latest-commit`" in verify_step
+    assert head_check in verify_step
+    assert "`none`\n      or `mechanical` resolution" in verify_step
+    assert "start merge preparation (step 13)" in verify_step
+    for step in (shortcut_step, verify_step):
+        assert "**Limit reached with unreviewed fix commits**" in step
+    merge_prep_step = skill.split("13. When a worker slot is free", 1)[1].split("14. ", 1)[0]
+    assert "run cross-review on the unreviewed commits" in merge_prep_step
+    assert "head before the rebase and after it" in merge_prep_step

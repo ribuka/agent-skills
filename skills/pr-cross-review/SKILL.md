@@ -51,9 +51,14 @@ bash ~/.agents/skills/pr-cross-review/scripts/review_status.sh <pr-number>
 ```
 
 It prints `review-count: <count>/<max>`, `review-extra: <count>` (reviews
-beyond `<max>`, see below), and `review-latest: <comment-url>` (`none` when
-the PR has no cross-review) and exits 0 (other exit codes are in
-references/options.md). Read the latest review the same way as above.
+beyond `<max>`, see below), `review-latest: <comment-url>`, and
+`review-latest-commit: <sha>` (the commit the latest review saw; both are
+`none` when the PR has no cross-review) and exits 0 (other exit codes are in
+references/options.md). Read the latest review the same way as above. To
+check whether the latest review saw the PR's current head, compare
+`review-latest-commit` with
+`gh pr view <pr-number> --json headRefOid --jq .headRefOid`; there is no
+need to read the review comment.
 
 ## Rules the scripts enforce
 

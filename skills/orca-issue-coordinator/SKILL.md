@@ -286,6 +286,17 @@ with `--retry-of` only after the user confirms.
       An empty check set is not proof of success.
     - No review findings are open (per the worker handoff and the latest
       cross-review).
+    - The latest cross-review saw the current head commit: the
+      `review-latest-commit: <sha>` line of
+      `bash ~/.agents/skills/pr-cross-review/scripts/review_status.sh <pr-number>`
+      equals `gh pr view <pr> --json headRefOid --jq .headRefOid`. Do not
+      read review comment bodies for this. When they differ, commits were
+      pushed after the latest review (**Unreviewed head** below).
+    - **Unreviewed head:** while `<count>` in `review-count: <count>/<max>`
+      is below `<max>`, do not take this shortcut: run step 13, and state
+      the reviewed commit and the head in its handoff. Once the limit is
+      reached, follow **Limit reached with unreviewed fix commits**
+      (**Rules**) instead.
 13. When a worker slot is free (within `MAX_WORKERS`) and after a READY
     quota `check`, start a **new** worker for
     **Orchestration worker / Merge preparation** mode in the PR's existing
@@ -298,6 +309,10 @@ with `--retry-of` only after the user confirms.
     - Issue number, PR URL, branch, and worktree.
     - Cross-reviews used so far (the latest `review-count: <count>/<max>`)
       and any open findings or blockers.
+    - When the latest cross-review did not see the head (**Unreviewed
+      head** in steps 12 and 14): the reviewed commit and the head, and the
+      task to run cross-review on the unreviewed commits and address its
+      findings before rebasing.
     - The tasks: fetch and rebase onto the latest `origin/main` as needed;
       re-run tests and CI; repeat cross-review per the re-review criteria
       below.
@@ -311,13 +326,27 @@ with `--retry-of` only after the user confirms.
         blocker instead of merging.
     - The `worker_done` report must state, besides the handoff fields,
       whether the resolution was `none`, `mechanical`, or `newly written`
-      (naming the files), and whether cross-review was repeated.
+      (naming the files), whether cross-review was repeated, and the PR
+      head before the rebase and after it (full SHAs).
 14. Independently verify:
     - Only if the merge-preparation worker reported a `newly written`
       resolution: a cross-review ran after it with no outstanding findings.
       If that review is missing, has open findings, or could not run
       because the limit was reached, block the PR and ask the user.
     - No outstanding review findings.
+    - The latest cross-review saw the current head commit:
+      `review-latest-commit` (from `review_status.sh`, below) equals
+      `gh pr view <pr> --json headRefOid --jq .headRefOid`. A rebase in
+      merge preparation changes the head without a new review; accept that
+      difference only when the merge-preparation worker reported a `none`
+      or `mechanical` resolution, its head before the rebase equals
+      `review-latest-commit`, and its head after the rebase equals the
+      current head. Any other difference is an **Unreviewed head**: under
+      the limit, start merge preparation (step 13) with the reviewed commit
+      and the head in the handoff; once the limit is reached, follow
+      **Limit reached with unreviewed fix commits** (**Rules**). Do not
+      merge in either case until this check passes or the user chose
+      **Merge as is**.
     - No more than `<max>` cross-reviews on the PR, plus the extra reviews
       the user approved for it: run
       `bash ~/.agents/skills/pr-cross-review/scripts/review_status.sh <pr-number>`
@@ -529,7 +558,8 @@ Follow [Waiting](references/waiting.md) in both Claude Code and Codex
   handoff.
 - **Limit reached with unreviewed fix commits:** when a PR reached the
   limit (`MAX_REVIEWS` plus any approved extra reviews) and commits were
-  pushed after its latest cross-review (e.g. fixes for its findings), block
+  pushed after its latest cross-review (e.g. fixes for its findings;
+  **Unreviewed head** in steps 12 and 14), block
   the PR and ask the user with these options:
   - **Merge as is:** continue merging; the latest commits stay unreviewed.
   - **One extra review:** record the approval in the Run checkpoint and

@@ -10,6 +10,8 @@
 #   review-extra: <count>          reviews beyond MAX_REVIEWS (each one ran with
 #                                  --extra-review after user approval)
 #   review-latest: <comment-url>   the latest cross-review comment, or `none`
+#   review-latest-commit: <sha>    the commit the latest cross-review saw (its
+#                                  `Reviewed commit:` footer), or `none`
 
 set -euo pipefail
 
@@ -40,7 +42,11 @@ review_count=$(
 latest_url=$(
     printf '%s\n' "$review_history" | awk -F '\t' 'NF { url=$2 } END { print url }'
 )
+latest_commit=$(
+    printf '%s\n' "$review_history" | awk -F '\t' 'NF { commit=$3 } END { print commit }'
+)
 
 echo "review-count: ${review_count}/${MAX_REVIEWS}"
 echo "review-extra: $((review_count > MAX_REVIEWS ? review_count - MAX_REVIEWS : 0))"
 echo "review-latest: ${latest_url:-none}"
+echo "review-latest-commit: ${latest_commit:-none}"
