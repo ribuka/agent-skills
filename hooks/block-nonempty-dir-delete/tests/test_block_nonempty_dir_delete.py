@@ -71,6 +71,8 @@ ALLOWED = [
     "git status && cd full; rm -rf nonexistent",
     'echo ok > "$(echo out.txt)"',
     "env -C full bash <<'EOF'\nrm -rf nonexistent\nEOF",
+    "git commit -F - <<'EOF'\nmsg\nEOF\ngh pr create --body \"$(cat <<'EOF'\nbody\nEOF\n)\"",
+    "gh pr create --body \"$(cat <<'EOF'\nbody\nEOF\n)\"",
 ]
 
 DENIED = [
@@ -135,6 +137,9 @@ DENIED = [
     'cat < "$(rm -rf full)"',
     "env -C full bash <<'EOF'\nrm -rf sub\nEOF",
     "env --chdir=full bash <<'EOF'\nrm -rf sub\nEOF",
+    "x=\"$(bash <<'EOF'\nrm -rf <tree>/full\nEOF\n)\"",
+    "git commit -F - <<'EOF'\nmsg\nEOF\nx=\"$(bash <<'EOF'\nrm -rf <tree>/full\nEOF\n)\"",
+    "x=\"$(python3 <<'EOF'\nimport shutil; shutil.rmtree('full')\nEOF\n)\"",
 ]
 
 
