@@ -597,7 +597,9 @@ def test_usage_limit_worker_is_retried_by_fresh_worker() -> None:
                  "start it only after its old dispatch has settled",
                  "review count (the larger of the recorded and printed counts)",
                  "open findings from the latest review",
-                 "orchestration reply --id <message-id>"):
+                 "orchestration reply --id <message-id>",
+                 "or only uncommitted changes",
+                 "A retried Merge preparation worker does not ask"):
         assert text in reference
     assert ("without `worker_done` and without a `usageLimitReached` escalation"
             in reference)

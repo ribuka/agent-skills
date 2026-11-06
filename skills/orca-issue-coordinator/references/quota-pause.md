@@ -76,7 +76,11 @@ worker** method:
 ## Handoff to a retried worker
 
 A worker started with `--retry-of` gets the Task's original brief only, so
-it asks for the handoff (`question`) before it does anything else. Before
+a retried Implementation worker asks for the handoff (`question`) before it
+does anything else, whether the earlier attempt left a PR, commits, or only
+uncommitted changes. A retried Merge preparation worker does not ask: its
+`--spec` handoff is its brief, and it rebuilds the rest from the branch and
+PR. Before
 starting it, confirm the state from the branch and PR, not from the
 checkpoint alone: the PR (`gh pr list --head <branch> --state all`), its
 review count and latest review (`review_status.sh` from `pr-cross-review`,
