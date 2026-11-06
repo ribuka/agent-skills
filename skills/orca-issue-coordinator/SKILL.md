@@ -31,7 +31,7 @@ skill's `SKILL.md` says: the value of `ORCA_CLI_COMMAND` if set, otherwise
 run:
 
 ```bash
-uv run <skill-dir>/scripts/check_preconditions.py --agent <agent> --orca <selected-executable>
+uv run <skill-dir>/scripts/check_preconditions.py --orca <selected-executable>
 ```
 
 It verifies that this conversation runs inside an Orca terminal, that the
@@ -39,8 +39,11 @@ selected executable resolves and its runtime is reachable and advertises
 `orchestration.worker-auto-release.v1`, that `gh auth status` succeeds, and
 that the git checkout the skills are installed from is on branch `main` and is
 neither behind `origin/main` nor carrying commits or uncommitted skill changes
-not on it (so no one runs stale skills). With `--agent codex` it also verifies that Codex
-will not show its update prompt when a worker starts.
+not on it (so no one runs stale skills).
+When `<agent>` is `codex`, the user must have added
+`-c check_for_update_on_startup=false` to Codex's default arguments in Orca's
+settings, so a worker's Codex never shows its update prompt. The script does
+not verify this; do not read Orca's internal files to check it.
 If it exits non-zero, the sender is unknown, or `run-create` later fails with
 `no_active_sender_terminal`, **stop immediately** and report the `STOP:` lines
 to the user. Never work around a failed precondition: do not try another Orca
@@ -148,13 +151,14 @@ retries and report the failure. Never route around the breaker with a new Task
 or Run, and reopen the Task only when the user explicitly asks.
 
 If a `worker-start` fails with `Agent startup blocked: agent-update-prompt`,
-the agent CLI showed its update prompt in the worker terminal. The
-precondition check cannot rule this out for the whole Run: Codex refreshes
-its cached latest version in the background. Never answer the prompt by
+the agent CLI showed its update prompt in the worker terminal. Most likely
+Orca's default arguments for Codex lack `-c check_for_update_on_startup=false`;
+the precondition check does not look at them. Never answer the prompt by
 sending keys to the worker terminal (`<orca> terminal send`); its menu options
 change between versions. Stop dispatching, release the failed dispatch, and
-ask the user to update the agent CLI or dismiss the prompt. Retry the Task
-with `--retry-of` only after the user confirms.
+ask the user to add that argument to Codex's default arguments in Orca (or to
+update the agent CLI or dismiss the prompt). Retry the Task with `--retry-of`
+only after the user confirms.
 
 ## 1. Plan and dispatch
 
