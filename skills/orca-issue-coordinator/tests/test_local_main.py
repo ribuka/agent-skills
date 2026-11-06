@@ -65,13 +65,14 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     module = load_module()
     original_run = module.run
 
-    def run(cmd: list[str]) -> tuple[int, str]:
+    def run(cmd: list[str], timeout: int | None = module.TIMEOUT_SECONDS) -> tuple[int, str]:
         if cmd[0] == "uv":
             assert cmd[1:3] == ["run", "--no-project"]
+            assert timeout is None  # The provider owns its per-Git-command timeouts.
             assert Path(cmd[3]) == Path.home() / ".agents/skills/fast-forward-local-branch/scripts/fast_forward.py"
             script = SCRIPT.parents[2] / "fast-forward-local-branch/scripts/fast_forward.py"
-            return original_run([sys.executable, str(script), *cmd[4:]])
-        return original_run(cmd)
+            return original_run([sys.executable, str(script), *cmd[4:]], timeout=timeout)
+        return original_run(cmd, timeout=timeout)
 
     monkeypatch.setattr(module, "run", run)
     remote, pusher = make_remote(tmp_path, "skills")

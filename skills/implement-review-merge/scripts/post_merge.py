@@ -29,6 +29,7 @@ def sync_enabled(path: Path) -> bool:
 
 
 def main(argv: list[str] | None = None) -> int:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", required=True)
     parser.add_argument("--mode", required=True, choices=("standalone", "worker"))
@@ -45,12 +46,13 @@ def main(argv: list[str] | None = None) -> int:
         proc = subprocess.run(["uv", "run", "--no-project", str(script),
                                "--repo", args.repo, "--branch", "main"],
                               capture_output=True, text=True, encoding="utf-8",
-                              errors="replace", timeout=120)
+                              errors="replace")
         if proc.stdout.strip():
             print(proc.stdout.strip())
         if proc.returncode != 0:
-            print(f"error: fast-forward-local-branch failed (exit {proc.returncode}): "
-                  f"{proc.stderr.strip()}")
+            if proc.stderr.strip() or not proc.stdout.strip():
+                reason = f": {proc.stderr.strip()}" if proc.stderr.strip() else ""
+                print(f"error: fast-forward-local-branch failed (exit {proc.returncode}){reason}")
             return 1
         return 0
     except (OSError, ValueError, subprocess.TimeoutExpired) as exc:

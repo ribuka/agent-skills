@@ -27,6 +27,7 @@ def test_enabled_defaults_invoke_public_cli(module, tmp_path, monkeypatch, confi
     calls = []
 
     def run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess:
+        assert kwargs.get("timeout") is None  # Provider owns operation timeouts.
         calls.append(cmd)
         return subprocess.CompletedProcess(cmd, 0, "local-branch: updated\n", "")
 
@@ -67,4 +68,4 @@ def test_sync_failure_is_reported_without_retry(module, monkeypatch, capsys) -> 
     monkeypatch.setattr(module.subprocess, "run", run)
     assert module.main(["--repo", "repo", "--mode", "standalone", "--pr-state", "MERGED"]) == 1
     assert len(calls) == 1
-    assert "error: git fetch failed" in capsys.readouterr().out
+    assert capsys.readouterr().out.splitlines() == ["error: git fetch failed"]

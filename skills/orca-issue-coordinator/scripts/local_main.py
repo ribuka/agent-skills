@@ -44,16 +44,16 @@ class GitError(Exception):
     """A git command failed; the message is the reason to report."""
 
 
-def run(cmd: list[str]) -> tuple[int, str]:
+def run(cmd: list[str], timeout: int | None = TIMEOUT_SECONDS) -> tuple[int, str]:
     """Run a command and return its exit code and output (stdout, or all output on failure)."""
     exe = shutil.which(cmd[0])
     if exe is None:
         return 127, f"{cmd[0]}: command not found"
     try:
         proc = subprocess.run([exe, *cmd[1:]], capture_output=True, text=True,
-                              encoding="utf-8", errors="replace", timeout=TIMEOUT_SECONDS)
+                              encoding="utf-8", errors="replace", timeout=timeout)
     except subprocess.TimeoutExpired:
-        return 124, f"{' '.join(cmd)}: timed out after {TIMEOUT_SECONDS}s"
+        return 124, f"{' '.join(cmd)}: timed out after {timeout}s"
     if proc.returncode != 0:
         return proc.returncode, (proc.stdout + proc.stderr).strip()
     return 0, proc.stdout.strip()
@@ -118,7 +118,7 @@ def finish(repo: str, frozen: str) -> int:
     git(repo, "rev-parse", "--verify", f"refs/heads/{base}")
     script = Path.home() / ".agents/skills/fast-forward-local-branch/scripts/fast_forward.py"
     code, out = run(["uv", "run", "--no-project", str(script),
-                     "--repo", repo, "--branch", base])
+                     "--repo", repo, "--branch", base], timeout=None)
     if code != 0:
         raise GitError(f"fast-forward-local-branch failed (exit {code}): {out}")
     for line in out.splitlines():

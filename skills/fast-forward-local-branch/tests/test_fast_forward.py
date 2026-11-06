@@ -6,8 +6,10 @@ Run with: uv run --no-project --with pytest -m pytest <skill-dir>/tests
 from __future__ import annotations
 
 import importlib.util
+import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -97,6 +99,19 @@ def test_updates_branch_in_another_worktree(env, capsys) -> None:
     assert branch(topic) == "topic"
     assert (env.checkout / "file.txt").read_text() == "v2"
     assert (topic / "file.txt").read_text() == "v1"
+
+
+def test_cli_output_is_utf8_for_non_ascii_worktree(env) -> None:
+    git(env.checkout, "switch", "-q", "-c", "topic")
+    worktree = env.tmp / "日本語"
+    git(env.checkout, "worktree", "add", "-q", str(worktree), "main")
+    push_new_commit(env.pusher, "v2")
+    (worktree / "file.txt").write_text("dirty")
+    proc = subprocess.run([sys.executable, str(SCRIPT), "--repo", str(env.checkout),
+                           "--branch", "main"], capture_output=True,
+                          env={**os.environ, "PYTHONIOENCODING": "cp932"})
+    assert proc.returncode == 0
+    assert "日本語" in proc.stdout.decode("utf-8")
 
 
 @pytest.mark.parametrize("state", ["same", "ahead", "diverged", "dirty", "missing", "fetch", "untracked"])
