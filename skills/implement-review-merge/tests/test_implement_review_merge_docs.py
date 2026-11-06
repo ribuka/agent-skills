@@ -80,3 +80,13 @@ def test_worker_quota_pause_report_includes_context_size() -> None:
                  "`git rebase --abort`", "**Resumed phase:**",
                  "schedule a wake-up"):
         assert text in skill
+
+
+def test_resumed_phase_asks_for_handoff_first() -> None:
+    skill = " ".join(SKILL_MD.read_text(encoding="utf-8").split())
+    resumed = skill.split("**Resumed phase:**", 1)[1].split("**Quota pause:**", 1)[0]
+    assert "commits not on `origin/main` or a pull request" in resumed
+    assert resumed.index("ask the Coordinator for the handoff") < resumed.index(
+        "rebuild the state")
+    assert "end the turn" in resumed
+    assert "larger of the handed-off and printed review counts" in resumed

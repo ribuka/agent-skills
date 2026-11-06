@@ -30,9 +30,17 @@ reports. Never wait in a tool call:
   succeeded or mark the Task completed.
 - `question`: answer it with `<orca> orchestration reply --id <message-id> --body "<answer>"`
   following `SKILL.md` **Answering worker questions**.
-- `escalation` with `stopReason`: the worker stopped without `worker_done`.
-  Load Orca's `references/recovery-and-cleanup.md` and steer it with `send`,
-  retry it, or tell the user.
+- `escalation` whose payload has `failureKind=usageLimitReached`: the
+  worker's agent hit its usage limit. Do not steer it with `send`; follow
+  **Worker stopped by the usage limit** in
+  `~/.agents/skills/orca-issue-coordinator/references/quota-pause.md`
+  (stop the old dispatch, then retry the Task with a fresh worker).
+- Any other `escalation` with `stopReason`: the worker stopped without
+  `worker_done`. Load Orca's `references/recovery-and-cleanup.md` and steer
+  it with `send`, retry it, or tell the user.
+- A `question` from a worker retried with `--retry-of` asking for its
+  handoff: reply with the handoff recorded in the checkpoint
+  (**Handoff to a retried worker** in `quota-pause.md`).
 - Heartbeats or other notifications carry no work by themselves. Do not assume
   how often they arrive or what their text says.
 - A lost `check` response: rerun it with the `--retry-request <id>` it printed.

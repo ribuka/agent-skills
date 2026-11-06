@@ -1,7 +1,8 @@
 # Quota pause and resume
 
 Read this when `<quota-check>` returns PAUSED_QUOTA or UNKNOWN, when a
-worker reports `worker-quota-paused:`, or when the Coordinator is woken while
+worker reports `worker-quota-paused:`, when a worker's `escalation` carries
+`failureKind=usageLimitReached`, or when the Coordinator is woken while
 a Run is paused. `<quota-check>`, `<run-id>`,
 `<orca>`, and `<skill-dir>` mean the same as in `SKILL.md`. While paused, no
 new work starts:
@@ -43,6 +44,56 @@ Task:
 3. Run `<quota-check>`. On PAUSED_QUOTA or UNKNOWN, follow
    **On PAUSED_QUOTA or UNKNOWN** (or **While paused** when the Run is
    already paused). On READY, resume it at once as **On wake-up** says.
+
+## Worker stopped by the usage limit
+
+An `escalation` whose payload has `failureKind=usageLimitReached` means the
+worker's agent hit its usage limit and stopped mid-turn, without
+`worker_done`. It is a quota pause, not a failed Task. Never resume it in its
+own conversation: a message sent to it with `send`
+reaches it only after its next turn ends, and its long conversation would be
+written to the expired prompt cache again in full. Always use the **fresh
+worker** method:
+
+1. Record in the checkpoint the Task, dispatch ID, terminal handle,
+   worktree, branch, PR URL (if any), review count, open findings, and the
+   resume method `fresh worker`. The work left is unknown until the branch
+   and PR are checked (**Handoff to a retried worker**).
+2. Stop the old dispatch, so that it cannot continue beside its successor:
+   `<orca> orchestration worker-stop --dispatch <dispatch_id>`, following
+   Orca's `references/recovery-and-cleanup.md`. The escalation is positive
+   proof that the worker stopped its work; silence or `unverifiable`
+   liveness alone still never authorizes a stop ([Waiting](waiting.md)).
+   Respect its identity, custody, and Keep open refusals: never stop a
+   worker the user kept open or took over; ask the user instead. Treat the
+   dispatch as stopped only on a confirmed stopped result. On `stop_unknown`,
+   inspect `<orca> orchestration worker-show --dispatch <dispatch_id>`, then
+   report the blocker to the user; do not repeat the stop or start another
+   worker for the Task.
+3. Run `<quota-check>` and continue as step 3 of **Worker stopped by the
+   quota pause** says.
+
+## Handoff to a retried worker
+
+A worker started with `--retry-of` gets the Task's original brief only, so
+it asks for the handoff (`question`) before it does anything else. Before
+starting it, confirm the state from the branch and PR, not from the
+checkpoint alone: the PR (`gh pr list --head <branch> --state all`), its
+review count and latest review (`review_status.sh` from `pr-cross-review`,
+then that comment only), and the worktree (`git -C <worktree> status
+--short` and `git -C <worktree> log --oneline origin/main..HEAD`). Record
+that handoff in the checkpoint. It holds:
+
+- Issue number, PR URL, branch, and worktree.
+- The review count (the larger of the recorded and printed counts) and the
+  open findings from the latest review.
+- The work left in the phase, any blockers, and any user approvals (an
+  extra review, merging a head as is).
+
+When its `question` arrives, reply with the recorded handoff
+(`<orca> orchestration reply --id <message-id> --body "<handoff>"`). Do not
+send the handoff with `send` instead: it is not read before the worker's
+first turn ends.
 
 ## On PAUSED_QUOTA or UNKNOWN
 
@@ -112,7 +163,8 @@ the turn. On READY, reconcile the checkpoint with live `task-list`,
 phases or duplicating dispatches:
 
 - A worker still running its Dispatch (stopped on the Coordinator's
-  request, without `worker_done`) whose terminal is still available: send it
+  request, without `worker_done` and without a `usageLimitReached`
+  escalation) whose terminal is still available: send it
   an ORCA message (`send --to dispatch:<dispatch_id>`) to continue the
   remaining work of its phase and report `worker_done` as before.
 - A worker that reported `worker-quota-paused:` with the **same
@@ -123,16 +175,19 @@ phases or duplicating dispatches:
   (no `--model` / `--effort`; they cannot combine with `--terminal`). After
   verifying its next `worker_done`, release the terminal you kept open as
   `SKILL.md` step 11 says.
-- Any other stopped worker (the **fresh worker** method, or a terminal that
-  is no longer available): confirm from its branch and PR what was already
-  done, then retry the same failed Task with one fresh worker in the
-  existing worktree, with `start_worker.py` and
+- Any other stopped worker (the **fresh worker** method, including every
+  `usageLimitReached` worker, or a terminal that is no longer available):
+  start it only after its old dispatch has settled (`worker_done`, or a
+  confirmed `worker-stop`). Prepare the handoff as **Handoff to a retried
+  worker** says, then retry the same failed Task with one fresh worker in
+  the existing worktree, with `start_worker.py` and
   `--task <task_id> --retry-of <dispatch_id> --worktree branch:<branch> --agent <agent> --model <model> --effort <effort>`
   (the phase's model and effort from `SKILL.md` step 0). Do not create a new
   Task with `--spec`: the failed Task would stay failed and block the Tasks
   that depend on it. The retried Task keeps its brief; the new worker
-  rebuilds the state (PR, review count, latest review, uncommitted changes)
-  from its branch and PR, as `implement-review-merge` says for a resumed
-  phase. Never run two workers on one Task.
+  asks for the handoff, then rebuilds the state (PR, review count, latest
+  review, uncommitted changes) from its branch and PR, as
+  `implement-review-merge` says for a resumed phase. Never run two workers
+  on one Task.
 - Then continue dispatching ready Tasks, reserve the earliest remaining
   `wake-at:` time again, and wait as in [Waiting](waiting.md).

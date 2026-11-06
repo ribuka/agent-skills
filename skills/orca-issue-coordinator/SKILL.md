@@ -473,6 +473,10 @@ new work near the 5-hour limit. `<quota-check>` below means
   as a failed Task: follow the quota pause reference below, which also
   chooses how to resume the worker by comparing `context-tokens` with
   `FRESH_WORKER_CONTEXT_TOKENS` (step 0).
+- **Workers stopped by the usage limit:** an `escalation` with
+  `failureKind=usageLimitReached` is also a quota pause. Never resume that
+  worker with `send`: stop its dispatch with `worker-stop` and retry the Task
+  with `--retry-of` and a fresh worker, as the quota pause reference says.
 - **On PAUSED_QUOTA or UNKNOWN:** stop starting all new work, then read
   `~/.agents/skills/orca-issue-coordinator/references/quota-pause.md` and
   follow it (checkpoint, stopping workers, exactly one wake-up, end the turn).
