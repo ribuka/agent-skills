@@ -46,11 +46,19 @@ whenever a step below says so; never merge on a guess.
   - Report completion or failure using the ORCA Orchestration protocol.
   - Stop after the assigned phase; never proceed to the next phase
     without an explicit dispatch.
+  - **Resumed phase:** when the branch already has a pull request (a phase
+    retried after a stop), rebuild the state before continuing, as
+    Merge preparation does: `gh pr view <pr-number>` (without `--comments`),
+    `review_status.sh`, the latest review comment only, and
+    `git status` for changes left uncommitted. Continue with the remaining
+    work; do not redo finished steps.
   - **Quota pause:** when a tool call is denied with a reason that the
     5-hour quota is `PAUSED_QUOTA`, stop the phase at the nearest safe
     boundary (commit and push finished changes, or let a running review
-    finish; never stop mid-rebase; leave uncommitted changes in the
-    worktree). Only the commands the denial allows still run. Then run
+    finish; leave uncommitted changes in the worktree). Never stop
+    mid-rebase: if a rebase, merge, or cherry-pick is in progress, run its
+    `--abort` (e.g. `git rebase --abort`) and list it in the work left. Only
+    the commands the denial allows still run. Then run
     `uv run --no-project ~/.agents/skills/implement-review-merge/scripts/context_tokens.py --provider <claude|codex>`
     (prints `context-tokens: <n>`, or `context-tokens: unknown`) and send
     `worker_done --outcome failed` whose body has the handoff fields, the

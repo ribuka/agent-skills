@@ -125,10 +125,14 @@ phases or duplicating dispatches:
   `SKILL.md` step 11 says.
 - Any other stopped worker (the **fresh worker** method, or a terminal that
   is no longer available): confirm from its branch and PR what was already
-  done, then start one fresh worker for the same phase in the existing
-  worktree, as `SKILL.md` step 13 starts a merge-preparation worker
-  (`--spec "<handoff>" --worktree branch:<branch>` with the phase's model and
-  effort), with a handoff of that state, the review count, the open findings,
-  and the work left. Never run two workers on one Task.
+  done, then retry the same failed Task with one fresh worker in the
+  existing worktree, with `start_worker.py` and
+  `--task <task_id> --retry-of <dispatch_id> --worktree branch:<branch> --agent <agent> --model <model> --effort <effort>`
+  (the phase's model and effort from `SKILL.md` step 0). Do not create a new
+  Task with `--spec`: the failed Task would stay failed and block the Tasks
+  that depend on it. The retried Task keeps its brief; the new worker
+  rebuilds the state (PR, review count, latest review, uncommitted changes)
+  from its branch and PR, as `implement-review-merge` says for a resumed
+  phase. Never run two workers on one Task.
 - Then continue dispatching ready Tasks, reserve the earliest remaining
   `wake-at:` time again, and wait as in [Waiting](waiting.md).

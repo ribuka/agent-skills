@@ -565,7 +565,9 @@ def test_quota_paused_worker_resume_is_chosen_by_context_size() -> None:
                  "at or above the threshold, or `unknown`",
                  "--task <task_id> --retry-of <dispatch_id> --worktree branch:<branch> "
                  "--terminal <handle>",
-                 "--spec \"<handoff>\" --worktree branch:<branch>"):
+                 "--task <task_id> --retry-of <dispatch_id> --worktree branch:<branch> "
+                 "--agent <agent> --model <model> --effort <effort>",
+                 "Do not create a new Task with `--spec`"):
         assert text in reference
     assert "FRESH_WORKER_CONTEXT_TOKENS=200000" in (
         SKILL_DIR / "config.conf.example").read_text(encoding="utf-8")

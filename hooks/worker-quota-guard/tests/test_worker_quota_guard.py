@@ -88,6 +88,8 @@ def test_paused_worker_denies_non_shell_tools(env, monkeypatch, capsys, tool):
     "uv run --no-project ~/.agents/skills/implement-review-merge/scripts/context_tokens.py --provider claude",
     "bash ~/.agents/skills/pr-cross-review/scripts/review_status.sh 12",
     "gh pr view 12 --json headRefOid",
+    "git rebase --abort",
+    "git merge --abort && git status",
 ])
 def test_paused_worker_allows_safe_boundary_commands(env, monkeypatch, capsys, command):
     assert run_hook(monkeypatch, capsys, "Bash", {"command": command}) == ""
@@ -100,6 +102,7 @@ def test_paused_worker_allows_safe_boundary_commands(env, monkeypatch, capsys, c
     "git status | xargs echo",
     "echo $(git status)",
     "gitx status",
+    "git rebase --continue",
     "",
 ])
 def test_paused_worker_denies_mixed_commands(env, monkeypatch, capsys, command):

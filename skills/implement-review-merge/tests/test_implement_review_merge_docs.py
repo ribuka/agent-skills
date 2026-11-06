@@ -76,6 +76,7 @@ def test_worker_quota_pause_report_includes_context_size() -> None:
     assert "~/.agents/skills/implement-review-merge/scripts/context_tokens.py" in skill
     assert (SKILL_DIR / "scripts" / "context_tokens.py").is_file()
     for text in ("`worker_done --outcome failed`", "`worker-quota-paused:",
-                 "`context-tokens: <n|unknown>`", "never stop mid-rebase",
+                 "`context-tokens: <n|unknown>`", "Never stop mid-rebase",
+                 "`git rebase --abort`", "**Resumed phase:**",
                  "schedule a wake-up"):
         assert text in skill
