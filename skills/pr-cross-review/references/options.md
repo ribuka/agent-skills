@@ -58,7 +58,9 @@ The reviewer log's path is printed to stderr at start, so it can be tailed.
 config.conf and prints `review-count: <count>/<max>`,
 `review-extra: <count>` (cross-reviews beyond `<max>`, which only
 `--extra-review` runs can add; `0` otherwise), and
-`review-latest: <comment-url>` (`none` without a cross-review). Exit codes:
+`review-latest: <comment-url>` (`none` without a cross-review), and
+`review-latest-commit: <sha>` (the full 40-character commit in the latest
+review's `Reviewed commit:` footer; `none` without a cross-review). Exit codes:
 0 success, 1 usage/config error, 2 GitHub lookup failed.
 
 ## Exit codes of the review scripts

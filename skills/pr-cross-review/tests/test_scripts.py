@@ -352,8 +352,27 @@ def test_review_status_reports_count_and_latest_review(tmp_path: Path) -> None:
         "review-count: 2/3\n"
         "review-extra: 0\n"
         "review-latest: https://github.com/owner/repo/pull/123#issuecomment-902\n"
+        f"review-latest-commit: {HEAD_COMMIT}\n"
     )
     assert "api-calls: 1" in result.stdout
+
+
+def test_review_status_reports_commit_of_latest_review(tmp_path: Path) -> None:
+    """The latest review's commit is reported even when the PR head moved on after it."""
+    result = run_review_script(
+        tmp_path,
+        "review_status.sh",
+        post_comment=False,
+        existing_review_commits=(HEAD_COMMIT, PREVIOUS_COMMIT),
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.startswith(
+        "review-count: 2/3\n"
+        "review-extra: 0\n"
+        "review-latest: https://github.com/owner/repo/pull/123#issuecomment-902\n"
+        f"review-latest-commit: {PREVIOUS_COMMIT}\n"
+    )
 
 
 def test_review_status_without_review(tmp_path: Path) -> None:
@@ -361,7 +380,12 @@ def test_review_status_without_review(tmp_path: Path) -> None:
     result = run_review_script(tmp_path, "review_status.sh", post_comment=False)
 
     assert result.returncode == 0, result.stderr
-    assert result.stdout.startswith("review-count: 0/3\nreview-extra: 0\nreview-latest: none\n")
+    assert result.stdout.startswith(
+        "review-count: 0/3\n"
+        "review-extra: 0\n"
+        "review-latest: none\n"
+        "review-latest-commit: none\n"
+    )
 
 
 def test_review_status_reports_api_failure(tmp_path: Path) -> None:
@@ -710,4 +734,5 @@ def test_review_status_reports_extra_reviews(tmp_path: Path) -> None:
         "review-count: 5/3\n"
         "review-extra: 2\n"
         "review-latest: https://github.com/owner/repo/pull/123#issuecomment-905\n"
+        f"review-latest-commit: {HEAD_COMMIT}\n"
     )

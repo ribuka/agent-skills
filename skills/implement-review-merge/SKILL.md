@@ -26,12 +26,17 @@ whenever a step below says so; never merge on a guess.
     state from the Coordinator's handoff, `gh pr view <pr-number>` (without
     `--comments`), and the `pr-cross-review` status script
     (`bash ~/.agents/skills/pr-cross-review/scripts/review_status.sh <pr-number>`,
-    which prints `review-count: <count>/<max>` and
-    `review-latest: <comment-url>`) before step 8. Read only the latest
-    review comment, and use the larger of the handed-off review count and
-    the printed count. Report the
-    synced commit, test/CI results, review status, total review count,
-    and any blockers. Do not merge.
+    which prints `review-count: <count>/<max>`,
+    `review-latest: <comment-url>`, and `review-latest-commit: <sha>`)
+    before step 8. Read only the latest review comment, and use the larger
+    of the handed-off review count and the printed count. If
+    `review-latest-commit` differs from the PR's `headRefOid`, commits were
+    pushed after the latest review: before step 8, run steps 6–7 on them
+    within the review limit, or report a blocker if the limit is reached.
+    Skip this re-review only when the handoff states that the user
+    approved merging that head without a further review.
+    Report the head before and after the sync (full SHAs), test/CI results,
+    review status, total review count, and any blockers. Do not merge.
 - In worker mode:
   - The Coordinator alone decides when and in what order to merge PRs.
   - Report blockers to the Coordinator instead of asking the user directly.
