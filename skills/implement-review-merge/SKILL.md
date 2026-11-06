@@ -181,6 +181,30 @@ Merge only when all of the following hold:
 
 Otherwise, do not merge; report what is blocking and ask the user.
 
+### Standalone post-merge completion
+
+Only in Standalone mode, after step 10 confirms the target PR's state is
+`MERGED` with `gh pr view <pr> --json state --jq .state`, and immediately before
+the final report, run:
+
+```bash
+uv run --no-project ~/.agents/skills/implement-review-merge/scripts/post_merge.py --repo <working-repository-path> --mode standalone --pr-state MERGED
+```
+
+Do not run this completion in any worker phase, or when the merge failed or
+is unconfirmed. The script defaults `SYNC_LOCAL_MAIN_AFTER_MERGE` to `true`
+when `config.conf` or the key is absent. Copy `config.conf.example` to the
+ignored personal `config.conf` in this skill to set `true` or `false`.
+`false` skips synchronization without a fetch or a common-script call;
+invalid settings report an error without synchronization.
+When enabled, it calls
+`uv run --no-project ~/.agents/skills/fast-forward-local-branch/scripts/fast_forward.py --repo <path> --branch main`.
+See the `fast-forward-local-branch` skill for its public results and exit codes.
+Exit 0 means success or skip; exit 1 means a configuration or synchronization
+error. Report the merge result and local synchronization result separately,
+including the reason for a skip or the failed operation for an error.
+Never retry the merge because synchronization failed.
+
 ## Token budget
 
 These rules apply in every mode. Each tool call re-sends the whole

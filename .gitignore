@@ -1,4 +1,5 @@
 skills/orca-issue-coordinator/config.conf
+skills/implement-review-merge/config.conf
 __pycache__/
 *.pyc
 .pytest_cache/
