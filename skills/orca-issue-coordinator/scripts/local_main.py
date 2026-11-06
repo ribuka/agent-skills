@@ -44,16 +44,16 @@ class GitError(Exception):
     """A git command failed; the message is the reason to report."""
 
 
-def run(cmd: list[str]) -> tuple[int, str]:
+def run(cmd: list[str], timeout: int | None = TIMEOUT_SECONDS) -> tuple[int, str]:
     """Run a command and return its exit code and output (stdout, or all output on failure)."""
     exe = shutil.which(cmd[0])
     if exe is None:
         return 127, f"{cmd[0]}: command not found"
     try:
         proc = subprocess.run([exe, *cmd[1:]], capture_output=True, text=True,
-                              encoding="utf-8", errors="replace", timeout=TIMEOUT_SECONDS)
+                              encoding="utf-8", errors="replace", timeout=timeout)
     except subprocess.TimeoutExpired:
-        return 124, f"{' '.join(cmd)}: timed out after {TIMEOUT_SECONDS}s"
+        return 124, f"{' '.join(cmd)}: timed out after {timeout}s"
     if proc.returncode != 0:
         return proc.returncode, (proc.stdout + proc.stderr).strip()
     return 0, proc.stdout.strip()
@@ -107,41 +107,6 @@ def freeze(repo: str) -> int:
     return 0
 
 
-def worktree_with_branch(repo: str, ref: str) -> str | None:
-    """Return the path of the worktree that has `ref` checked out, if any."""
-    path = None
-    for line in git(repo, "worktree", "list", "--porcelain").splitlines():
-        if line.startswith("worktree "):
-            path = line[len("worktree "):]
-        elif line == f"branch {ref}":
-            return path
-    return None
-
-
-def fast_forward(repo: str, base: str) -> str:
-    """Fast-forward refs/heads/<base> to origin/<base> and return the `local-main:` result."""
-    git(repo, "fetch", "--quiet", "origin", f"+refs/heads/{base}:refs/remotes/origin/{base}")
-    ref = f"refs/heads/{base}"
-    old = git(repo, "rev-parse", "--verify", ref)
-    new = git(repo, "rev-parse", "--verify", f"refs/remotes/origin/{base}")
-    if old == new:
-        return "up-to-date"
-    code, out = run(["git", "-C", repo, "merge-base", "--is-ancestor", old, new])
-    if code == 1:
-        return "skipped (diverged)"
-    if code != 0:
-        raise GitError(f"`git merge-base --is-ancestor` failed in {repo} (exit {code}): {out}")
-    worktree = worktree_with_branch(repo, ref)
-    if worktree is None:
-        git(repo, "update-ref", "-m", f"orca-issue-coordinator: fast-forward to origin/{base}",
-            ref, new, old)
-        return "updated"
-    if git(worktree, "status", "--porcelain", "--untracked-files=no"):
-        return f"skipped (dirty: {worktree})"
-    git(worktree, "merge", "--ff-only", "--quiet", f"origin/{base}")
-    return "updated"
-
-
 def finish(repo: str, frozen: str) -> int:
     base = default_branch(repo)
     if frozen != "no":
@@ -150,7 +115,15 @@ def finish(repo: str, frozen: str) -> int:
             print(f"error: the skill checkout is not detached at {frozen}")
             return 2
         git(checkout, "switch", "--quiet", base)
-    print(f"local-main: {fast_forward(repo, base)}")
+    git(repo, "rev-parse", "--verify", f"refs/heads/{base}")
+    script = Path.home() / ".agents/skills/fast-forward-local-branch/scripts/fast_forward.py"
+    code, out = run(["uv", "run", "--no-project", str(script),
+                     "--repo", repo, "--branch", base], timeout=None)
+    if code != 0:
+        raise GitError(f"fast-forward-local-branch failed (exit {code}): {out}")
+    for line in out.splitlines():
+        if line.startswith("local-branch: "):
+            print(line.replace("local-branch:", "local-main:", 1))
     print(f"local-main-head: {git(repo, 'rev-parse', '--verify', f'refs/heads/{base}')}")
     return 0
 

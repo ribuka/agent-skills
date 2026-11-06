@@ -91,3 +91,15 @@ def test_resumed_phase_asks_for_handoff_first() -> None:
         "rebuild the state")
     assert "end the turn" in resumed
     assert "larger of the handed-off and printed review counts" in resumed
+
+
+def test_post_merge_completion_is_standalone_only_after_confirmed_merge() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    completion = skill.split("### Standalone post-merge completion", 1)[1].split("## Token budget", 1)[0]
+    assert skill.index("### 10. Merge") < skill.index("### Standalone post-merge completion")
+    for text in ("Only in Standalone mode", "confirms the target PR's state", "`MERGED`",
+                 "immediately before", "final report", "Do not run this completion in any worker phase",
+                 "merge failed", "unconfirmed", "--mode standalone --pr-state MERGED",
+                 "merge result and local synchronization result separately",
+                 "Never retry the merge because synchronization failed"):
+        assert text in completion

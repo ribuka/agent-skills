@@ -1,0 +1,2 @@
+# Copy to config.conf to customize standalone post-merge synchronization.
+SYNC_LOCAL_MAIN_AFTER_MERGE=true

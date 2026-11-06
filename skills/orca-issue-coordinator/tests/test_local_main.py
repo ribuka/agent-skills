@@ -8,6 +8,7 @@ from __future__ import annotations
 import importlib.util
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -62,6 +63,18 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(global_config))
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
     module = load_module()
+    original_run = module.run
+
+    def run(cmd: list[str], timeout: int | None = module.TIMEOUT_SECONDS) -> tuple[int, str]:
+        if cmd[0] == "uv":
+            assert cmd[1:3] == ["run", "--no-project"]
+            assert timeout is None  # The provider owns its per-Git-command timeouts.
+            assert Path(cmd[3]) == Path.home() / ".agents/skills/fast-forward-local-branch/scripts/fast_forward.py"
+            script = SCRIPT.parents[2] / "fast-forward-local-branch/scripts/fast_forward.py"
+            return original_run([sys.executable, str(script), *cmd[4:]], timeout=timeout)
+        return original_run(cmd, timeout=timeout)
+
+    monkeypatch.setattr(module, "run", run)
     remote, pusher = make_remote(tmp_path, "skills")
     checkout = tmp_path / "checkout"
     subprocess.run(["git", "clone", "-q", str(remote), str(checkout)], check=True)
@@ -166,7 +179,7 @@ def test_finish_updates_ref_when_not_checked_out(env, capsys: pytest.CaptureFixt
     assert out_lines(capsys) == ["local-main: updated", f"local-main-head: {new}"]
     assert git(env.checkout, "rev-parse", "refs/heads/main") == new
     assert branch(env.checkout) == "topic"
-    assert "orca-issue-coordinator: fast-forward to origin/main" in git(
+    assert "fast-forward-local-branch: fast-forward to origin/main" in git(
         env.checkout, "reflog", "-1", "--format=%gs", "refs/heads/main")
 
 
@@ -212,3 +225,10 @@ def test_finish_without_origin_default_branch_fails(env,
 def test_finish_rejects_invalid_frozen_value(env) -> None:
     with pytest.raises(SystemExit):
         env.main(["finish", "--frozen", "abc123"])
+
+
+def test_finish_missing_local_branch_is_error(env, capsys) -> None:
+    git(env.checkout, "switch", "-q", "-c", "topic")
+    git(env.checkout, "branch", "-D", "main")
+    assert env.main(["finish", "--frozen", "no", "--repo", str(env.checkout)]) == 1
+    assert out_lines(capsys)[0].startswith("error: ")
