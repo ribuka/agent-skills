@@ -310,27 +310,37 @@ with `--retry-of` only after the user confirms.
 
 ## 3. Sequential merge
 
+### Common verification conditions
+
+Use these checks in steps 12 and 14, against the current PR head:
+
+- The PR branch includes the latest `origin/main`: after
+  `git fetch --prune origin`,
+  `git merge-base --is-ancestor origin/main origin/<branch>` exits `0`.
+- All CI checks have passed on the current head commit
+  (`gh pr checks <pr>`). Check all CI even when no required checks are
+  configured. Exit `8` means pending; inspect any other non-zero result
+  and report monitoring errors as blockers instead of treating them as
+  pending. An empty check set is not proof of success.
+- No review findings are open, per the worker handoff and the latest
+  cross-review.
+- The latest cross-review saw the current head: run
+  `bash ~/.agents/skills/pr-cross-review/scripts/review_status.sh <pr-number>`
+  and compare its `review-latest-commit: <sha>` with
+  `gh pr view <pr> --json headRefOid --jq .headRefOid`.
+  The head the user approved with **Merge as is** (Run checkpoint) may
+  replace the reviewed SHA; that approval applies only to that SHA.
+  Do not read review comment bodies for this comparison. A difference
+  is an **Unreviewed head**, subject to the handling in each step below.
+
+### Merge sequence
+
 12. Select the next PR based on dependencies and readiness.
     Skip step 13 and go straight to step 14 when the PR already meets all
-    of the following; merge preparation would have nothing to do:
-    - The PR branch includes the latest `origin/main`: after
-      `git fetch --prune origin`,
-      `git merge-base --is-ancestor origin/main origin/<branch>` exits `0`.
-    - All CI checks have passed on the current head commit
-      (`gh pr checks <pr>`). Check all CI even when no required checks are
-      configured. Exit `8` means pending: do not take
-      this shortcut. Any other non-zero result needs inspection; report
-      monitoring errors as blockers instead of treating them as pending.
-      An empty check set is not proof of success.
-    - No review findings are open (per the worker handoff and the latest
-      cross-review).
-    - The latest cross-review saw the current head commit: the
-      `review-latest-commit: <sha>` line of
-      `bash ~/.agents/skills/pr-cross-review/scripts/review_status.sh <pr-number>`
-      (or the head the user approved with **Merge as is**, Run checkpoint)
-      equals `gh pr view <pr> --json headRefOid --jq .headRefOid`. Do not
-      read review comment bodies for this. When they differ, commits were
-      pushed after the latest review (**Unreviewed head** below).
+    **Common verification conditions** above; merge preparation would
+    have nothing to do:
+    - If CI is empty, pending, or has a monitoring error, do not take
+      this shortcut.
     - **Unreviewed head:** while `<count>` in `review-count: <count>/<max>`
       is below `<max>`, do not take this shortcut: run step 13, and state
       the reviewed commit and the head in its handoff. Once the limit is
@@ -370,29 +380,28 @@ with `--retry-of` only after the user confirms.
       (naming the files), whether cross-review was repeated, and the PR
       head before the rebase and after it (full SHAs).
 14. Independently verify:
+    - Recheck **Common verification conditions** above, with only the
+      rebase exception below for the head comparison.
     - Only if the merge-preparation worker reported a `newly written`
       resolution: a cross-review ran after it with no outstanding findings.
       If that review is missing, has open findings, or could not run
       because the limit was reached, block the PR and ask the user.
-    - No outstanding review findings.
-    - The latest cross-review saw the current head commit:
-      `review-latest-commit` (from `review_status.sh`, below), or the head
-      the user approved with **Merge as is** (Run checkpoint), equals
-      `gh pr view <pr> --json headRefOid --jq .headRefOid`. A rebase in
-      merge preparation changes the head without a new review; accept that
+    - A rebase in merge preparation can change the head without a new
+      review; accept that
       difference only when the merge-preparation worker reported a `none`
       or `mechanical` resolution, its head before the rebase equals
-      `review-latest-commit` or that approved head, and its head after the
-      rebase equals the current head. Any other difference is an
+      `review-latest-commit` or the head approved with **Merge as is**
+      (Run checkpoint), and its head after the rebase equals the current
+      head. Any other difference is an
       **Unreviewed head**: under the limit, start merge preparation
       (step 13) with the reviewed commit and the head in the handoff; once
       the limit is reached, follow
       **Limit reached with unreviewed fix commits** (**Rules**). Do not
       merge until this check passes.
     - No more than `<max>` cross-reviews on the PR, plus the extra reviews
-      the user approved for it: run
-      `bash ~/.agents/skills/pr-cross-review/scripts/review_status.sh <pr-number>`
-      and check its `review-extra: <count>` line: it must not exceed the
+      the user approved for it: use the same `review_status.sh` output
+      from **Common verification conditions** and check its
+      `review-extra: <count>` line: it must not exceed the
       extra reviews the user approved for this PR (`0` without approval).
       Do not compare `review-count: <count>/<max>` with `<max>` alone; after
       an approved extra review it is above `<max>` (e.g. `4/3` with
@@ -401,8 +410,7 @@ with `--retry-of` only after the user confirms.
       the worker handoff; if they differ, use the script's count and note
       the mismatch in the Issue's report (step 17). If the script exits non-zero,
       block the PR and ask the user.
-    - The PR branch includes the latest `origin/main`.
-    - Required tests and CI have passed on the current PR commit.
+    - Required tests have passed on the current PR commit.
     - GitHub merge requirements are satisfied.
     - If CI checks are pending, follow **Pending CI** in
       [Waiting](references/waiting.md) in both Claude Code and Codex: record
