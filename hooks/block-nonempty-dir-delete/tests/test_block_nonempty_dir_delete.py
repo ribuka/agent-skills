@@ -71,6 +71,8 @@ ALLOWED = [
     "git status && cd full; rm -rf nonexistent",
     'echo ok > "$(echo out.txt)"',
     "env -C full bash <<'EOF'\nrm -rf nonexistent\nEOF",
+    "git commit -F - <<'EOF'\nmsg\nEOF\ngh pr create --body \"$(cat <<'EOF'\nbody\nEOF\n)\"",
+    "gh pr create --body \"$(cat <<'EOF'\nbody\nEOF\n)\"",
 ]
 
 DENIED = [
@@ -135,6 +137,9 @@ DENIED = [
     'cat < "$(rm -rf full)"',
     "env -C full bash <<'EOF'\nrm -rf sub\nEOF",
     "env --chdir=full bash <<'EOF'\nrm -rf sub\nEOF",
+    "x=\"$(bash <<'EOF'\nrm -rf <tree>/full\nEOF\n)\"",
+    "git commit -F - <<'EOF'\nmsg\nEOF\nx=\"$(bash <<'EOF'\nrm -rf <tree>/full\nEOF\n)\"",
+    "x=\"$(python3 <<'EOF'\nimport shutil; shutil.rmtree('full')\nEOF\n)\"",
 ]
 
 
@@ -191,3 +196,18 @@ def test_deny_reason_is_ascii_json(tree, monkeypatch, capsys):
     out = run_hook(monkeypatch, capsys, "rm -rf full", tree.as_posix())
     assert out.isascii()
     assert "rmdir" in json.loads(out)["hookSpecificOutput"]["permissionDecisionReason"]
+
+
+def test_crash_reason_asks_to_split_the_command(tree, monkeypatch, capsys):
+    def crash(*args):
+        raise IndexError("list index out of range")
+
+    monkeypatch.setattr(hook, "check_shell", crash)
+    out = run_hook(monkeypatch, capsys, "git status", tree.as_posix())
+    reason = json.loads(out)["hookSpecificOutput"]["permissionDecisionReason"]
+    assert reason == (
+        "フックがコマンドを解析できなかったので止めました（IndexError: list index out of range）。"
+        "コマンドを分けて実行し直してください。"
+        "それでも止まる場合は block-nonempty-dir-delete の不具合として報告してください。"
+    )
+    assert hook.HOW_TO not in reason

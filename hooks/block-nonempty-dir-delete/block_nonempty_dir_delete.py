@@ -160,7 +160,7 @@ def scan_raw(text: str) -> None:
             deny(f"中身ごと消す削除（{label}）は禁止です。{HOW_TO}")
 
 
-def split_heredocs(text: str) -> tuple[str, list[tuple[str, str, bool]]]:
+def split_heredocs(text: str, heredocs: list[tuple[str, str, bool]]) -> str:
     """Move heredoc bodies out of the command text, leaving a marker word.
 
     The marker ``$__HOOK_HEREDOC_<n>__`` is placed right after the heredoc
@@ -170,16 +170,21 @@ def split_heredocs(text: str) -> tuple[str, list[tuple[str, str, bool]]]:
     ----------
     text : str
         Shell command text.
+    heredocs : list[tuple[str, str, bool]]
+        Heredocs taken out so far in this hook call. Each heredoc found here
+        is appended, and ``<n>`` is its index, so markers stay unique when
+        nested text (such as a ``$(...)`` body) is split again. Each entry is
+        the receiver (``"shell"``, ``"interpreter"`` or ``""``), the body,
+        and whether the shell expands ``$(...)`` in it (the delimiter is not
+        quoted).
 
     Returns
     -------
-    tuple[str, list[tuple[str, str, bool]]]
-        The text without heredoc bodies, and for each heredoc its receiver
-        (``"shell"``, ``"interpreter"`` or ``""``), its body, and whether the shell
-        expands ``$(...)`` in it (the delimiter is not quoted).
+    str
+        The text without heredoc bodies.
     """
     lines = text.split("\n")
-    kept, heredocs = [], []
+    kept = []
     i = 0
     while i < len(lines):
         line = lines[i]
@@ -203,7 +208,7 @@ def split_heredocs(text: str) -> tuple[str, list[tuple[str, str, bool]]]:
             end = match.end()
             heredocs.append((receiver, "\n".join(body), not match.group(1)))
         kept.append("".join(marked) + line[end:])
-    return "\n".join(kept), heredocs
+    return "\n".join(kept)
 
 
 def mark_substitutions(text: str, quotes: bool = True) -> tuple[str, list[str]]:
@@ -599,10 +604,10 @@ def check_command(command: list[str], cwd: str | None, found: Found) -> str | No
             heredocs.append((receiver, body))
             if expands:
                 for inner in mark_substitutions(body, quotes=False)[1]:
-                    check_shell(inner, cwd)
+                    check_shell(inner, cwd, found.heredocs)
             continue
         for index in re.findall(SUBST_MARKER, word):
-            check_shell(found.substitutions[int(index)], cwd)
+            check_shell(found.substitutions[int(index)], cwd, found.heredocs)
         if not word.startswith(REDIRECT):
             words.append(word)
 
@@ -613,7 +618,7 @@ def check_command(command: list[str], cwd: str | None, found: Found) -> str | No
     # The program reading a heredoc runs where a wrapper (`env -C`) moved it.
     for receiver, body in heredocs:
         if receiver == "shell":
-            check_shell(body, cwd)
+            check_shell(body, cwd, found.heredocs)
         elif receiver == "interpreter":
             scan_raw(body)
     if not command:
@@ -649,17 +654,19 @@ def check_command(command: list[str], cwd: str | None, found: Found) -> str | No
     if name in SHELLS:
         for i, arg in enumerate(args[:-1]):
             if arg == "-c":
-                check_shell(args[i + 1], cwd)
+                check_shell(args[i + 1], cwd, found.heredocs)
     if name in INTERPRETERS:
         scan_raw(" ".join(args))
         if name in ("pwsh", "powershell"):
             for arg in args:
                 if " " in arg:
-                    check_shell(arg, cwd)
+                    check_shell(arg, cwd, found.heredocs)
     return after
 
 
-def check_shell(text: str, cwd: str | None) -> None:
+def check_shell(
+    text: str, cwd: str | None, heredocs: list[tuple[str, str, bool]]
+) -> None:
     """Check a whole shell command line.
 
     Parameters
@@ -668,8 +675,11 @@ def check_shell(text: str, cwd: str | None) -> None:
         Command text as given to the Bash tool.
     cwd : str or None
         Working directory, or None when it is unknown.
+    heredocs : list[tuple[str, str, bool]]
+        Heredocs taken out so far in this hook call (see `split_heredocs`),
+        shared by every nested check so that heredoc markers stay valid.
     """
-    stripped, heredocs = split_heredocs(text)
+    stripped = split_heredocs(text, heredocs)
     marked, substitutions = mark_substitutions(stripped)
     found = Found(substitutions, heredocs)
     try:
@@ -711,7 +721,7 @@ def main() -> None:
     data = json.loads(sys.stdin.buffer.read().decode("utf-8"))
     command = (data.get("tool_input") or {}).get("command") or ""
     try:
-        check_shell(command, data.get("cwd") or os.getcwd())
+        check_shell(command, data.get("cwd") or os.getcwd(), [])
     except DeniedError as e:
         reason = str(e)
     except Exception as e:  # noqa: BLE001 - fail closed only for commands that look like deletes
@@ -721,7 +731,11 @@ def main() -> None:
             re.IGNORECASE,
         ):
             return
-        reason = f"削除コマンドの確認中にフックが失敗したので止めました（{type(e).__name__}: {e}）。{HOW_TO}"
+        reason = (
+            f"フックがコマンドを解析できなかったので止めました（{type(e).__name__}: {e}）。"
+            "コマンドを分けて実行し直してください。"
+            "それでも止まる場合は block-nonempty-dir-delete の不具合として報告してください。"
+        )
     else:
         return
     decision = {
