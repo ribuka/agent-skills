@@ -19,6 +19,7 @@ SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "check_preconditions.
 CHECKOUT = "/home/user/repos/agent-skills"
 ORCA = os.path.abspath("/opt/orca/bin/orca")
 AUTO_RELEASE = "orchestration.worker-auto-release.v1"
+HEAD_SHA = "1234567890abcdef1234567890abcdef12345678"
 
 
 def load_module():
@@ -41,6 +42,8 @@ def cp(monkeypatch: pytest.MonkeyPatch):
         "orca": (0, status_json()),
         "gh": (0, "Logged in to github.com"),
         "rev-parse": (0, CHECKOUT),
+        "rev-parse HEAD": (0, HEAD_SHA),
+        "symbolic-ref": (0, "main"),
         "fetch": (0, ""),
         "rev-list": (0, "0 0"),
         "status": (0, ""),
@@ -52,7 +55,7 @@ def cp(monkeypatch: pytest.MonkeyPatch):
         calls.append(cmd)
         # git commands are keyed by subcommand: git -C <dir> <subcommand> ...
         if cmd[0] == "git":
-            return responses[cmd[3]]
+            return responses["rev-parse HEAD" if cmd[3:] == ["rev-parse", "HEAD"] else cmd[3]]
         return responses["orca" if cmd[0] == ORCA else cmd[0]]
 
     executables = {"orca": ORCA}
@@ -83,6 +86,7 @@ def test_all_checks_pass(cp, capsys: pytest.CaptureFixture[str]) -> None:
     assert [ORCA, "status", "--json"] in cp.calls
     assert ["gh", "auth", "status"] in cp.calls
     assert ["git", "-C", str(cp.SKILL_DIR), "rev-parse", "--show-toplevel"] in cp.calls
+    assert ["git", "-C", CHECKOUT, "symbolic-ref", "-q", "--short", "HEAD"] in cp.calls
     assert ["git", "-C", CHECKOUT, "fetch", "--quiet", "origin",
             "+refs/heads/main:refs/remotes/origin/main"] in cp.calls
     assert ["git", "-C", CHECKOUT, "rev-list", "--left-right", "--count",
@@ -116,8 +120,28 @@ def test_uncommitted_skill_changes_stop(cp, capsys: pytest.CaptureFixture[str]) 
             in capsys.readouterr().out)
 
 
+def test_detached_skill_checkout_stops_with_restore_command(
+        cp, capsys: pytest.CaptureFixture[str]) -> None:
+    cp.responses["symbolic-ref"] = (1, "")
+    assert cp.main(claude()) == 1
+    out = capsys.readouterr().out
+    assert f"STOP: the skill checkout {CHECKOUT} is detached at {HEAD_SHA};" in out
+    assert ("`uv run --no-project ~/.agents/skills/orca-issue-coordinator/scripts/local_main.py "
+            f"finish --frozen {HEAD_SHA} --repo {CHECKOUT}`") in out
+    assert not any(cmd[3] == "fetch" for cmd in cp.calls if cmd[0] == "git")
+
+
+def test_skill_checkout_on_other_branch_stops(cp, capsys: pytest.CaptureFixture[str]) -> None:
+    cp.responses["symbolic-ref"] = (0, "topic")
+    assert cp.main(claude()) == 1
+    out = capsys.readouterr().out
+    assert f"STOP: the skill checkout {CHECKOUT} is on branch `topic`, not `main`;" in out
+    assert "switch it to `main`" in out
+
+
 @pytest.mark.parametrize("key, response, expected", [
     ("rev-parse", (128, "fatal: not a git repository"), "is not inside a git checkout (exit 128)"),
+    ("symbolic-ref", (128, "fatal: bad HEAD"), "`git symbolic-ref HEAD` failed"),
     ("fetch", (128, "fatal: could not read from remote"),
      f"`git fetch origin main` failed in the skill checkout {CHECKOUT} (exit 128)"),
     ("rev-list", (128, "fatal: bad revision"), "cannot compare the skill checkout"),
@@ -291,6 +315,11 @@ def test_real_checkout_compares_with_fetched_main(tmp_path: Path,
 
     git(checkout, "merge", "-q", "--ff-only", "origin/main")
     assert module.check_skill_checkout()[1] is None
+    git(checkout, "switch", "-q", "--detach")
+    assert "is detached at " in module.check_skill_checkout()[1]
+    git(checkout, "switch", "-q", "-c", "topic")
+    assert "is on branch `topic`, not `main`" in module.check_skill_checkout()[1]
+    git(checkout, "switch", "-q", "main")
     (checkout / skill_md).write_text("stale", encoding="utf-8")
     assert "has uncommitted changes under its skills" in module.check_skill_checkout()[1]
 

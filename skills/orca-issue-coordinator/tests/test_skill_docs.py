@@ -70,6 +70,28 @@ def test_skill_md_freezes_skill_checkout_during_run() -> None:
     skill = SKILL_MD.read_text(encoding="utf-8")
     assert "`skill-checkout: <path>`" in skill
     assert "Never update" in skill
+    step0 = skill.split("## 0. Check preconditions", 1)[1].split("## 1. Plan", 1)[0]
+    assert "uv run --no-project <skill-dir>/scripts/local_main.py freeze" in step0
+    assert "`skill-checkout-frozen: <sha|no>`" in step0
+    assert "record that value in the checkpoint" in step0
+    assert "Only `local_main.py freeze` and `finish` (step 17) may" in step0
+    assert "Orca fast-forwards the local `main`" in step0
+
+
+def test_run_end_restores_pin_and_fast_forwards_local_main_last() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    step = skill.split("17. Mark only confirmed merged Issues", 1)[1].split("## Quota control", 1)[0]
+    step = " ".join(step.split())
+    assert "update that checkout" not in step
+    finish = "uv run --no-project <skill-dir>/scripts/local_main.py finish --frozen <sha|no>"
+    assert finish in step
+    assert step.index("clear-checkpoint") < step.index(finish)
+    assert "`skill-checkout-frozen:` value before running `cleanup_run.py`" in step
+    assert "`local-main:`" in step
+    assert "report the `error:` line and the same `finish` command to the user" in step
+    waiting = WAITING.read_text(encoding="utf-8")
+    section = waiting.split("## Checkpoint", 1)[1].split("\n## ", 1)[0]
+    assert "`skill-checkout-frozen: <sha|no>`" in section
 
 
 def test_merge_prep_states_re_review_criteria_and_report() -> None:
