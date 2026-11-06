@@ -16,3 +16,8 @@ CODEX_MERGE_EFFORT=medium
 # Maximum number of workers running at once (implementation and merge
 # preparation combined); an integer >= 1. Use 1 to run Issues one at a time.
 MAX_WORKERS=3
+
+# Conversation size (tokens) at or above which a worker stopped by the quota
+# pause is resumed by a fresh worker instead of in its own conversation; an
+# integer >= 1.
+FRESH_WORKER_CONTEXT_TOKENS=200000

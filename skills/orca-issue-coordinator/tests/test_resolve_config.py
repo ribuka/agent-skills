@@ -157,3 +157,36 @@ def test_agent_is_required(run) -> None:
     with pytest.raises(SystemExit) as exc:
         run(agent=None)
     assert exc.value.code == 2
+
+
+def test_fresh_worker_context_tokens_defaults_to_200000(run) -> None:
+    code, out, _ = run("--json", agent="codex")
+    assert code == 0
+    assert json.loads(out)["FRESH_WORKER_CONTEXT_TOKENS"] == {
+        "value": "200000", "source": "default"}
+    code, out, _ = run()
+    assert "fresh-worker-context-tokens: 200000  (from default)" in out.splitlines()
+
+
+def test_fresh_worker_context_tokens_precedence(run, tmp_path: Path) -> None:
+    config = "FRESH_WORKER_CONTEXT_TOKENS=150000\n"
+    code, out, err = run("--json", config=config)
+    assert code == 0 and "warning" not in err
+    assert json.loads(out)["FRESH_WORKER_CONTEXT_TOKENS"] == {
+        "value": "150000", "source": str(tmp_path / "config.conf")}
+    code, out, _ = run("--json", "--fresh-worker-context-tokens", "90000", config=config)
+    assert json.loads(out)["FRESH_WORKER_CONTEXT_TOKENS"] == {
+        "value": "90000", "source": "argument"}
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "1e5", "abc"])
+def test_fresh_worker_context_tokens_rejects_invalid(run, value: str) -> None:
+    code, _, err = run("--fresh-worker-context-tokens", value)
+    assert code == 1
+    assert "FRESH_WORKER_CONTEXT_TOKENS" in err
+
+
+def test_prefixed_fresh_worker_context_tokens_is_ignored(run) -> None:
+    code, out, err = run("--json", config="CLAUDE_FRESH_WORKER_CONTEXT_TOKENS=5\n")
+    assert code == 0 and "ignored line" in err
+    assert json.loads(out)["FRESH_WORKER_CONTEXT_TOKENS"]["source"] == "default"

@@ -68,7 +68,8 @@ form.
 Then resolve the worker settings for `<agent>`.
 
 Run once at the start, passing through any `--impl-model`, `--impl-effort`,
-`--merge-model`, `--merge-effort`, or `--max-workers` flags the user gave.
+`--merge-model`, `--merge-effort`, `--max-workers`, or
+`--fresh-worker-context-tokens` flags the user gave.
 If the user explicitly asks to run the Issues serially (one at a time), pass
 `--max-workers 1`:
 
@@ -77,14 +78,17 @@ uv run <skill-dir>/scripts/resolve_config.py --agent <agent> [user flags]
 ```
 
 It prints the agent, the `--model` / `--effort` pair for each phase, the
-`max-workers: <n>` concurrency limit (`MAX_WORKERS`), and each value's source
+`max-workers: <n>` concurrency limit (`MAX_WORKERS`), the
+`fresh-worker-context-tokens: <n>` resume threshold
+(`FRESH_WORKER_CONTEXT_TOKENS`, see **Quota control**), and each value's source
 (argument > `<skill-dir>/config.conf` > defaults). Configuration keys are
 `CLAUDE_IMPL_MODEL`, `CLAUDE_IMPL_EFFORT`, `CLAUDE_MERGE_MODEL`,
-`CLAUDE_MERGE_EFFORT`, their `CODEX_` equivalents, and shared `MAX_WORKERS`.
+`CLAUDE_MERGE_EFFORT`, their `CODEX_` equivalents, and shared `MAX_WORKERS`
+and `FRESH_WORKER_CONTEXT_TOKENS`.
 Unprefixed model/effort keys are not supported. Claude defaults remain
 `opus`/`medium` for implementation and `sonnet`/`medium` for merge preparation;
 Codex defaults are `gpt-6.1-sol`/`medium` for both phases.
-Concurrency defaults to 3. Always pass `--agent <agent>` and the resolved
+Concurrency defaults to 3; the resume threshold to 200000 tokens. Always pass `--agent <agent>` and the resolved
 model/effort on every `worker-start`, and never exceed `MAX_WORKERS`.
 Claude effort values: `low`, `medium`, `high`, `xhigh`, `max`;
 Codex: `minimal`, `low`, `medium`, `high`, `xhigh` (no `max`).
@@ -239,6 +243,10 @@ with `--retry-of` only after the user confirms.
      the worker stops and reports the `reviewer-quota-exhausted`,
      `reviewer-quota-detected-at`, and `reviewer-quota-reset` lines unchanged
      in `worker_done`.
+   - If a tool call is denied because the 5-hour quota is `PAUSED_QUOTA`,
+     the worker stops at a safe boundary and reports with
+     `worker_done --outcome failed`, including the `worker-quota-paused:`
+     and `context-tokens:` lines, as `implement-review-merge` says.
    - Tell the worker to stop only processes it started itself, by PID, and
      never by image name (e.g. `taskkill /IM uv.exe`, `pkill python`): that
      also kills the Coordinator's and other workers' processes.
@@ -267,7 +275,9 @@ with `--retry-of` only after the user confirms.
 11. Workers in an existing worktree (merge preparation, review retry) close
     on their own after `worker_done` (`autoReleaseAt`); do not release them.
     An Implementation worker runs in a new top-level worktree, which Orca
-    keeps open. After verifying its `worker_done`, release it
+    keeps open. Do not release a worker that reported `worker-quota-paused:`
+    until the quota pause reference says so. After verifying any other
+    `worker_done`, release it
     (`worker-release --dispatch <dispatch_id>`); merge preparation starts a
     fresh worker. On `release_pending` or `release_unknown`, follow the
     receipt's recovery action and Orca's `references/recovery-and-cleanup.md`;
@@ -455,6 +465,14 @@ new work near the 5-hour limit. `<quota-check>` below means
   A non-zero exit without a parseable `state` counts as UNKNOWN.
 - **Ownership:** the Coordinator alone owns the Run checkpoint and the
   timed wake-ups. Workers never create wake-ups.
+- **Workers stop themselves:** the Coordinator's checks only run at its own
+  boundaries, so a running worker stops itself at the quota pause (a
+  PreToolUse hook denies its tool calls) and sends `worker_done
+  --outcome failed` with a `worker-quota-paused: <quota JSON>` line and a
+  `context-tokens: <n|unknown>` line. Treat that report as a quota pause, not
+  as a failed Task: follow the quota pause reference below, which also
+  chooses how to resume the worker by comparing `context-tokens` with
+  `FRESH_WORKER_CONTEXT_TOKENS` (step 0).
 - **On PAUSED_QUOTA or UNKNOWN:** stop starting all new work, then read
   `~/.agents/skills/orca-issue-coordinator/references/quota-pause.md` and
   follow it (checkpoint, stopping workers, exactly one wake-up, end the turn).

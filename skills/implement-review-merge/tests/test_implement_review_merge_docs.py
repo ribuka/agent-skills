@@ -68,3 +68,15 @@ def test_coordinator_does_not_copy_token_budget() -> None:
     assert "Do not restate general token-saving rules" in step7
     for phrase in ("small data", "downscaled images", "read only the lines"):
         assert phrase not in coordinator
+
+
+def test_worker_quota_pause_report_includes_context_size() -> None:
+    skill = " ".join(SKILL_MD.read_text(encoding="utf-8").split())
+    assert "**Quota pause:**" in skill
+    assert "~/.agents/skills/implement-review-merge/scripts/context_tokens.py" in skill
+    assert (SKILL_DIR / "scripts" / "context_tokens.py").is_file()
+    for text in ("`worker_done --outcome failed`", "`worker-quota-paused:",
+                 "`context-tokens: <n|unknown>`", "Never stop mid-rebase",
+                 "`git rebase --abort`", "**Resumed phase:**",
+                 "schedule a wake-up"):
+        assert text in skill
