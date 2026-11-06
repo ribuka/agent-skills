@@ -301,9 +301,11 @@ def test_docs_do_not_name_quota_guard_storage_paths() -> None:
             assert path not in text, (doc.name, path)
 
 
-def test_preconditions_take_agent_and_update_prompt_stops_dispatch() -> None:
+def test_preconditions_take_orca_and_update_prompt_stops_dispatch() -> None:
     skill = SKILL_MD.read_text(encoding="utf-8")
-    assert "check_preconditions.py --agent <agent>" in skill
+    assert "check_preconditions.py --orca <selected-executable>" in skill
+    assert "--agent <agent> --orca" not in skill
+    assert "`-c check_for_update_on_startup=false` to Codex's default arguments" in skill
     assert skill.index("identify this Coordinator's runtime") < skill.index(
         "check_preconditions.py")
     assert "Agent startup blocked: agent-update-prompt" in skill
@@ -375,7 +377,7 @@ def test_old_waiters_and_ack_procedures_are_gone() -> None:
 def test_cli_is_selected_once_and_used_by_absolute_path() -> None:
     skill = SKILL_MD.read_text(encoding="utf-8")
     step0 = skill.split("## 0.", 1)[1].split("## 1.", 1)[0]
-    assert "check_preconditions.py --agent <agent> --orca <selected-executable>" in step0
+    assert "check_preconditions.py --orca <selected-executable>" in step0
     for selector in ("ORCA_CLI_COMMAND", "orca-dev", "ORCA_DEV_REPO_ROOT", "orca-ide"):
         assert selector in step0
     assert "`orca-executable: <path>`" in step0
