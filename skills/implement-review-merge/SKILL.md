@@ -33,6 +33,8 @@ whenever a step below says so; never merge on a guess.
     `review-latest-commit` differs from the PR's `headRefOid`, commits were
     pushed after the latest review: before step 8, run steps 6–7 on them
     within the review limit, or report a blocker if the limit is reached.
+    Skip this re-review only when the handoff states that the user
+    approved merging that head without a further review.
     Report the head before and after the sync (full SHAs), test/CI results,
     review status, total review count, and any blockers. Do not merge.
 - In worker mode:

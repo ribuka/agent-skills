@@ -533,9 +533,22 @@ def test_merge_requires_latest_review_to_cover_head() -> None:
     assert "`review-latest-commit`" in verify_step
     assert head_check in verify_step
     assert "`none`\n      or `mechanical` resolution" in verify_step
-    assert "start merge preparation (step 13)" in verify_step
+    assert "start merge preparation\n      (step 13)" in verify_step
     for step in (shortcut_step, verify_step):
         assert "**Limit reached with unreviewed fix commits**" in step
     merge_prep_step = skill.split("13. When a worker slot is free", 1)[1].split("14. ", 1)[0]
     assert "run cross-review on the unreviewed commits" in merge_prep_step
     assert "head before the rebase and after it" in merge_prep_step
+
+
+def test_merge_as_is_approval_covers_only_the_approved_head() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    rule = skill.split("**Limit reached with unreviewed fix commits:**", 1)[1].split("\n- ", 1)[0]
+    merge_as_is = rule.split("**Merge as is:**", 1)[1].split("**One extra review:**", 1)[0]
+    assert "record the approved head (full SHA) in the Run" in merge_as_is
+    assert "approved\n    merging that head without a further review" in merge_as_is
+    for step_start, step_end in (("12. Select the next PR", "13. "),
+                                 ("13. When a worker slot is free", "14. "),
+                                 ("14. Independently verify", "15. ")):
+        step = skill.split(step_start, 1)[1].split(step_end, 1)[0]
+        assert "**Merge as is**" in step

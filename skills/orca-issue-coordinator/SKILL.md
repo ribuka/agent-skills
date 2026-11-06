@@ -289,6 +289,7 @@ with `--retry-of` only after the user confirms.
     - The latest cross-review saw the current head commit: the
       `review-latest-commit: <sha>` line of
       `bash ~/.agents/skills/pr-cross-review/scripts/review_status.sh <pr-number>`
+      (or the head the user approved with **Merge as is**, Run checkpoint)
       equals `gh pr view <pr> --json headRefOid --jq .headRefOid`. Do not
       read review comment bodies for this. When they differ, commits were
       pushed after the latest review (**Unreviewed head** below).
@@ -312,7 +313,9 @@ with `--retry-of` only after the user confirms.
     - When the latest cross-review did not see the head (**Unreviewed
       head** in steps 12 and 14): the reviewed commit and the head, and the
       task to run cross-review on the unreviewed commits and address its
-      findings before rebasing.
+      findings before rebasing. When the user chose **Merge as is** for
+      the head instead: that head, and that the user approved merging it
+      without a further review.
     - The tasks: fetch and rebase onto the latest `origin/main` as needed;
       re-run tests and CI; repeat cross-review per the re-review criteria
       below.
@@ -335,18 +338,19 @@ with `--retry-of` only after the user confirms.
       because the limit was reached, block the PR and ask the user.
     - No outstanding review findings.
     - The latest cross-review saw the current head commit:
-      `review-latest-commit` (from `review_status.sh`, below) equals
+      `review-latest-commit` (from `review_status.sh`, below), or the head
+      the user approved with **Merge as is** (Run checkpoint), equals
       `gh pr view <pr> --json headRefOid --jq .headRefOid`. A rebase in
       merge preparation changes the head without a new review; accept that
       difference only when the merge-preparation worker reported a `none`
       or `mechanical` resolution, its head before the rebase equals
-      `review-latest-commit`, and its head after the rebase equals the
-      current head. Any other difference is an **Unreviewed head**: under
-      the limit, start merge preparation (step 13) with the reviewed commit
-      and the head in the handoff; once the limit is reached, follow
+      `review-latest-commit` or that approved head, and its head after the
+      rebase equals the current head. Any other difference is an
+      **Unreviewed head**: under the limit, start merge preparation
+      (step 13) with the reviewed commit and the head in the handoff; once
+      the limit is reached, follow
       **Limit reached with unreviewed fix commits** (**Rules**). Do not
-      merge in either case until this check passes or the user chose
-      **Merge as is**.
+      merge until this check passes.
     - No more than `<max>` cross-reviews on the PR, plus the extra reviews
       the user approved for it: run
       `bash ~/.agents/skills/pr-cross-review/scripts/review_status.sh <pr-number>`
@@ -561,7 +565,11 @@ Follow [Waiting](references/waiting.md) in both Claude Code and Codex
   pushed after its latest cross-review (e.g. fixes for its findings;
   **Unreviewed head** in steps 12 and 14), block
   the PR and ask the user with these options:
-  - **Merge as is:** continue merging; the latest commits stay unreviewed.
+  - **Merge as is:** record the approved head (full SHA) in the Run
+    checkpoint and continue merging; the latest commits stay unreviewed.
+    The approval covers only that head (steps 12 and 14). If merge
+    preparation is needed, its handoff states that the user approved
+    merging that head without a further review.
   - **One extra review:** record the approval in the Run checkpoint and
     start a fresh worker in the PR's worktree for the phase that hit the
     limit. Its handoff states that the user approved exactly one extra
