@@ -74,24 +74,26 @@ def test_crlf_config_is_accepted(tmp_path, config, monkeypatch, capsys) -> None:
     assert (code, result["threshold"]) == (10, 90)
 
 
-@pytest.mark.parametrize("content", [None, "", "# THRESHOLD=95\n", "OTHER=1\n",
-                                     "THRESHOLD=\n", "THRESHOLD=abc\n", "THRESHOLD=0\n",
-                                     "THRESHOLD=-5\n", "THRESHOLD=100.1\n", "THRESHOLD=nan\n",
-                                     "THRESHOLD=inf\n"])
+@pytest.mark.parametrize("content,reason_prefix", [
+    (None, "config.conf unreadable"),
+    ("", "THRESHOLD missing from config.conf"),
+    ("# THRESHOLD=95\n", "THRESHOLD missing from config.conf"),
+    ("OTHER=1\n", "THRESHOLD missing from config.conf"),
+    ("THRESHOLD=\n", "THRESHOLD in config.conf must be a number in (0,100]"),
+    ("THRESHOLD=abc\n", "THRESHOLD in config.conf must be a number in (0,100]"),
+    ("THRESHOLD=0\n", "THRESHOLD in config.conf must be a number in (0,100]"),
+    ("THRESHOLD=-5\n", "THRESHOLD in config.conf must be a number in (0,100]"),
+    ("THRESHOLD=100.1\n", "THRESHOLD in config.conf must be a number in (0,100]"),
+    ("THRESHOLD=nan\n", "THRESHOLD in config.conf must be a number in (0,100]"),
+    ("THRESHOLD=inf\n", "THRESHOLD in config.conf must be a number in (0,100]")])
 def test_missing_or_invalid_config_is_unknown(tmp_path, config, monkeypatch, capsys,
-                                              content) -> None:
+                                              content, reason_prefix) -> None:
     if content is not None:
         config.write_text(content, encoding="utf-8")
     code, result = run_check(monkeypatch, capsys, tmp_path / "state")
     assert code == 20
-    if content is None:
-        reason = f"config.conf unreadable: {config}"
-    elif "THRESHOLD=" not in content or content.startswith("#"):
-        reason = f"THRESHOLD missing from config.conf: {config}"
-    else:
-        reason = f"THRESHOLD in config.conf must be a number in (0,100]: {config}"
     assert result == {
-        "state": "UNKNOWN", "reason": reason,
+        "state": "UNKNOWN", "reason": f"{reason_prefix}: {config}",
         "checkpoint_dir": str(tmp_path / "state" / "checkpoints"),
         "local_retry_seconds": guard.LOCAL_RETRY_SECONDS,
         **guard.wakeup(NOW + 900)}
