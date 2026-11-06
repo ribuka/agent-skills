@@ -16,9 +16,9 @@ response, missing bucket, or expired window returns UNKNOWN, never READY.
 No statusLine configuration or session-log freshness inference is used.
 
 The `rateLimits` bucket must have `limitId: codex` and a valid 300-minute
-`primary`. Five-hour usage at or above `--threshold` (default 95) pauses.
-An exhausted secondary window (100%, normally weekly) also pauses; 95% weekly
-usage alone does not. When both block, wake after the later reset. A non-null
+`primary`. Five-hour usage at or above the threshold (`config.conf`
+`THRESHOLD`, or `--threshold`) pauses. An exhausted secondary window (100%,
+normally weekly) also pauses; weekly usage below 100% alone does not. When both block, wake after the later reset. A non-null
 `rateLimitReachedType` without a numerically identified blocking window returns
 UNKNOWN, since a safe reset time cannot be inferred from that signal.
 Missing optional `secondary` is accepted; malformed present windows fail closed.

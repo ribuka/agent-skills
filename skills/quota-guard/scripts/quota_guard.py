@@ -26,6 +26,36 @@ RESET_TOLERANCE = 120.0
 LOCAL_RETRY_SECONDS = 2
 # A caller checkpoint is `<checkpoint_dir>/<operation-id>.md`.
 OPERATION_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*")
+# The single source of the pause threshold; `--threshold` overrides it.
+CONFIG_FILE = Path(__file__).resolve().parents[1] / "config.conf"
+
+
+def valid_threshold(value: float) -> bool:
+    return math.isfinite(value) and 0 < value <= 100
+
+
+def load_threshold() -> float:
+    """Read THRESHOLD from config.conf; raise ValueError when missing or invalid."""
+    path = CONFIG_FILE
+    values = {}
+    try:
+        lines = path.read_text(encoding="utf-8-sig").splitlines()
+    except OSError as error:
+        raise ValueError(f"config.conf unreadable: {path}") from error
+    for line in lines:
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            key, _, value = line.partition("=")
+            values[key.strip()] = value.strip()
+    if "THRESHOLD" not in values:
+        raise ValueError(f"THRESHOLD missing from config.conf: {path}")
+    try:
+        threshold = float(values["THRESHOLD"])
+    except ValueError:
+        threshold = math.nan
+    if not valid_threshold(threshold):
+        raise ValueError(f"THRESHOLD in config.conf must be a number in (0,100]: {path}")
+    return threshold
 
 
 def read_json(path: Path):
@@ -111,7 +141,7 @@ def wakeup(epoch: float):
             "cron": f"{local.minute} {local.hour} {local.day} {local.month} *"}
 
 
-def check(root: Path, now: float, threshold=95.0, max_age=180.0):
+def check(root: Path, now: float, threshold: float, max_age: float = 180.0) -> dict:
     """Use fresh evidence for READY; latch high usage until its reset."""
     records = []
     for path in (root / "sessions").glob("*.json"):
@@ -232,7 +262,17 @@ def read_codex_limits(timeout: float = 20.0) -> dict:
                 process.stdout.close()
 
 
-def check_codex(root: Path, now: float, threshold: float = 95.0) -> dict:
+def config_unknown(root: Path, now: float, reason: str, provider: str) -> dict:
+    """UNKNOWN for an unusable config.conf, with the usual pause/resume fields."""
+    result = {"state": "UNKNOWN", "reason": reason,
+              "checkpoint_dir": str(root / "checkpoints"),
+              "local_retry_seconds": LOCAL_RETRY_SECONDS, **wakeup(now + 900)}
+    if provider == "codex":
+        result["provider"] = "codex"
+    return result
+
+
+def check_codex(root: Path, now: float, threshold: float) -> dict:
     """Fail closed on unavailable limits; also block exhausted weekly usage."""
     result = {"state": "UNKNOWN", "reason": "codex_telemetry_unavailable",
               "provider": "codex", "threshold": threshold,
@@ -437,7 +477,7 @@ def main():
         item = sub.add_parser(name)
         item.add_argument("--state-dir", type=Path)
         if name in ("statusline", "check"):
-            item.add_argument("--threshold", type=float, default=95)
+            item.add_argument("--threshold", type=float)
             item.add_argument("--max-age", type=float, default=180)
         if name == "statusline":
             item.add_argument("--previous-config", type=Path)
@@ -463,7 +503,16 @@ def main():
             result = configure(args.state_dir, args.settings)
             print(json.dumps(result))
             return 0
-        if not (0 < args.threshold <= 100 and args.max_age > 0
+        if args.threshold is None:
+            try:
+                args.threshold = load_threshold()
+            except ValueError as error:
+                if args.action == "statusline":
+                    raise
+                result = config_unknown(args.state_dir, time.time(), str(error), args.provider)
+                print(json.dumps(result, separators=(",", ":")))
+                return 20
+        if not (valid_threshold(args.threshold) and args.max_age > 0
                 and math.isfinite(args.max_age)):
             raise ValueError("threshold must be (0,100]; max-age must be positive")
         if args.action == "statusline":
