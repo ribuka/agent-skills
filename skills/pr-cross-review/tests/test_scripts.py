@@ -309,16 +309,27 @@ def test_review_script_limits_rereview_prompt(tmp_path: Path, script_name: str) 
 
 
 @pytest.mark.parametrize("script_name", SCRIPT_NAMES)
-def test_review_script_distinguishes_api_failure(tmp_path: Path, script_name: str) -> None:
-    """A GitHub API failure is reported separately from a missing comment."""
+@pytest.mark.parametrize("quota_message", [False, True])
+def test_review_script_distinguishes_api_failure(
+    tmp_path: Path, script_name: str, quota_message: bool
+) -> None:
+    """An API failure preserves the body and takes precedence over quota text."""
+    output = reviewer_error_output(script_name, "Usage limit reached.") if quota_message else None
     result = run_review_script(
-        tmp_path, script_name, post_comment=True, api_failure_after_review=True
+        tmp_path,
+        script_name,
+        post_comment=True,
+        api_failure_after_review=True,
+        reviewer_output=output,
     )
 
     assert result.returncode == 2
     assert "failed to query review comments" in result.stderr
     assert "no new review comment was found" not in result.stderr
     assert "review-posted:" not in result.stdout
+    assert "reviewer-quota-exhausted:" not in result.stdout
+    agent = "claude" if script_name == "run_claude_review.sh" else "codex"
+    assert (tmp_path / "tmp" / f"pr-123-review-{agent}.md").read_text() == "review body\n"
 
 
 @pytest.mark.parametrize("script_name", SCRIPT_NAMES)

@@ -370,6 +370,45 @@ stop_reviewer() {
     wait "$REVIEWER_PID" 2>/dev/null || true
 }
 
+# finish_review <repo> <pr-number> <agent> <command-label> <log-file> -- wait
+# for the reviewer, confirm its comment, and preserve failure logs and status.
+finish_review() {
+    local repo=$1
+    local pr_number=$2
+    local agent=$3
+    local command_label=$4
+    local log_file=$5
+    local exit_code status
+
+    set +e
+    wait "$REVIEWER_PID"
+    exit_code=$?
+    set -e
+
+    if [ "$exit_code" -ne 0 ]; then
+        echo "error: ${command_label} exited with status ${exit_code}" >&2
+        dump_reviewer_log "$agent" "$log_file"
+        if report_reviewer_quota "$agent" "$log_file"; then
+            return "$reviewer_quota_exit_code"
+        fi
+        return "$exit_code"
+    fi
+
+    set +e
+    report_posted_review "$repo" "$pr_number" "$agent"
+    status=$?
+    set -e
+    if [ "$status" -eq 0 ]; then
+        remove_body_file
+    else
+        dump_reviewer_log "$agent" "$log_file"
+        if [ "$status" -eq 1 ] && report_reviewer_quota "$agent" "$log_file"; then
+            status=$reviewer_quota_exit_code
+        fi
+    fi
+    return "$status"
+}
+
 # report_posted_review <repo> <pr-number> <agent> -- prints `review-posted: <url>`
 # and `review-count: <count>/<max>` (including the new review) and returns 0
 # when the reviewer posted a new comment; otherwise returns 1 (no new comment)
