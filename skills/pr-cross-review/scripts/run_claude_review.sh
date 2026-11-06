@@ -89,30 +89,4 @@ trap cleanup EXIT INT TERM
 
 start_reviewer claude -p --model "$model" --effort "$effort" --permission-mode "$permission_mode" "$REVIEW_PROMPT" >"$log_file" 2>&1
 
-set +e
-wait "$REVIEWER_PID"
-exit_code=$?
-set -e
-
-if [ "$exit_code" -ne 0 ]; then
-    echo "error: claude -p exited with status ${exit_code}" >&2
-    dump_reviewer_log claude "$log_file"
-    if report_reviewer_quota claude "$log_file"; then
-        exit "$reviewer_quota_exit_code"
-    fi
-    exit "$exit_code"
-fi
-
-set +e
-report_posted_review "$repo" "$pr_number" claude
-status=$?
-set -e
-if [ "$status" -eq 0 ]; then
-    remove_body_file
-else
-    dump_reviewer_log claude "$log_file"
-    if [ "$status" -eq 1 ] && report_reviewer_quota claude "$log_file"; then
-        status=$reviewer_quota_exit_code
-    fi
-fi
-exit "$status"
+finish_review "$repo" "$pr_number" claude "claude -p" "$log_file"

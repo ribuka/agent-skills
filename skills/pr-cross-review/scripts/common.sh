@@ -309,7 +309,6 @@ dump_reviewer_log() {
 # for one.
 reviewer_quota_tail_lines=5
 reviewer_quota_pattern='usage limit|session limit|weekly limit|hit your limit|limit reached|quota exceeded|exceeded your quota'
-# shellcheck disable=SC2034 # used by run_codex_review.sh and run_claude_review.sh
 reviewer_quota_exit_code=75
 
 # reviewer_quota_message <agent> <log-file> -- print the reviewer's quota
@@ -368,6 +367,45 @@ stop_reviewer() {
         kill -KILL -- "-${REVIEWER_PID}" 2>/dev/null || kill -KILL "$REVIEWER_PID" 2>/dev/null || true
     fi
     wait "$REVIEWER_PID" 2>/dev/null || true
+}
+
+# finish_review <repo> <pr-number> <agent> <command-label> <log-file> -- wait
+# for the reviewer, confirm its comment, and preserve failure logs and status.
+finish_review() {
+    local repo=$1
+    local pr_number=$2
+    local agent=$3
+    local command_label=$4
+    local log_file=$5
+    local exit_code status
+
+    set +e
+    wait "$REVIEWER_PID"
+    exit_code=$?
+    set -e
+
+    if [ "$exit_code" -ne 0 ]; then
+        echo "error: ${command_label} exited with status ${exit_code}" >&2
+        dump_reviewer_log "$agent" "$log_file"
+        if report_reviewer_quota "$agent" "$log_file"; then
+            return "$reviewer_quota_exit_code"
+        fi
+        return "$exit_code"
+    fi
+
+    set +e
+    report_posted_review "$repo" "$pr_number" "$agent"
+    status=$?
+    set -e
+    if [ "$status" -eq 0 ]; then
+        remove_body_file
+    else
+        dump_reviewer_log "$agent" "$log_file"
+        if [ "$status" -eq 1 ] && report_reviewer_quota "$agent" "$log_file"; then
+            status=$reviewer_quota_exit_code
+        fi
+    fi
+    return "$status"
 }
 
 # report_posted_review <repo> <pr-number> <agent> -- prints `review-posted: <url>`
