@@ -40,9 +40,6 @@ def snapshot(used: float = 4, secondary: float | None = 7) -> dict:
 def test_five_hour_boundary(tmp_path, monkeypatch, used, state):
     monkeypatch.setattr(guard, "read_codex_limits", lambda: snapshot(used))
     result = guard.check_codex(tmp_path, NOW, 95)
-    assert result["state"] == state
-    assert result["used_percentage"] == used
-    assert result["checkpoint_dir"] == str(tmp_path / "checkpoints")
     expected = {"state": state, "reason": "live_account_rate_limits",
                 "provider": "codex", "threshold": 95,
                 "checkpoint_dir": str(tmp_path / "checkpoints"),
@@ -50,10 +47,6 @@ def test_five_hour_boundary(tmp_path, monkeypatch, used, state):
     if state == "PAUSED_QUOTA":
         expected.update(reason="threshold_reached", blocking_window="primary",
                         **guard.wakeup(NOW + 5120))
-        assert result["wake_at"] >= NOW + 5120
-        assert result["blocking_window"] == "primary"
-    else:
-        assert "cron" not in result
     assert result == expected
 
 

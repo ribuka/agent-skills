@@ -84,10 +84,14 @@ def test_missing_or_invalid_config_is_unknown(tmp_path, config, monkeypatch, cap
         config.write_text(content, encoding="utf-8")
     code, result = run_check(monkeypatch, capsys, tmp_path / "state")
     assert code == 20
-    assert result["state"] == "UNKNOWN"
-    assert "config.conf" in result["reason"]
+    if content is None:
+        reason = f"config.conf unreadable: {config}"
+    elif "THRESHOLD=" not in content or content.startswith("#"):
+        reason = f"THRESHOLD missing from config.conf: {config}"
+    else:
+        reason = f"THRESHOLD in config.conf must be a number in (0,100]: {config}"
     assert result == {
-        "state": "UNKNOWN", "reason": result["reason"],
+        "state": "UNKNOWN", "reason": reason,
         "checkpoint_dir": str(tmp_path / "state" / "checkpoints"),
         "local_retry_seconds": guard.LOCAL_RETRY_SECONDS,
         **guard.wakeup(NOW + 900)}
@@ -102,9 +106,8 @@ def test_missing_config_fails_codex_without_reading_limits(tmp_path, config, mon
                                       "--state-dir", str(tmp_path)])
     assert guard.main() == 20
     result = json.loads(capsys.readouterr().out)
-    assert "config.conf" in result["reason"]
     assert result == {
-        "state": "UNKNOWN", "reason": result["reason"], "provider": "codex",
+        "state": "UNKNOWN", "reason": f"config.conf unreadable: {config}", "provider": "codex",
         "checkpoint_dir": str(tmp_path / "checkpoints"),
         "local_retry_seconds": guard.LOCAL_RETRY_SECONDS,
         **guard.wakeup(NOW + 900)}
