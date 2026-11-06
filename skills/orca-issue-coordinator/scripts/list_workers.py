@@ -21,10 +21,10 @@ from __future__ import annotations
 
 import argparse
 import json
-import shutil
-import subprocess
 import sys
 from typing import Any
+
+from orca_command import run_stdout
 
 TIMEOUT_SECONDS = 60
 MAX_PAGES = 100
@@ -34,19 +34,6 @@ TERMINAL_STATES = ("active", "reclaimable", "retained", "release_pending", "rele
 
 class ListError(Exception):
     """The worker list could not be read completely."""
-
-
-def run(cmd: list[str]) -> tuple[int, str]:
-    """Run a command and return its exit code and stdout (stderr is dropped)."""
-    exe = shutil.which(cmd[0])
-    if exe is None:
-        return 127, ""
-    try:
-        proc = subprocess.run([exe, *cmd[1:]], capture_output=True, text=True,
-                              encoding="utf-8", errors="replace", timeout=TIMEOUT_SECONDS)
-    except subprocess.TimeoutExpired:
-        return 124, ""
-    return proc.returncode, proc.stdout
 
 
 def worker_row(worker: Any, orca: str) -> dict[str, Any]:
@@ -88,7 +75,7 @@ def list_workers(orca: str, run_id: str, terminal_state: str | None) -> tuple[li
     seen: set[str] = set()
     for page_number in range(1, MAX_PAGES + 1):
         cmd = [*base, *(["--cursor", cursor] if cursor else []), "--json", "--full"]
-        code, out = run(cmd)
+        code, out = run_stdout(cmd, TIMEOUT_SECONDS)
         if code != 0:
             raise ListError(f"worker-list exited {code} on page {page_number}")
         try:

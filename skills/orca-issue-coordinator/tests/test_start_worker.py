@@ -8,6 +8,7 @@ from __future__ import annotations
 import importlib.util
 import json
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
@@ -18,7 +19,8 @@ ARGS = ["--spec", "brief", "--task-title", "#1 title", "--worktree", "new-top-le
         "--effort", "medium"]
 
 
-def load_module():
+def load_module(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
+    monkeypatch.syspath_prepend(str(SCRIPT.parent))
     spec = importlib.util.spec_from_file_location("start_worker", SCRIPT)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -37,15 +39,16 @@ READY = receipt("ready", launch={"effective": {"agent": "claude", "model": "opus
 
 @pytest.fixture
 def sw(monkeypatch: pytest.MonkeyPatch):
-    module = load_module()
+    module = load_module(monkeypatch)
     calls: list[list[str]] = []
     module.reply = (0, READY)
 
-    def fake_run(cmd: list[str]) -> tuple[int, str]:
+    def fake_run(cmd: list[str], timeout_seconds: float) -> tuple[int, str]:
+        assert timeout_seconds == 900
         calls.append(cmd)
         return module.reply
 
-    monkeypatch.setattr(module, "run", fake_run)
+    monkeypatch.setattr(module, "run_stdout", fake_run)
     module.calls = calls
     return module
 
