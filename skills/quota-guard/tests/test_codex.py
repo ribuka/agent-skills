@@ -30,7 +30,7 @@ def snapshot(used: float = 4, secondary: float | None = 7) -> dict:
                                         (95, "PAUSED_QUOTA"), (100, "PAUSED_QUOTA")])
 def test_five_hour_boundary(tmp_path, monkeypatch, used, state):
     monkeypatch.setattr(guard, "read_codex_limits", lambda: snapshot(used))
-    result = guard.check_codex(tmp_path, NOW)
+    result = guard.check_codex(tmp_path, NOW, 95)
     assert result["state"] == state
     assert result["used_percentage"] == used
     assert result["checkpoint_dir"] == str(tmp_path / "checkpoints")
@@ -45,7 +45,7 @@ def test_five_hour_boundary(tmp_path, monkeypatch, used, state):
                                              (100, "PAUSED_QUOTA")])
 def test_secondary_policy(tmp_path, monkeypatch, secondary, state):
     monkeypatch.setattr(guard, "read_codex_limits", lambda: snapshot(4, secondary))
-    result = guard.check_codex(tmp_path, NOW)
+    result = guard.check_codex(tmp_path, NOW, 95)
     assert result["state"] == state
     if secondary == 100:
         assert result["reason"] == "secondary_exhausted"
@@ -55,7 +55,7 @@ def test_secondary_policy(tmp_path, monkeypatch, secondary, state):
 
 def test_both_windows_block_until_later_reset(tmp_path, monkeypatch):
     monkeypatch.setattr(guard, "read_codex_limits", lambda: snapshot(96, 100))
-    assert guard.check_codex(tmp_path, NOW)["wake_at"] >= NOW + 50120
+    assert guard.check_codex(tmp_path, NOW, 95)["wake_at"] >= NOW + 50120
 
 
 @pytest.mark.parametrize("field,value", [("usedPercent", True), ("usedPercent", -1),
@@ -65,7 +65,7 @@ def test_invalid_primary_fails_closed(tmp_path, monkeypatch, field, value):
     data = snapshot()
     data["rateLimits"]["primary"][field] = value
     monkeypatch.setattr(guard, "read_codex_limits", lambda: data)
-    result = guard.check_codex(tmp_path, NOW)
+    result = guard.check_codex(tmp_path, NOW, 95)
     assert result["state"] == "UNKNOWN"
     assert result["local_retry_seconds"] > 0
     assert result["wake_at"] >= NOW + 900
@@ -75,14 +75,14 @@ def test_invalid_primary_fails_closed(tmp_path, monkeypatch, field, value):
     {"rateLimits": {"limitId": "other"}}, {"rateLimits": {"limitId": "codex"}}])
 def test_missing_bucket_fails_closed(tmp_path, monkeypatch, data):
     monkeypatch.setattr(guard, "read_codex_limits", lambda: data)
-    assert guard.check_codex(tmp_path, NOW)["state"] == "UNKNOWN"
+    assert guard.check_codex(tmp_path, NOW, 95)["state"] == "UNKNOWN"
 
 
 def test_server_signal_without_window_is_unknown(tmp_path, monkeypatch):
     data = snapshot()
     data["rateLimits"]["rateLimitReachedType"] = "unexpected_limit"
     monkeypatch.setattr(guard, "read_codex_limits", lambda: data)
-    result = guard.check_codex(tmp_path, NOW)
+    result = guard.check_codex(tmp_path, NOW, 95)
     assert result["state"] == "UNKNOWN"
     assert result["reason"] == "server_limit_reached"
 
@@ -91,7 +91,7 @@ def test_invalid_secondary_is_unknown(tmp_path, monkeypatch):
     data = snapshot()
     data["rateLimits"]["secondary"] = {"usedPercent": 1}
     monkeypatch.setattr(guard, "read_codex_limits", lambda: data)
-    assert guard.check_codex(tmp_path, NOW)["state"] == "UNKNOWN"
+    assert guard.check_codex(tmp_path, NOW, 95)["state"] == "UNKNOWN"
 
 
 @pytest.mark.parametrize("error", [FileNotFoundError(), TimeoutError(), ValueError(),
@@ -100,7 +100,7 @@ def test_acquisition_errors_are_unknown(tmp_path, monkeypatch, error):
     def fail() -> dict:
         raise error
     monkeypatch.setattr(guard, "read_codex_limits", fail)
-    assert guard.check_codex(tmp_path, NOW)["state"] == "UNKNOWN"
+    assert guard.check_codex(tmp_path, NOW, 95)["state"] == "UNKNOWN"
 
 
 @pytest.fixture

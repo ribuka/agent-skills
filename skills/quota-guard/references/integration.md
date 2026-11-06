@@ -75,7 +75,9 @@ compatibility from a successful synthetic shell test.
   completes. Operation IDs start with a letter or digit and contain only
   letters, digits, `_`, `.`, and `-`. Exit 0 when deleted or already absent,
   1 when deletion failed, 2 on an invalid ID; `--state-dir` applies as for `check`.
-- `check --threshold 95 --max-age 180 --state-dir "<path>"`: override policy.
+- `check --threshold <percent> --max-age 180 --state-dir "<path>"`: override policy
+  for one call. To change the threshold for every caller (including the
+  statusLine), edit `THRESHOLD` in `config.conf` instead.
   If changing the display policy, also edit the statusLine command's corresponding
   flags; the check command's policy controls the caller's decisions.
 

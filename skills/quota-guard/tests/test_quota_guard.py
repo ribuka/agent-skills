@@ -41,7 +41,7 @@ def test_high_usage_survives_reset_jitter(tmp_path, offset, same_session):
     guard.record(tmp_path, payload("a", 42, 1800005000), 1800001000)
     guard.record(tmp_path, payload("a" if same_session else "b", 96,
                                    1800005000 + offset), 1800001001)
-    result = guard.check(tmp_path, 1800001002)
+    result = guard.check(tmp_path, 1800001002, 95)
     assert result["state"] == "PAUSED_QUOTA"
     assert result["used_percentage"] == 96
     assert result["resets_at"] == max(1800005000, 1800005000 + offset)
@@ -51,30 +51,30 @@ def test_high_usage_survives_reset_jitter(tmp_path, offset, same_session):
 def test_expired_nearby_high_still_blocks(tmp_path):
     guard.record(tmp_path, payload("a", 96, 1800005000), 1800004900)
     guard.record(tmp_path, payload("b", 42, 1800005001), 1800004999)
-    assert guard.check(tmp_path, 1800005000)["state"] == "PAUSED_QUOTA"
-    assert guard.check(tmp_path, 1800005121)["state"] == "UNKNOWN"
+    assert guard.check(tmp_path, 1800005000, 95)["state"] == "PAUSED_QUOTA"
+    assert guard.check(tmp_path, 1800005121, 95)["state"] == "UNKNOWN"
 
 
 @pytest.mark.parametrize("same_session", [False, True])
 def test_distinct_new_window_supersedes_high(tmp_path, same_session):
     guard.record(tmp_path, payload("a", 96, 1800005000), 1800001000)
     guard.record(tmp_path, payload("a" if same_session else "b", 42, 1800005121), 1800001001)
-    assert guard.check(tmp_path, 1800001002)["state"] == "READY"
-    assert guard.check(tmp_path, 1800001200)["state"] == "UNKNOWN"
+    assert guard.check(tmp_path, 1800001002, 95)["state"] == "READY"
+    assert guard.check(tmp_path, 1800001200, 95)["state"] == "UNKNOWN"
 
 
 def test_timer_repeat_does_not_refresh_low_evidence(tmp_path):
     item = payload("a", 42, 1800005000)
     guard.record(tmp_path, item, 1800001000)
     guard.record(tmp_path, item, 1800001500)
-    assert guard.check(tmp_path, 1800001500)["state"] == "UNKNOWN"
+    assert guard.check(tmp_path, 1800001500, 95)["state"] == "UNKNOWN"
 
 
 def test_high_latches_and_older_window_cannot_regress(tmp_path):
     guard.record(tmp_path, payload("a", 96, 1800005000), 1800001000)
     guard.record(tmp_path, payload("a", 42, 1800004999), 1800001001)
     guard.record(tmp_path, payload("a", 10, 1800004000), 1800001002)
-    assert guard.check(tmp_path, 1800001500)["state"] == "PAUSED_QUOTA"
+    assert guard.check(tmp_path, 1800001500, 95)["state"] == "PAUSED_QUOTA"
 
 
 def test_settings_scopes_preserve_independent_commands(tmp_path):
@@ -221,12 +221,12 @@ def test_windows_shell_uses_hidden_process(tmp_path, monkeypatch):
 def test_check_reports_checkpoint_dir(tmp_path, used):
     if used is not None:
         guard.record(tmp_path, payload("a", used, 1800005000), 1800001000)
-    result = guard.check(tmp_path, 1800001002)
+    result = guard.check(tmp_path, 1800001002, 95)
     assert result["checkpoint_dir"] == str(tmp_path / "checkpoints")
 
 
 def test_unknown_reports_local_retry_wait(tmp_path):
-    result = guard.check(tmp_path, 1800001002)
+    result = guard.check(tmp_path, 1800001002, 95)
     assert result["state"] == "UNKNOWN"
     assert result["local_retry_seconds"] == guard.LOCAL_RETRY_SECONDS
     assert "cron" in result

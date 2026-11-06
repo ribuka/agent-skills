@@ -1,6 +1,6 @@
 ---
 name: quota-guard
-description: Gate long-running work at 95% of Claude Code or Codex five-hour quota and resume after reset. Use when another skill requests quota checks or when asked to pause at 95% usage. Uses Claude statusLine telemetry or Codex app-server, with scheduled resumption.
+description: Gate long-running work at a configured percentage (shipped as 95%) of Claude Code or Codex five-hour quota and resume after reset. Use when another skill requests quota checks or when asked to pause at high quota usage. Uses Claude statusLine telemetry or Codex app-server, with scheduled resumption.
 ---
 
 # Quota Guard
@@ -66,10 +66,15 @@ The following initialization steps apply only to Claude Code.
   such as PowerShell `-Command` (used by Codex) report any failing native
   command as `1`, so never rely on the specific non-zero code.
 
-- Default threshold: 95%; Claude local evidence age limit: 180 seconds.
+- Threshold: `THRESHOLD` in this skill's `config.conf` (shipped as 95);
+  `--threshold` overrides it. The script has no built-in threshold: when
+  `config.conf` is missing or its `THRESHOLD` is missing or not a number in
+  (0, 100], `check` returns UNKNOWN with a `config.conf` reason. The result's
+  `threshold` is the value applied; callers that need it read it there.
+  Claude local evidence age limit: 180 seconds.
   Codex also blocks an exhausted secondary window (100%). A server limit signal
   without an identifiable blocking window is UNKNOWN; never continue on it.
-- Treat 95% as a boundary check, not a guaranteed hard cap. Existing workers can
+- Treat the threshold as a boundary check, not a guaranteed hard cap. Existing workers can
   continue consuming quota. Ask them through the caller's existing authorized
   worker protocol to checkpoint at safe boundaries; verify their actual states.
   Do not kill processes or claim all work has stopped.
