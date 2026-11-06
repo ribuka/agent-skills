@@ -552,3 +552,28 @@ def test_merge_as_is_approval_covers_only_the_approved_head() -> None:
                                  ("14. Independently verify", "15. ")):
         step = skill.split(step_start, 1)[1].split(step_end, 1)[0]
         assert "**Merge as is**" in step
+
+
+def test_quota_paused_worker_resume_is_chosen_by_context_size() -> None:
+    skill = " ".join(SKILL_MD.read_text(encoding="utf-8").split())
+    reference = " ".join(QUOTA_PAUSE.read_text(encoding="utf-8").split())
+    assert "FRESH_WORKER_CONTEXT_TOKENS" in skill
+    assert "--fresh-worker-context-tokens" in skill
+    assert "Do not release a worker that reported `worker-quota-paused:`" in skill
+    assert "## Worker stopped by the quota pause" in reference
+    for text in ("worker-keep-open --dispatch <dispatch_id>",
+                 "at or above the threshold, or `unknown`",
+                 "--task <task_id> --retry-of <dispatch_id> --worktree branch:<branch> "
+                 "--terminal <handle>",
+                 "--spec \"<handoff>\" --worktree branch:<branch>"):
+        assert text in reference
+    assert "FRESH_WORKER_CONTEXT_TOKENS=200000" in (
+        SKILL_DIR / "config.conf.example").read_text(encoding="utf-8")
+
+
+def test_workers_never_create_reservations_at_quota_pause() -> None:
+    skill = " ".join(SKILL_MD.read_text(encoding="utf-8").split())
+    assert "Workers never create wake-ups." in skill
+    worker = " ".join((SKILL_DIR.parent / "implement-review-merge" / "SKILL.md")
+                      .read_text(encoding="utf-8").split())
+    assert "retry, or schedule a wake-up; the Coordinator resumes the work" in worker

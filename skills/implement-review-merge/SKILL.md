@@ -46,6 +46,18 @@ whenever a step below says so; never merge on a guess.
   - Report completion or failure using the ORCA Orchestration protocol.
   - Stop after the assigned phase; never proceed to the next phase
     without an explicit dispatch.
+  - **Quota pause:** when a tool call is denied with a reason that the
+    5-hour quota is `PAUSED_QUOTA`, stop the phase at the nearest safe
+    boundary (commit and push finished changes, or let a running review
+    finish; never stop mid-rebase; leave uncommitted changes in the
+    worktree). Only the commands the denial allows still run. Then run
+    `uv run --no-project ~/.agents/skills/implement-review-merge/scripts/context_tokens.py --provider <claude|codex>`
+    (prints `context-tokens: <n>`, or `context-tokens: unknown`) and send
+    `worker_done --outcome failed` whose body has the handoff fields, the
+    work left in the phase, and these two lines, each on its own line:
+    `worker-quota-paused: <the quota JSON from the denial, unchanged>` and
+    `context-tokens: <n|unknown>` as printed. Do not wait for the reset,
+    retry, or schedule a wake-up; the Coordinator resumes the work.
 - Running inside ORCA does not implicitly enable worker mode.
   If the execution mode or assigned phase is unspecified, use
   Standalone mode.

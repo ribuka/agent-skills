@@ -1,7 +1,8 @@
 # Quota pause and resume
 
-Read this when `<quota-check>` returns PAUSED_QUOTA or UNKNOWN, or when the
-Coordinator is woken while a Run is paused. `<quota-check>`, `<run-id>`,
+Read this when `<quota-check>` returns PAUSED_QUOTA or UNKNOWN, when a
+worker reports `worker-quota-paused:`, or when the Coordinator is woken while
+a Run is paused. `<quota-check>`, `<run-id>`,
 `<orca>`, and `<skill-dir>` mean the same as in `SKILL.md`. While paused, no
 new work starts:
 no dispatch, merge preparation, merge, or re-dispatch, and the normal rule to
@@ -17,6 +18,31 @@ The quota checkpoint lives for the whole Run: create it on the first pause,
 update it on later pauses and wake-ups, and keep it after resuming on READY.
 Delete it only when the Run completes, with `quota-guard`'s `clear-checkpoint`
 command in `SKILL.md` step 17; never delete it by path.
+
+## Worker stopped by the quota pause
+
+A worker whose tool calls were denied at the quota pause sends
+`worker_done --outcome failed` with a `worker-quota-paused: <quota JSON>` line
+and a `context-tokens: <n|unknown>` line. It is a quota pause, not a failed
+Task:
+
+1. Choose how to resume it, by its conversation size and
+   `FRESH_WORKER_CONTEXT_TOKENS` (`fresh-worker-context-tokens:` from
+   `SKILL.md` step 0):
+   - **Same conversation:** `context-tokens` is a number below the
+     threshold. Its context is still worth reusing, so keep its terminal:
+     run `<orca> orchestration worker-keep-open --dispatch <dispatch_id>`
+     and do not release it.
+   - **Fresh worker:** `context-tokens` is at or above the threshold, or
+     `unknown`. While the quota waits, the prompt cache expires, so the
+     same conversation would be written to the cache again in full and then
+     resent on every call. Release the worker as `SKILL.md` step 11 says.
+2. Record in the checkpoint the Task, dispatch ID, terminal handle,
+   worktree, branch, PR URL, review count, open findings, the work left,
+   `context-tokens`, and the chosen resume method.
+3. Run `<quota-check>`. On PAUSED_QUOTA or UNKNOWN, follow
+   **On PAUSED_QUOTA or UNKNOWN** (or **While paused** when the Run is
+   already paused). On READY, resume it at once as **On wake-up** says.
 
 ## On PAUSED_QUOTA or UNKNOWN
 
@@ -85,12 +111,24 @@ the turn. On READY, reconcile the checkpoint with live `task-list`,
 `list_workers.py`, branches, and PRs, then resume without repeating completed
 phases or duplicating dispatches:
 
-- A stopped worker whose phase is unfinished and whose terminal is still
-  available: send it an ORCA message (`send --to dispatch:<dispatch_id>`) to
-  continue the remaining work of its phase and report `worker_done` as before.
-- A stopped worker that is no longer available: confirm from its branch and
-  PR what was already done, then start one fresh worker for the same phase
-  with a handoff of that state and the review count. Never run two workers on
-  one Task.
+- A worker still running its Dispatch (stopped on the Coordinator's
+  request, without `worker_done`) whose terminal is still available: send it
+  an ORCA message (`send --to dispatch:<dispatch_id>`) to continue the
+  remaining work of its phase and report `worker_done` as before.
+- A worker that reported `worker-quota-paused:` with the **same
+  conversation** method and whose kept-open terminal is still available:
+  start it again in its own conversation with `start_worker.py`
+  (`SKILL.md` **Starting workers**) and
+  `--task <task_id> --retry-of <dispatch_id> --worktree branch:<branch> --terminal <handle>`
+  (no `--model` / `--effort`; they cannot combine with `--terminal`). After
+  verifying its next `worker_done`, release the terminal you kept open as
+  `SKILL.md` step 11 says.
+- Any other stopped worker (the **fresh worker** method, or a terminal that
+  is no longer available): confirm from its branch and PR what was already
+  done, then start one fresh worker for the same phase in the existing
+  worktree, as `SKILL.md` step 13 starts a merge-preparation worker
+  (`--spec "<handoff>" --worktree branch:<branch>` with the phase's model and
+  effort), with a handoff of that state, the review count, the open findings,
+  and the work left. Never run two workers on one Task.
 - Then continue dispatching ready Tasks, reserve the earliest remaining
   `wake-at:` time again, and wait as in [Waiting](waiting.md).

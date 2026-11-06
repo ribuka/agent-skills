@@ -4,12 +4,13 @@
 The required --agent claude|codex selects both the Coordinator and worker agent.
 Precedence (highest first):
   1. command-line flags (--impl-model, --impl-effort, --merge-model, --merge-effort,
-     --max-workers)
+     --max-workers, --fresh-worker-context-tokens)
   2. <skill-dir>/config.conf
   3. built-in defaults
 
 The config file uses plain KEY=VALUE lines; `#` starts a comment. Model and
-effort keys use CLAUDE_ or CODEX_ prefixes; only MAX_WORKERS is shared.
+effort keys use CLAUDE_ or CODEX_ prefixes; MAX_WORKERS and
+FRESH_WORKER_CONTEXT_TOKENS are shared.
 """
 
 from __future__ import annotations
@@ -25,7 +26,9 @@ CLAUDE_DEFAULTS = {
     "MERGE_MODEL": "sonnet",
     "MERGE_EFFORT": "medium",
     "MAX_WORKERS": "3",
+    "FRESH_WORKER_CONTEXT_TOKENS": "200000",
 }
+SHARED_KEYS = {"MAX_WORKERS", "FRESH_WORKER_CONTEXT_TOKENS"}
 CODEX_DEFAULTS = {
     **CLAUDE_DEFAULTS,
     "IMPL_MODEL": "gpt-6.1-sol",
@@ -33,7 +36,7 @@ CODEX_DEFAULTS = {
 }
 DEFAULTS = {"claude": CLAUDE_DEFAULTS, "codex": CODEX_DEFAULTS}
 CONFIG_KEYS = {f"{agent.upper()}_{key}" for agent in DEFAULTS
-               for key in CLAUDE_DEFAULTS if key != "MAX_WORKERS"} | {"MAX_WORKERS"}
+               for key in CLAUDE_DEFAULTS if key not in SHARED_KEYS} | SHARED_KEYS
 EFFORTS = {
     "claude": {"low", "medium", "high", "xhigh", "max"},
     "codex": {"minimal", "low", "medium", "high", "xhigh"},
@@ -73,7 +76,7 @@ def main() -> int:
     if config.is_file():
         values = parse_env(config)
         for k in resolved:
-            config_key = k if k == "MAX_WORKERS" else f"{opts.agent.upper()}_{k}"
+            config_key = k if k in SHARED_KEYS else f"{opts.agent.upper()}_{k}"
             if config_key in values:
                 resolved[k] = (values[config_key], str(config))
     for k in resolved:
@@ -87,7 +90,7 @@ def main() -> int:
         if k.endswith("_EFFORT") and v not in EFFORTS[opts.agent]:
             print(f"error: {k}={v} (from {src}) is not one of {sorted(EFFORTS[opts.agent])}", file=sys.stderr)
             return 1
-        if k == "MAX_WORKERS" and not (v.isascii() and v.isdigit() and int(v) >= 1):
+        if k in SHARED_KEYS and not (v.isascii() and v.isdigit() and int(v) >= 1):
             print(f"error: {k}={v} (from {src}) is not an integer >= 1", file=sys.stderr)
             return 1
 
@@ -103,6 +106,8 @@ def main() -> int:
             print(f"{phase.lower()}: --model {m} --effort {e}  (model: {ms}; effort: {es})")
         w, ws = resolved["MAX_WORKERS"]
         print(f"max-workers: {w}  (from {ws})")
+        t, ts = resolved["FRESH_WORKER_CONTEXT_TOKENS"]
+        print(f"fresh-worker-context-tokens: {t}  (from {ts})")
     return 0
 
 
