@@ -610,3 +610,15 @@ def test_usage_limit_worker_is_retried_by_fresh_worker() -> None:
     assert "**Handoff to a retried worker**" in waiting
     # Silence or unverifiable liveness alone still never stops a worker.
     assert "`unverifiable` liveness alone is never a reason to stop" in waiting
+
+
+def test_execution_order_rules_live_in_plan_and_dispatch() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    dispatch_section = skill.split("## 1. Plan and dispatch", 1)[1].split("## 2.", 1)[0]
+    assert "**Listed Issues**" in dispatch_section
+    assert "not their order" in dispatch_section
+    assert "if #1 depends on #3, #3's PR is merged before\n     #1 starts" in dispatch_section
+    assert "**Explicit order**" in dispatch_section
+    assert "ask the user for the order\n     before the first dispatch" in dispatch_section
+    assert "unless step 3 requires asking for the order" in dispatch_section
+    assert "only then dispatch the\n   next Issue" in dispatch_section

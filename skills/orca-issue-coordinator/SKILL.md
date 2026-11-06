@@ -166,6 +166,17 @@ with `--retry-of` only after the user confirms.
      expect merge preparation (step 13) to resolve the resulting conflicts.
    - If the overlap is still unclear after reading the Issue bodies, run the
      Tasks in order.
+
+   Then decide the execution order:
+   - **Listed Issues** (e.g. "#1,2,3,4 serially"): the list sets which Issues
+     to run and how many at once, not their order. Plan the order from the
+     dependencies and overlaps above; keep the listed order only when it
+     fits them. For example, if #1 depends on #3, #3's PR is merged before
+     #1 starts.
+   - **Explicit order** (e.g. "#1 → #2 → #3 → #4 serially", "in this
+     order"): follow it when it fits the dependencies. If it does not, name
+     the Issues involved and the reason, and ask the user for the order
+     before the first dispatch.
 4. Create one Orchestration Run. Then, before any dispatch, set up the
    quota guard with this Run ID (see **Quota control**), and save the Run
    checkpoint described in [Waiting](references/waiting.md). Plan one Task per
@@ -202,7 +213,8 @@ with `--retry-of` only after the user confirms.
    user: Task dependencies, dispatch order, and the resolved worker model,
    effort, and `MAX_WORKERS` from step 0. For Tasks that edit the same file
    but run in parallel, state that decision and its reason (e.g. which
-   parts each edits). Then start dispatching without waiting for approval.
+   parts each edits). Then start dispatching without waiting for approval,
+   unless step 3 requires asking for the order.
    Dispatch independent tasks to separate worktrees, with at most
    **`MAX_WORKERS` workers running concurrently**. Merge-preparation workers
    count toward this limit. With `MAX_WORKERS=1`, run fully serially:
