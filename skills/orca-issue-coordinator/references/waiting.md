@@ -58,6 +58,8 @@ everywhere. Update it before ending every turn and right after every
 
 - Run ID, Coordinator terminal handle, agent, absolute `<orca>` path, and the
   resolved worker settings.
+- `skill-checkout-frozen: <sha|no>` as `local_main.py freeze` printed it
+  (needed by `local_main.py finish` at the end of the Run).
 - Per Task: phase, dispatch ID, worktree, branch, PR URL, review count, open
   findings, blockers, and the IDs of the messages already processed.
 - Pending CI: PR, head SHA, and absolute deadline.

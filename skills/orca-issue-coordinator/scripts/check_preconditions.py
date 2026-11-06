@@ -10,10 +10,12 @@ Checks:
      `orchestration.worker-auto-release.v1`. Only that candidate is tried;
      a failure never falls back to another executable.
   3. GitHub CLI authentication works (`gh auth status`).
-  4. The git checkout this skill is installed from (the symlink source) matches
-     `origin/main`: it is neither behind it nor carrying commits that are not on
-     it, and its skills have no uncommitted changes, so the Coordinator and its
-     workers run the latest skills.
+  4. The git checkout this skill is installed from (the symlink source) is on
+     branch `main` and matches `origin/main`: it is neither behind it nor
+     carrying commits that are not on it, and its skills have no uncommitted
+     changes, so the Coordinator and its workers run the latest skills. A
+     detached HEAD may be a pin a previous Run left behind; the failure shows
+     the `local_main.py finish` command that restores it.
   5. With `--agent codex`: the installed Codex CLI will not show its update
      prompt at startup. Codex shows it when the latest version it cached in
      `<CODEX_HOME>/version.json` is newer than the installed one and was not
@@ -102,12 +104,37 @@ def check_gh_auth() -> str | None:
     return None
 
 
+def check_checkout_branch(checkout: str) -> str | None:
+    """Return a failure message unless the skill checkout's HEAD is on branch main."""
+    code, out = run(["git", "-C", checkout, "symbolic-ref", "-q", "--short", "HEAD"])
+    if code == 0:
+        branch = out.splitlines()[-1].strip() if out else ""
+        if branch == "main":
+            return None
+        return (f"the skill checkout {checkout} is on branch `{branch}`, not `main`; "
+                "ask the user to switch it to `main`")
+    if code != 1:
+        return (f"`git symbolic-ref HEAD` failed in the skill checkout {checkout} "
+                f"(exit {code}): {out}")
+    code, out = run(["git", "-C", checkout, "rev-parse", "HEAD"])
+    if code != 0:
+        return f"`git rev-parse HEAD` failed in the skill checkout {checkout} (exit {code}): {out}"
+    sha = out.splitlines()[-1].strip()
+    return (f"the skill checkout {checkout} is detached at {sha}; a previous Run may have left "
+            "it pinned. Ask the user to restore it with `uv run --no-project "
+            "~/.agents/skills/orca-issue-coordinator/scripts/local_main.py finish "
+            f"--frozen {sha} --repo {checkout}`")
+
+
 def check_skill_checkout() -> tuple[str | None, str | None]:
     """Return (checkout path, failure message) for the skill's source checkout."""
     code, out = run(["git", "-C", str(SKILL_DIR), "rev-parse", "--show-toplevel"])
     if code != 0:
         return None, f"{SKILL_DIR} is not inside a git checkout (exit {code}): {out}"
     checkout = out.splitlines()[-1].strip()
+    branch_failure = check_checkout_branch(checkout)
+    if branch_failure:
+        return checkout, branch_failure
     code, out = run(["git", "-C", checkout, "fetch", "--quiet", "origin", MAIN_REFSPEC])
     if code != 0:
         return checkout, (f"`git fetch origin main` failed in the skill checkout {checkout} "

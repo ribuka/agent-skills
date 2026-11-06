@@ -37,9 +37,9 @@ uv run <skill-dir>/scripts/check_preconditions.py --agent <agent> --orca <select
 It verifies that this conversation runs inside an Orca terminal, that the
 selected executable resolves and its runtime is reachable and advertises
 `orchestration.worker-auto-release.v1`, that `gh auth status` succeeds, and
-that the git checkout the skills are installed from is neither behind
-`origin/main` nor carrying commits or uncommitted skill changes not on it (so
-no one runs stale skills). With `--agent codex` it also verifies that Codex
+that the git checkout the skills are installed from is on branch `main` and is
+neither behind `origin/main` nor carrying commits or uncommitted skill changes
+not on it (so no one runs stale skills). With `--agent codex` it also verifies that Codex
 will not show its update prompt when a worker starts.
 If it exits non-zero, the sender is unknown, or `run-create` later fails with
 `no_active_sender_terminal`, **stop immediately** and report the `STOP:` lines
@@ -53,10 +53,22 @@ outside the sandbox; that is not a failed precondition.
 On success it prints `skill-checkout: <path>` and `orca-executable: <path>`;
 keep both. `<orca>` below is that absolute executable path: use it for every
 Orca command, in the checkpoint, and in every reservation, and never select
-the executable again (e.g. with `Get-Command`). Never update (pull, rebase, or
-check out) the skill checkout during the Run, even when merged PRs change
-skills: every worker must run the same skill version. Report it as stale at
-the end instead (step 17).
+the executable again (e.g. with `Get-Command`).
+
+Then, once, from the Coordinator's working repository, pin the skill checkout:
+
+```bash
+uv run --no-project <skill-dir>/scripts/local_main.py freeze
+```
+
+It prints `skill-checkout-frozen: <sha|no>` (`no` when the working repository
+is not the skill checkout's repository); record that value in the checkpoint.
+If it exits `1`, stop and report the `error:` line like any other failed
+precondition. Never update (pull, rebase, or check out) the skill checkout
+during the Run, even when merged PRs change skills: every worker must run the
+same skill version. Only `local_main.py freeze` and `finish` (step 17) may
+touch it, because Orca fast-forwards the local `main` each time it creates a
+worktree, which would otherwise swap the skills mid-Run.
 
 Then read Orca's version-matched compact guide and its DAG reference, once
 each: `<orca> skills get orchestration` and
@@ -417,9 +429,7 @@ with `--retry-of` only after the user confirms.
     merging, revalidate the affected PR. Dispatch any dependent Task whose
     dependency PRs are now all merged (see step 5).
 17. Mark only confirmed merged Issues as complete. Report the
-    outcome and PR URL for each Issue. If any merged PR belongs to the
-    repository of the `skill-checkout` path from step 0, ask the user to
-    update that checkout to the latest `origin/main`.
+    outcome and PR URL for each Issue.
     Remove this Run's reservation, if any (**Run completion** in
     [Waiting](references/waiting.md)).
     Then end the Run. ORCA has no command that closes a Run; the Run ends
@@ -447,6 +457,18 @@ with `--retry-of` only after the user confirms.
     - If either command exits non-zero or is rejected (e.g. by an approval
       policy), do not retry with another command (`rm -rf`, `Remove-Item`,
       ...); report the remaining paths to the user.
+
+    Read the checkpoint's `skill-checkout-frozen:` value before running
+    `cleanup_run.py`. As the Run's very last command (so the two commands
+    above still run the pinned skill version), from the Coordinator's
+    working repository, run
+    `uv run --no-project <skill-dir>/scripts/local_main.py finish --frozen <sha|no>`
+    with that value. It restores a pinned skill checkout to its branch and
+    fast-forwards the working repository's local default branch to
+    `origin`. Report its `local-main:` result (`updated`, `up-to-date`, or
+    `skipped (<reason>)`, stating the reason). If it exits non-zero, do not
+    fix it with other commands; report the `error:` line and the same
+    `finish` command to the user.
 
 ## Quota control
 
