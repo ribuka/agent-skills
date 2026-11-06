@@ -8,6 +8,7 @@ from __future__ import annotations
 import importlib.util
 import json
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
@@ -15,7 +16,8 @@ SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "list_workers.py"
 ORCA = "/opt/orca/bin/orca"
 
 
-def load_module():
+def load_module(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
+    monkeypatch.syspath_prepend(str(SCRIPT.parent))
     spec = importlib.util.spec_from_file_location("list_workers", SCRIPT)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -41,15 +43,16 @@ def page(workers: list[dict], cursor: str | None = None, **extra) -> tuple[int, 
 
 @pytest.fixture
 def lw(monkeypatch: pytest.MonkeyPatch):
-    module = load_module()
+    module = load_module(monkeypatch)
     calls: list[list[str]] = []
     module.pages = [page([worker(1)])]
 
-    def fake_run(cmd: list[str]) -> tuple[int, str]:
+    def fake_run(cmd: list[str], timeout_seconds: float) -> tuple[int, str]:
+        assert timeout_seconds == 60
         calls.append(cmd)
         return module.pages[len(calls) - 1]
 
-    monkeypatch.setattr(module, "run", fake_run)
+    monkeypatch.setattr(module, "run_stdout", fake_run)
     module.calls = calls
     return module
 

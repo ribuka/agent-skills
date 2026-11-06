@@ -25,26 +25,13 @@ from __future__ import annotations
 
 import argparse
 import json
-import shutil
-import subprocess
 import sys
+
+from orca_command import run_stdout
 
 TIMEOUT_SECONDS = 900
 EXIT = {"ready": 0, "failed": 1, "invalid": 2, "unobserved": 3, "mismatch": 4}
 OWN_FLAGS = ("--json", "--full")
-
-
-def run(cmd: list[str]) -> tuple[int, str]:
-    """Run a command and return its exit code and stdout (stderr is dropped)."""
-    exe = shutil.which(cmd[0])
-    if exe is None:
-        return 127, ""
-    try:
-        proc = subprocess.run([exe, *cmd[1:]], capture_output=True, text=True,
-                              encoding="utf-8", errors="replace", timeout=TIMEOUT_SECONDS)
-    except subprocess.TimeoutExpired:
-        return 124, ""
-    return proc.returncode, proc.stdout
 
 
 def option(args: list[str], name: str) -> str | None:
@@ -113,7 +100,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("pass worker-start arguments after `--`, without --json or --full")
     requested = {"agent": option(args, "--agent"), "model": option(args, "--model"),
                  "effort": option(args, "--effort")}
-    _, out = run([opts.orca, "orchestration", "worker-start", *args, "--json", "--full"])
+    _, out = run_stdout([opts.orca, "orchestration", "worker-start", *args, "--json", "--full"],
+                        TIMEOUT_SECONDS)
     kind, lines = classify(out, requested)
     print(f"start: {kind}")
     for line in lines:
