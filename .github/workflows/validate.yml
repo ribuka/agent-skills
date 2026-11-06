@@ -27,7 +27,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install pytest
-      - run: python -m pytest skills/quota-guard/tests skills/pr-cross-review/tests skills/orca-issue-coordinator/tests hooks/block-nonempty-dir-delete/tests
+      - run: python -m pytest skills/quota-guard/tests skills/pr-cross-review/tests skills/orca-issue-coordinator/tests skills/implement-review-merge/tests hooks/block-nonempty-dir-delete/tests
 
   lint:
     runs-on: ubuntu-latest
