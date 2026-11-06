@@ -9,6 +9,7 @@ disable-model-invocation: false
 - Carry a task through the full pull-request cycle. Stop and ask the user
 whenever a step below says so; never merge on a guess.
 - Respond in Japanese.
+- Follow **Token budget** (at the end) throughout, in every mode.
 
 ## Execution modes
 
@@ -60,7 +61,7 @@ whenever a step below says so; never merge on a guess.
 
 Implement the task, or address the review findings from step 6.
 
-Run the relevant tests, keeping their output small (see step 9).
+Run the relevant tests as **Token budget** below says.
 
 ### 3. Commit
 
@@ -128,10 +129,8 @@ everything passes.
   substance, re-run `pr-cross-review` as needed.
 - Re-reviews count toward the `MAX_REVIEWS` limit.
 
-Keep test and CI output small; never read full logs:
+Keep test and CI output small (see **Token budget**); never read full logs:
 
-- Run tests with options that narrow the output (e.g. pytest `-q --tb=short`),
-  and read only the information about failed tests.
 - Wait for CI with `gh pr checks <pr> --watch --interval 30` using only
   GitHub CLI's built-in features; never pipe to an external `jq` or write
   a custom CI polling loop.
@@ -154,3 +153,26 @@ Merge only when all of the following hold:
 - Tests and CI all pass on that synced state.
 
 Otherwise, do not merge; report what is blocking and ask the user.
+
+## Token budget
+
+These rules apply in every mode. Each tool call re-sends the whole
+conversation, so a large context multiplies the cost of every later step.
+Where skipping a step would lower quality, do it only when needed and keep
+its scope narrow.
+
+- **Broad investigation:** delegate it to a subagent and take back only a
+  summary. Before changing code, read the lines you change yourself.
+- **Files:** read only the lines you need. Do not re-read a file whose
+  content is still in the conversation.
+- **Tests:** while developing, run only the related tests (one file or
+  `-k`). Run the full pytest and E2E suites once, before pushing. Use
+  options that narrow the output (e.g. pytest `-q --tb=short`) and read only
+  the information about failed tests.
+- **Benchmarks:** while developing, run on small data with few repetitions.
+  Run once at the scale the acceptance criteria require, at the end.
+- **Images** (screenshots, E2E captures): do not load them into the
+  conversation by default. Only when the acceptance criteria require a
+  visual check, load downscaled images one at a time.
+- **Command output:** keep it short (`tail`, `head`, `-q`, filters). Do not
+  repeat the same short command in a tight loop; wait as step 9 describes.

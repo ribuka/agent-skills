@@ -218,6 +218,10 @@ with `--retry-of` only after the user confirms.
    **Orchestration worker / Implementation** mode.
    - Provide the Issue number, scope, acceptance criteria, and dependencies.
      Tell the worker to read the Issue itself.
+   - Do not restate general token-saving rules in the brief: the worker
+     loads them with `implement-review-merge` (its **Token budget**). Add
+     only limits specific to the Issue, such as the E2E suite or benchmark
+     scale it needs.
    - Require implementation, tests, commit, push, PR creation,
      and `pr-cross-review` with findings addressed. Codex workers use the
      Claude reviewer; Claude workers use the Codex reviewer, as that skill
