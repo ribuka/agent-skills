@@ -46,12 +46,19 @@ whenever a step below says so; never merge on a guess.
   - Report completion or failure using the ORCA Orchestration protocol.
   - Stop after the assigned phase; never proceed to the next phase
     without an explicit dispatch.
-  - **Resumed phase:** when the branch already has a pull request (a phase
-    retried after a stop), rebuild the state before continuing, as
-    Merge preparation does: `gh pr view <pr-number>` (without `--comments`),
-    `review_status.sh`, the latest review comment only, and
-    `git status` for changes left uncommitted. Continue with the remaining
-    work; do not redo finished steps.
+  - **Resumed phase:** when the worktree already holds work that neither
+    this conversation nor the brief accounts for (commits not on
+    `origin/main`, uncommitted changes, or a pull request; an
+    Implementation phase retried after a stop), the brief is the earlier
+    attempt's and lacks the Coordinator's handoff. Before any other step,
+    ask the Coordinator for the handoff with the ORCA Orchestration `ask`
+    command and end the turn; continue only after the answer wakes you. Then
+    rebuild the state, as Merge preparation does:
+    `gh pr view <pr-number>` (without `--comments`), `review_status.sh`, the
+    latest review comment only, and `git status` for changes left
+    uncommitted. Use the larger of the handed-off and printed review
+    counts. Continue with the work left in the handoff; do not redo
+    finished steps.
   - **Quota pause:** when a tool call is denied with a reason that the
     5-hour quota is `PAUSED_QUOTA`, stop the phase at the nearest safe
     boundary (commit and push finished changes, or let a running review

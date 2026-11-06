@@ -579,3 +579,34 @@ def test_workers_never_create_reservations_at_quota_pause() -> None:
     worker = " ".join((SKILL_DIR.parent / "implement-review-merge" / "SKILL.md")
                       .read_text(encoding="utf-8").split())
     assert "retry, or schedule a wake-up; the Coordinator resumes the work" in worker
+
+
+def test_usage_limit_worker_is_retried_by_fresh_worker() -> None:
+    skill = " ".join(SKILL_MD.read_text(encoding="utf-8").split())
+    reference = " ".join(QUOTA_PAUSE.read_text(encoding="utf-8").split())
+    waiting = " ".join(WAITING.read_text(encoding="utf-8").split())
+    assert "`failureKind=usageLimitReached`" in skill
+    assert "## Worker stopped by the usage limit" in reference
+    assert "## Handoff to a retried worker" in reference
+    for text in ("worker-stop --dispatch <dispatch_id>",
+                 "recovery-and-cleanup.md",
+                 "Treat the dispatch as stopped only on a confirmed stopped result",
+                 "On `stop_unknown`",
+                 "silence or `unverifiable` liveness alone still never authorizes a stop",
+                 "including every `usageLimitReached` worker",
+                 "start it only after its old dispatch has settled",
+                 "review count (the larger of the recorded and printed counts)",
+                 "open findings from the latest review",
+                 "orchestration reply --id <message-id>",
+                 "or only uncommitted changes",
+                 "A stopped Merge preparation worker is not retried with `--retry-of`",
+                 "with that handoff as its `--spec`",
+                 "Never run two workers on one Task or PR"):
+        assert text in reference
+    assert ("without `worker_done` and without a `usageLimitReached` escalation"
+            in reference)
+    assert "`failureKind=usageLimitReached`" in waiting
+    assert "Do not steer it with `send`" in waiting
+    assert "**Handoff to a retried worker**" in waiting
+    # Silence or unverifiable liveness alone still never stops a worker.
+    assert "`unverifiable` liveness alone is never a reason to stop" in waiting
