@@ -52,10 +52,8 @@ whenever a step below says so; never merge on a guess.
     Implementation phase retried after a stop), the brief is the earlier
     attempt's and lacks the Coordinator's handoff. Before any other step,
     ask the Coordinator for the handoff with the ORCA Orchestration `ask`
-    command and end the turn; continue only after the answer wakes you. A
-    retried Merge preparation does not ask: its brief already is the
-    handoff, and it rebuilds the state as that phase says. Then rebuild the
-    state, as Merge preparation does:
+    command and end the turn; continue only after the answer wakes you. Then
+    rebuild the state, as Merge preparation does:
     `gh pr view <pr-number>` (without `--comments`), `review_status.sh`, the
     latest review comment only, and `git status` for changes left
     uncommitted. Use the larger of the handed-off and printed review

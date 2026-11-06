@@ -599,7 +599,9 @@ def test_usage_limit_worker_is_retried_by_fresh_worker() -> None:
                  "open findings from the latest review",
                  "orchestration reply --id <message-id>",
                  "or only uncommitted changes",
-                 "A retried Merge preparation worker does not ask"):
+                 "A stopped Merge preparation worker is not retried with `--retry-of`",
+                 "with that handoff as its `--spec`",
+                 "Never run two workers on one Task or PR"):
         assert text in reference
     assert ("without `worker_done` and without a `usageLimitReached` escalation"
             in reference)

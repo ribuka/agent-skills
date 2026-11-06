@@ -78,10 +78,9 @@ worker** method:
 A worker started with `--retry-of` gets the Task's original brief only, so
 a retried Implementation worker asks for the handoff (`question`) before it
 does anything else, whether the earlier attempt left a PR, commits, or only
-uncommitted changes. A retried Merge preparation worker does not ask: its
-`--spec` handoff is its brief, and it rebuilds the rest from the branch and
-PR. Before
-starting it, confirm the state from the branch and PR, not from the
+uncommitted changes. A stopped Merge preparation worker is not retried with
+`--retry-of`: its original brief may grant what the earlier attempt already
+used (e.g. one extra review). Before starting either, confirm the state from the branch and PR, not from the
 checkpoint alone: the PR (`gh pr list --head <branch> --state all`), its
 review count and latest review (`review_status.sh` from `pr-cross-review`,
 then that comment only), and the worktree (`git -C <worktree> status
@@ -94,7 +93,8 @@ that handoff in the checkpoint. It holds:
 - The work left in the phase, any blockers, and any user approvals (an
   extra review, merging a head as is).
 
-When its `question` arrives, reply with the recorded handoff
+For an Implementation worker, when its `question` arrives, reply with the
+recorded handoff
 (`<orca> orchestration reply --id <message-id> --body "<handoff>"`). Do not
 send the handoff with `send` instead: it is not read before the worker's
 first turn ends.
@@ -182,16 +182,20 @@ phases or duplicating dispatches:
 - Any other stopped worker (the **fresh worker** method, including every
   `usageLimitReached` worker, or a terminal that is no longer available):
   start it only after its old dispatch has settled (`worker_done`, or a
-  confirmed `worker-stop`). Prepare the handoff as **Handoff to a retried
-  worker** says, then retry the same failed Task with one fresh worker in
-  the existing worktree, with `start_worker.py` and
-  `--task <task_id> --retry-of <dispatch_id> --worktree branch:<branch> --agent <agent> --model <model> --effort <effort>`
-  (the phase's model and effort from `SKILL.md` step 0). Do not create a new
-  Task with `--spec`: the failed Task would stay failed and block the Tasks
-  that depend on it. The retried Task keeps its brief; the new worker
-  asks for the handoff, then rebuilds the state (PR, review count, latest
-  review, uncommitted changes) from its branch and PR, as
-  `implement-review-merge` says for a resumed phase. Never run two workers
-  on one Task.
+  confirmed `worker-stop`), and prepare the handoff as **Handoff to a
+  retried worker** says.
+  - **Merge preparation:** start a new merge-preparation worker as
+    `SKILL.md` step 13 says, with that handoff as its `--spec`. No Task
+    depends on a merge-preparation Task, so its failed Task blocks nothing.
+  - **Implementation:** retry the same failed Task with one fresh worker in
+    the existing worktree, with `start_worker.py` and
+    `--task <task_id> --retry-of <dispatch_id> --worktree branch:<branch> --agent <agent> --model <model> --effort <effort>`
+    (the phase's model and effort from `SKILL.md` step 0). Do not create a
+    new Task with `--spec`: the failed Task would stay failed and block the
+    Tasks that depend on it. The retried Task keeps its brief; the new
+    worker asks for the handoff, then rebuilds the state (PR, review count,
+    latest review, uncommitted changes) from its branch and PR, as
+    `implement-review-merge` says for a resumed phase.
+  - Never run two workers on one Task or PR.
 - Then continue dispatching ready Tasks, reserve the earliest remaining
   `wake-at:` time again, and wait as in [Waiting](waiting.md).
