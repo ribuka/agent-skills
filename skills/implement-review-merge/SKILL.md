@@ -42,7 +42,10 @@ whenever a step below says so; never merge on a guess.
     approved merging that head without a further review.
     Report the head before and after the sync (full SHAs), test/CI results,
     review status, total review count, unresolved must findings, any
-    blockers, and `follow-up candidates:` as in Implementation. Do not merge.
+    blockers, and `follow-up candidates:` as in Implementation. Confirm CI
+    completion (success or failure) on the synced head before `worker_done`;
+    never hand off with `CI pending`. Report monitor-error as a blocker.
+    Do not merge.
 - In worker mode:
   - The Coordinator alone decides when and in what order to merge PRs.
   - Report blockers to the Coordinator instead of asking the user directly.
@@ -180,6 +183,18 @@ everything passes.
 
 Keep test and CI output small (see **Token budget**); never read full logs:
 
+- After every push, before starting the watcher, run:
+  `uv run --no-project ~/.agents/skills/implement-review-merge/scripts/wait_ci_registration.py --pr <pr-number> --head <full-sha>`.
+  It checks the expected head and a nonempty check set every 30 seconds.
+  `CI_REGISTRATION_TIMEOUT_SECONDS` in this skill's `config.conf` is a
+  positive integer, default `300` when the file or key is absent.
+  Exit `0` prints `ci-registration: registered <sha>`: start the watcher.
+  Exit `2` prints `ci-registration: timeout after <seconds>s (head <sha>)`:
+  report `monitor-error: no checks reported on <sha> after <seconds>s`.
+  Exit `1` prints `error: <reason>` (invalid settings or gh failure/missing):
+  report `monitor-error: <reason>`. In worker mode report these blockers to
+  the Coordinator. Use this registration script in Standalone mode too.
+  Registration polling is allowed only inside this script.
 - Wait for CI with `gh pr checks <pr> --watch --interval 30` using only
   GitHub CLI's built-in features; never pipe to an external `jq` or write
   a custom CI polling loop.

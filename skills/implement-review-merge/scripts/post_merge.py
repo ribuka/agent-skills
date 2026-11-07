@@ -7,25 +7,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+from config import read_config
+
 SKILL_DIR = Path(__file__).resolve().parents[1]
-
-
-def sync_enabled(path: Path) -> bool:
-    """Resolve the personal setting, defaulting to enabled when absent."""
-    if not path.exists():
-        return True
-    values = {}
-    for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-        line = raw.split("#", 1)[0].strip()
-        if not line:
-            continue
-        key, sep, value = line.partition("=")
-        if not sep or key.strip() != "SYNC_LOCAL_MAIN_AFTER_MERGE":
-            raise ValueError(f"invalid setting at {path}:{number}")
-        if value.strip() not in {"true", "false"}:
-            raise ValueError(f"SYNC_LOCAL_MAIN_AFTER_MERGE must be true or false at {path}:{number}")
-        values[key.strip()] = value.strip()
-    return values.get("SYNC_LOCAL_MAIN_AFTER_MERGE", "true") == "true"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -39,7 +23,7 @@ def main(argv: list[str] | None = None) -> int:
         print("local-main-sync: skipped (requires standalone and confirmed MERGED)")
         return 0
     try:
-        if not sync_enabled(SKILL_DIR / "config.conf"):
+        if not read_config(SKILL_DIR / "config.conf")["SYNC_LOCAL_MAIN_AFTER_MERGE"]:
             print("local-main-sync: skipped (disabled)")
             return 0
         script = Path.home() / ".agents/skills/fast-forward-local-branch/scripts/fast_forward.py"

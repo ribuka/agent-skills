@@ -323,7 +323,9 @@ Use these checks in steps 12 and 14, against the current PR head:
   `git merge-base --is-ancestor origin/main origin/<branch>` exits `0`.
 - All CI checks have passed on the current head commit
   (`gh pr checks <pr>`). Check all CI even when no required checks are
-  configured. Exit `8` means pending; inspect any other non-zero result
+  configured. Exit `8` or an empty check set means pending: follow
+  **Pending CI** in [Waiting](references/waiting.md) without asking the user.
+  Inspect any other non-zero result
   and report monitoring errors as blockers instead of treating them as
   pending. An empty check set is not proof of success.
 - `review_status.sh` reports `review-latest-findings: must=0 optional=<n>`,
@@ -347,6 +349,8 @@ Use these checks in steps 12 and 14, against the current PR head:
     have nothing to do:
     - If CI is empty, pending, or has a monitoring error, do not take
       this shortcut.
+      An empty check set follows **Pending CI** in
+      [Waiting](references/waiting.md), just like exit `8`; do not ask the user.
     - **Unreviewed head:** while `<count>` in `review-count: <count>/<max>`
       is below `<max>`, do not take this shortcut: run step 13, and state
       the reviewed commit and the head in its handoff. Once the limit is
@@ -419,7 +423,8 @@ Use these checks in steps 12 and 14, against the current PR head:
       block the PR and ask the user.
     - Required tests have passed on the current PR commit.
     - GitHub merge requirements are satisfied.
-    - If CI checks are pending, follow **Pending CI** in
+    - If CI checks are pending or the current head has an empty check set,
+      treat both as exit `8` without asking the user and follow **Pending CI** in
       [Waiting](references/waiting.md) in both Claude Code and Codex: record
       the PR, head, and 30-minute deadline, reserve one wake-up at the
       earlier of 15 minutes from now and the deadline, end the turn, and

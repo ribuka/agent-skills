@@ -75,8 +75,8 @@ def test_merge_prep_skipped_when_pr_is_already_ready() -> None:
             assert command not in step
     assert "exits `0`" in common
     assert "even when no required checks" in common
-    assert "Exit `8` means pending" in common
-    assert "inspect any other non-zero result" in common
+    assert "Exit `8` or an empty check set means pending" in common
+    assert "Inspect any other non-zero result" in common
     assert "report monitoring errors as blockers" in common
     assert "instead of treating them as\n  pending" in common
     assert "An empty check set is not proof of success" in common
@@ -536,6 +536,16 @@ def test_ci_pending_uses_one_shot_reservation_with_deadline() -> None:
     assert "never reset the deadline" in ci
     assert "`monitor-error: CI deadline exceeded`" in ci
     assert "an empty check set is not success" in ci
+    assert "`monitor-error: no checks reported`" in ci
+    assert "Exit `8` or an empty check set" in ci
+    assert "do not ask the user" in ci
+    assert "transition between them never resets it" in ci
+    common = " ".join(skill.split("### Common verification conditions", 1)[1]
+                      .split("### Merge sequence", 1)[0].split())
+    assert "Exit `8` or an empty check set means pending" in common
+    shortcut = " ".join(skill.split("12. Select", 1)[1].split("13. When", 1)[0].split())
+    assert "An empty check set follows **Pending CI**" in shortcut
+    assert "empty check set" in verify
 
 
 def test_review_retry_shares_the_runs_reservation() -> None:

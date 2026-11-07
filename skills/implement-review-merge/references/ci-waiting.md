@@ -1,6 +1,25 @@
 # Wait for CI
 
-Use GitHub CLI's built-in watcher:
+After every push, first wait for check registration on the pushed full SHA:
+
+```bash
+uv run --no-project ~/.agents/skills/implement-review-merge/scripts/wait_ci_registration.py --pr <pr-number> --head <full-sha>
+```
+
+The script checks every 30 seconds, bounded by this skill's
+`CI_REGISTRATION_TIMEOUT_SECONDS` setting (default 300 seconds).
+Exit `0` (`ci-registration: registered <sha>`) allows the watcher below.
+Exit `2` (`ci-registration: timeout after <seconds>s (head <sha>)`) means
+report `monitor-error: no checks reported on <sha> after <seconds>s`.
+Exit `1` (`error: <reason>`) means report `monitor-error: <reason>`.
+In worker mode report the blocker to the Coordinator. Only this script may
+poll registration; never build an agent-side polling loop.
+Apply the same procedure in Standalone mode. In Orchestration worker /
+Merge preparation, confirm CI completion (success or failure) on the synced
+head before `worker_done`; never hand off with `CI pending`. A monitor-error
+is a blocker.
+
+After registration, use GitHub CLI's built-in watcher:
 
 ```bash
 gh pr checks <pr> --watch --interval 30
