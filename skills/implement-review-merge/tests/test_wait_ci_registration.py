@@ -10,6 +10,7 @@ import pytest
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 HEAD = "a" * 40
+GH = "C:/shim/gh.cmd"
 
 
 @pytest.fixture
@@ -19,6 +20,7 @@ def module(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> ModuleType:
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     monkeypatch.setattr(mod, "SKILL_DIR", tmp_path)
+    monkeypatch.setattr(mod.shutil, "which", lambda name: GH if name == "gh" else None)
     clock = [0.0]
     monkeypatch.setattr(mod.time, "monotonic", lambda: clock[0])
 
@@ -42,7 +44,7 @@ def test_registration(
     seen = []
 
     def gh(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess:
-        assert cmd == ["gh", "pr", "view", "135", "--json", "headRefOid,statusCheckRollup"]
+        assert cmd == [GH, "pr", "view", "135", "--json", "headRefOid,statusCheckRollup"]
         assert kwargs["timeout"] > 0
         head, checks = responses[min(len(seen), len(responses) - 1)]
         seen.append(cmd)
@@ -72,6 +74,18 @@ def test_gh_errors(
     monkeypatch.setattr(module.subprocess, "run", gh)
     assert module.main(["--pr", "135", "--head", HEAD]) == 1
     assert capsys.readouterr().out.startswith("error: ")
+
+
+def test_gh_not_found(
+    module: ModuleType, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    def forbidden(*args: object, **kwargs: object) -> None:
+        pytest.fail("missing gh must not invoke subprocess.run")
+
+    monkeypatch.setattr(module.shutil, "which", lambda name: None)
+    monkeypatch.setattr(module.subprocess, "run", forbidden)
+    assert module.main(["--pr", "135", "--head", HEAD]) == 1
+    assert capsys.readouterr().out.strip() == "error: gh: command not found"
 
 
 def test_gh_cannot_exceed_registration_deadline(

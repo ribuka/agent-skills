@@ -32,6 +32,7 @@
 - Always use `uv run`.
 - NEVER use `python -m`, `Set-Location` or one-liners and here-string in powershell.
 - When working python coding, read `.agents/docs/python.md` and follow it.
+- When running an external command with `subprocess`, resolve it with `shutil.which` and pass the resolved path; a bare name finds only `.exe` on Windows and skips `.cmd` shims earlier on `PATH`.
 
 ### Verification commands
 
