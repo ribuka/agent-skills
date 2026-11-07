@@ -63,7 +63,7 @@ def test_images_and_benchmarks_keep_quality_exceptions() -> None:
     assert "one at a time" in images
     benchmarks = budget.split("**Benchmarks:**", 1)[1].split("\n- **", 1)[0]
     assert "small data" in benchmarks
-    assert "acceptance criteria require" in benchmarks
+    assert "acceptance criteria or a bug's reproduction" in benchmarks
 
 
 def test_test_output_rule_lives_only_in_token_budget() -> None:
@@ -153,3 +153,36 @@ def test_followup_candidates_are_reported_in_all_modes() -> None:
     assert modes.count("`follow-up candidates:`") == 2
     step5 = skill.split("### 5.", 1)[1].split("### 6.", 1)[0]
     assert "For each optional suggestion not adopted, explain why in the PR reply" in step5
+
+
+def test_worker_mode_does_not_add_verification_environments() -> None:
+    skill = " ".join(SKILL_MD.read_text(encoding="utf-8").split())
+    worker = skill.split("- In worker mode:", 1)[1].split("- Running inside ORCA", 1)[0]
+    for phrase in ("[Verification](references/verification.md)",
+                   "Verify with the method the repository's docs",
+                   "without one, use the repository's tests and a check you actually ran locally",
+                   "Never add, as a criterion, verification in an environment or with data the Issue does not require",
+                   "background, current state, or measurement notes is not a criterion",
+                   "only the Issue's tasks and acceptance criteria are",
+                   "Still report a missing behavior the Issue's goal clearly requires",
+                   "a missing behavior is not an added criterion",
+                   "PR body's test section"):
+        assert phrase in worker
+
+
+def test_bug_fixes_are_verified_under_reproduction_conditions() -> None:
+    skill = " ".join(SKILL_MD.read_text(encoding="utf-8").split())
+    implement = skill.split("### 2. Implement", 1)[1].split("### 3. Commit", 1)[0]
+    for phrase in ("fixes a bug and states its reproduction conditions",
+                   "confirm the fix under those conditions once at the end",
+                   "synthesize data the Issue describes",
+                   "report only an environment you cannot prepare, with the reason"):
+        assert phrase in implement
+    ref = " ".join((SKILL_DIR / "references/verification.md").read_text(encoding="utf-8").split())
+    for phrase in ("Confirm the fix under those conditions",
+                   "create it and verify with it", "under `tmp/`", "delete it when done",
+                   "run on small data", "confirm once under the reproduction conditions at the end",
+                   "Report only the conditions you cannot prepare locally",
+                   "is context, not a criterion",
+                   "A Coordinator's brief does not lower the Issue's requirements"):
+        assert phrase in ref

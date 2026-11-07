@@ -270,8 +270,10 @@ only after the user confirms.
      Tell the worker to read the Issue itself.
    - Do not restate general token-saving rules in the brief: the worker
      loads them with `implement-review-merge` (its **Token budget**). Add
-     only limits specific to the Issue, such as the E2E suite or benchmark
-     scale it needs.
+     only what the Issue requires, such as the E2E suite or the benchmark
+     scale it needs. Never write a smaller scale than the Issue requires or
+     any instruction that relaxes the Issue's conditions; running small
+     while developing is left to the worker's **Token budget**.
    - Require implementation, tests, commit, push, PR creation,
      and `pr-cross-review` with must findings addressed. Codex workers use the
      Claude reviewer; Claude workers use the Codex reviewer, as that skill
@@ -340,8 +342,8 @@ only after the user confirms.
 Use these checks in steps 12 and 14, against the current PR head:
 
 - The latest worker handoff's `unmet/unverified acceptance criteria:` is
-  `none`, or the split in **Unmet or unverified acceptance criteria** is
-  done right before the merge (step 15). A missing field is not
+  `none`, or the draft comment in **Unmet or unverified acceptance
+  criteria** is written right before the merge (step 15). A missing field is not
   `none`: ask the worker for it before proceeding.
 - The PR branch includes the latest `origin/main`: after
   `git fetch --prune origin`,
@@ -470,8 +472,8 @@ Use these checks in steps 12 and 14, against the current PR head:
       Issue for a test that failed this way more than once.
 15. Merge the PR yourself only when all conditions are met and the quota
     `check` immediately before the merge is READY. When the latest handoff's
-    `unmet/unverified acceptance criteria:` is not `none`, first split the
-    remaining criteria as **Unmet or unverified acceptance criteria** says.
+    `unmet/unverified acceptance criteria:` is not `none`, first write the
+    draft comment as **Unmet or unverified acceptance criteria** says.
     Use only this command, with `<sha>` equal to the full `headRefOid`
     verified in step 14:
 
@@ -494,9 +496,11 @@ Use these checks in steps 12 and 14, against the current PR head:
     merging, revalidate the affected PR. Dispatch any dependent Task whose
     dependency PRs are now all merged, and any ordered Task now allowed
     (see step 5).
-    Report each merge to the user; for a PR merged with a split (**Unmet or
-    unverified acceptance criteria**), also list the original Issue (closed
-    by the merge), the split-off Issue, and the remaining criteria.
+    Report each merge to the user; for a PR merged with remaining criteria
+    (**Unmet or unverified acceptance criteria**), also list it under
+    **起票候補** with the PR, the original Issue (closed by the merge), the
+    summary, the reasons for proposing an Issue, and the draft comment URL.
+    Do not ask whether to file it.
 17. Mark only confirmed merged Issues as complete. Report the
     outcome and PR URL for each Issue.
     List any open Issues outside the fixed set that you noticed during the
@@ -504,9 +508,12 @@ Use these checks in steps 12 and 14, against the current PR head:
     Collect each Issue handoff's `follow-up candidates:` under **起票候補**,
     with each suggestion's summary and review comment URL. Do not create
     Issues; the user decides which candidates to file.
-    List every PR merged with a split (**Unmet or unverified acceptance
-    criteria**): the PR, the original Issue and its state (closed by the
-    merge), the split-off Issue, and the remaining criteria with reasons.
+    Alongside them under **起票候補**, list every PR merged with remaining
+    criteria (**Unmet or unverified acceptance criteria**): the PR, the
+    original Issue and its state (closed by the merge), the summary, the
+    reasons for proposing an Issue, and the draft comment URL. Do not ask
+    whether to file them; file only what the user instructs, when
+    instructed.
     Remove this Run's reservation, if any (**Run completion** in
     [Waiting](references/waiting.md)).
     Then end the Run. ORCA has no command that closes a Run; the Run ends
@@ -625,28 +632,34 @@ with the Task; no terminal handle is needed.
   Issue bodies to discover missing criteria. If the field is missing, ask
   the worker to supply it; never infer `none` from success or a clean review.
 - Use the latest of the Implementation and Merge preparation handoffs.
-  When its field is not `none`, do not ask the user. Once every other merge
-  condition holds (sync, review, tests, CI), split the remaining criteria
-  right before the merge (step 15), in this order:
-  1. Create a split-off Issue whose body lists each remaining criterion,
-     its reason, and references to the original Issue and the PR. Do not
-     add it to the Run or dispatch it; start it only on the user's explicit
-     instruction.
-  2. Comment on the original Issue that the remaining acceptance criteria
-     moved to `#<split-off>`. Keep `Closes #<issue>` in the PR body so the
-     merge closes the original Issue; do not change it to `Refs`.
-  3. Record the split-off Issue's number and URL, the criteria, the
-     reasons, and the merge-target head (full SHA) in the Run checkpoint,
-     then merge.
-  - If creating the Issue or the comment cannot be confirmed, do not
-    merge; handle the failure as a blocker.
-- On resume, reuse a split-off Issue recorded in the checkpoint. If none
-  is recorded and it is unknown whether creation succeeded, search for an
-  Issue that references both the original Issue and the PR before creating
-  one. Never create a duplicate.
-- Never decide on your own that a criterion is unnecessary, and never close
-  the original Issue or merge without a split-off Issue for the remaining
-  criteria.
+  When its field is not `none`, do not ask the user and do not stop the
+  Run. Once every other merge condition holds (sync, review, tests, CI),
+  right before the merge (step 15):
+  1. Write one draft comment on the original Issue in this format:
+
+     ```markdown
+     ## 起票候補（下書き）
+
+     PR #<pr> でマージ。次の受け入れ条件が残っています。起票はしていません。
+
+     - **概要**：<残った作業を 1〜2 文で>
+     - **起票を提案した理由**：<残った各条件と、満たせなかった・確かめられなかった理由>
+     ```
+
+  2. Record the comment URL, the criteria, the reasons, and the
+     merge-target head (full SHA) in the Run checkpoint, then merge. Keep
+     `Closes #<issue>` in the PR body so the merge closes the original
+     Issue; do not change it to `Refs`.
+  - If the comment cannot be confirmed, do not merge; handle the failure
+    as a blocker.
+- Never create an Issue for the remaining criteria, and never let a worker
+  create one. File an Issue only when the user instructs it, at that time.
+- On resume, reuse the comment recorded in the checkpoint. If none is
+  recorded and it is unknown whether it was written, check the original
+  Issue for a `## 起票候補（下書き）` comment that references the same PR
+  before writing one. Never write a duplicate.
+- Never decide on your own that a criterion is unnecessary, and never merge
+  without the draft comment for the remaining criteria.
 
 ## Asking the user
 

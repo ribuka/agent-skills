@@ -278,7 +278,7 @@ def test_worker_questions_that_change_the_issue_go_to_the_user() -> None:
     assert "acceptance criteria is never routine" in " ".join(skill.split())
 
 
-def test_unmet_criteria_are_split_off_before_merge_without_asking() -> None:
+def test_unmet_criteria_leave_a_draft_comment_before_merge_without_asking() -> None:
     skill = " ".join(SKILL_MD.read_text(encoding="utf-8").split())
     section = skill.split("### Unmet or unverified acceptance criteria", 1)[1].split("## Asking the user", 1)[0]
     for phrase in ("every Implementation or Merge preparation `worker_done`",
@@ -286,40 +286,68 @@ def test_unmet_criteria_are_split_off_before_merge_without_asking() -> None:
                    "do not open Issue bodies", "field is missing, ask the worker",
                    "never infer `none` from success or a clean review",
                    "latest of the Implementation and Merge preparation handoffs",
-                   "do not ask the user", "right before the merge (step 15)",
-                   "Create a split-off Issue",
-                   "its reason, and references to the original Issue and the PR",
-                   "Do not add it to the Run or dispatch it",
-                   "Comment on the original Issue", "Keep `Closes #<issue>`",
-                   "do not change it to `Refs`", "merge-target head (full SHA)",
-                   "in the Run checkpoint, then merge", "cannot be confirmed, do not merge",
-                   "reuse a split-off Issue recorded in the checkpoint",
-                   "Never create a duplicate",
+                   "do not ask the user and do not stop the Run",
+                   "right before the merge (step 15)",
+                   "Write one draft comment on the original Issue",
+                   "## 起票候補（下書き）", "PR #<pr> でマージ", "起票はしていません",
+                   "- **概要**：", "- **起票を提案した理由**：",
+                   "Record the comment URL, the criteria, the reasons, and the merge-target head (full SHA)",
+                   "in the Run checkpoint, then merge", "Keep `Closes #<issue>`",
+                   "do not change it to `Refs`",
+                   "comment cannot be confirmed, do not merge",
+                   "Never create an Issue for the remaining criteria",
+                   "never let a worker create one",
+                   "File an Issue only when the user instructs it",
+                   "reuse the comment recorded in the checkpoint",
+                   "references the same PR before writing one",
+                   "Never write a duplicate",
                    "Never decide on your own that a criterion is unnecessary",
-                   "never close the original Issue or merge without a split-off Issue"):
+                   "never merge without the draft comment"):
         assert phrase in section
     for phrase in ("Hold the PR", "approved head", "Provide the missing value",
-                   "Ask the user before merging"):
+                   "Ask the user before merging", "Create a split"):
         assert phrase not in section
     common = skill.split("### Common verification conditions", 1)[1].split("### Merge sequence", 1)[0]
-    assert "`unmet/unverified acceptance criteria:` is `none`, or the split" in common
+    assert "`unmet/unverified acceptance criteria:` is `none`, or the draft comment" in common
     assert "missing field is not `none`" in common
     assert "user explicitly approved" not in common
     handoff = skill.split("13. When a worker slot is free", 1)[1].split("14. Independently", 1)[0]
     assert "`unmet/unverified acceptance criteria:` from the Implementation handoff." in handoff
     assert "user decision" not in handoff
     step15 = skill.split("15. Merge the PR yourself", 1)[1].split("16. ", 1)[0]
-    assert "first split the remaining criteria" in step15
+    assert "first write the draft comment" in step15
     step16 = skill.split("16. After each merge", 1)[1].split("17. ", 1)[0]
     step17 = skill.split("17. Mark only confirmed", 1)[1].split("## Quota control", 1)[0]
     for step in (step16, step17):
-        assert "the split-off Issue, and the remaining criteria" in step
+        assert "**起票候補**" in step
+        assert "the summary, the reasons for proposing an Issue, and the draft comment URL" in step
+        assert "Do not ask whether to file" in step
     assert "closed by the merge" in step17
+    assert "file only what the user instructs" in step17
     waiting = " ".join(WAITING.read_text(encoding="utf-8").split())
     assert "**Unmet or unverified acceptance criteria** before any merge decision" in waiting
     assert "`unmet/unverified acceptance criteria:` with reasons" in waiting
-    assert "any split-off Issue (number and URL, criteria, reasons, and merge-target head" in waiting
+    assert ("any draft comment for remaining criteria (comment URL, criteria, reasons, "
+            "and merge-target head as a full SHA)") in waiting
     assert "user decision" not in waiting
+
+
+def test_brief_never_relaxes_the_issue_scale() -> None:
+    skill = " ".join(SKILL_MD.read_text(encoding="utf-8").split())
+    step7 = skill.split("7. Instruct each worker", 1)[1].split("8. ", 1)[0]
+    for phrase in ("Add only what the Issue requires, such as the E2E suite or the benchmark scale it needs",
+                   "Never write a smaller scale than the Issue requires",
+                   "any instruction that relaxes the Issue's conditions",
+                   "left to the worker's **Token budget**"):
+        assert phrase in step7
+    assert "limits specific to the Issue" not in step7
+
+
+def test_no_split_off_wording_remains() -> None:
+    skills = SKILL_MD.parents[1]
+    for path in skills.rglob("*"):
+        if path.is_file() and path.suffix in {".md", ".py"}:
+            assert "split" + "-off" not in path.read_text(encoding="utf-8").lower(), path
 
 
 def test_waiting_for_the_user_keeps_independent_tasks_going() -> None:
