@@ -39,17 +39,28 @@ SKILL_DIR = Path(__file__).resolve().parents[1]
 MAIN_REFSPEC = "+refs/heads/main:refs/remotes/origin/main"
 
 
-def run(cmd: list[str]) -> tuple[int, str]:
-    """Run a command and return its exit code and combined output."""
+def run_split(cmd: list[str]) -> tuple[int, str, str]:
+    """Run a command and return its exit code, stdout, and stderr (failure reasons in stderr)."""
     exe = shutil.which(cmd[0])
     if exe is None:
-        return 127, f"{cmd[0]}: command not found"
+        return 127, "", f"{cmd[0]}: command not found"
     try:
         proc = subprocess.run([exe, *cmd[1:]], capture_output=True, text=True,
                               encoding="utf-8", errors="replace", timeout=TIMEOUT_SECONDS)
     except subprocess.TimeoutExpired:
-        return 124, f"{' '.join(cmd)}: timed out after {TIMEOUT_SECONDS}s"
-    return proc.returncode, (proc.stdout + proc.stderr).strip()
+        return 124, "", f"{' '.join(cmd)}: timed out after {TIMEOUT_SECONDS}s"
+    return proc.returncode, proc.stdout, proc.stderr
+
+
+def join_output(stdout: str, stderr: str) -> str:
+    """Join the non-empty stripped stdout and stderr with a newline."""
+    return "\n".join(part for part in (stdout.strip(), stderr.strip()) if part)
+
+
+def run(cmd: list[str]) -> tuple[int, str]:
+    """Run a command and return its exit code and combined output."""
+    code, stdout, stderr = run_split(cmd)
+    return code, join_output(stdout, stderr)
 
 
 def check_orca_terminal() -> str | None:
@@ -69,15 +80,20 @@ def resolve_orca(selected: str) -> tuple[str | None, str | None]:
 
 
 def check_orca_runtime(orca: str) -> str | None:
-    code, out = run([orca, "status", "--json"])
+    # Parse stdout only: an Orca terminal may inherit a stale crashpad pipe, so stderr can
+    # carry an Electron warning even when the command succeeds.
+    code, stdout, stderr = run_split([orca, "status", "--json"])
     if code != 0:
-        return f"`{orca} status --json` failed (exit {code}): {out}"
+        return f"`{orca} status --json` failed (exit {code}): {join_output(stdout, stderr)}"
     try:
-        runtime = json.loads(out)["result"]["runtime"]
+        runtime = json.loads(stdout)["result"]["runtime"]
         reachable = bool(runtime["reachable"])
         capabilities = runtime.get("capabilities", [])
     except (ValueError, KeyError, TypeError, AttributeError):
-        return f"`{orca} status --json` returned unexpected output: {out[:200]}"
+        message = f"`{orca} status --json` returned unexpected output: {stdout.strip()[:200]}"
+        if stderr.strip():
+            message += f"; stderr: {stderr.strip()[:200]}"
+        return message
     if not reachable:
         return f"the Orca runtime is not reachable (`{orca} status --json`)"
     if not isinstance(capabilities, list) or AUTO_RELEASE_CAPABILITY not in capabilities:
