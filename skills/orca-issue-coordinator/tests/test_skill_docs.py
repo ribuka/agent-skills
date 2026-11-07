@@ -731,6 +731,7 @@ def test_issue_set_is_fixed_planned_and_restored_from_checkpoint() -> None:
     inspect = " ".join(skill.split("2. Inspect", 1)[1].split("3. Identify", 1)[0].split())
     assert "Fix the Run's Issue set at this step" in inspect
     assert 'resolve even "all open Issues" to the Issues open now' in inspect
+    assert "when saving the Run checkpoint in step 4" in inspect
     plan = " ".join(skill.split("6. Before", 1)[1].split("## 2.", 1)[0].split())
     assert "the fixed Issue set by number" in plan
     waiting = WAITING.read_text(encoding="utf-8")

@@ -171,8 +171,9 @@ only after the user confirms.
    that. Step 3 gives the only exception. Avoid duplicating or overwriting
    existing changes.
    Fix the Run's Issue set at this step: resolve even "all open Issues" to
-   the Issues open now. Record it as `issues: #<n> #<n> ...` in the Run
-   checkpoint; do not expand it by listing Issues again after resuming.
+   the Issues open now. Record it as `issues: #<n> #<n> ...` when saving the
+   Run checkpoint in step 4; do not expand it by listing Issues again after
+   resuming.
 3. Identify dependencies, overlapping areas, and potential conflicts from that
    summary. Open an Issue body only when a dependency or an overlap involving
    that Issue cannot be decided otherwise, and only for the Issues involved
