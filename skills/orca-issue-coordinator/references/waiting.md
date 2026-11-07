@@ -27,7 +27,8 @@ reports. Never wait in a tool call:
   next `check`.
 - `worker_done`: record its handoff fields; verify the report before acting on
   it. A failed `worker_done` settles the Task as failed: never treat it as
-  succeeded or mark the Task completed.
+  succeeded or mark the Task completed. Apply `SKILL.md` **Unmet or unverified
+  acceptance criteria** before any merge decision.
 - `question`: answer it with `<orca> orchestration reply --id <message-id> --body "<answer>"`
   following `SKILL.md` **Answering worker questions**.
 - `escalation` whose payload has `failureKind=usageLimitReached`: the
@@ -63,7 +64,9 @@ everywhere. Update it before ending every turn and right after every
 - `skill-checkout-frozen: <sha|no>` as `local_main.py freeze` printed it
   (needed by `local_main.py finish` at the end of the Run).
 - Per Task: phase, dispatch ID, worktree, branch, PR URL, review count, open
-  findings, blockers, and the IDs of the messages already processed.
+  findings, blockers, `unmet/unverified acceptance criteria:` with reasons,
+  any user decision and approved head, and the IDs of the messages already
+  processed.
 - Pending CI: PR, head SHA, and absolute deadline.
 - Every pending time as its own line
   `wake-at: <ISO-8601 time with offset> <reason>` (e.g.
