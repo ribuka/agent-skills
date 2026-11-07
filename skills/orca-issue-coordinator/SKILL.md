@@ -170,6 +170,10 @@ only after the user confirms.
    branches. Do not read full Issue bodies or investigate code; workers do
    that. Step 3 gives the only exception. Avoid duplicating or overwriting
    existing changes.
+   Fix the Run's Issue set at this step: resolve even "all open Issues" to
+   the Issues open now. Record it as `issues: #<n> #<n> ...` when saving the
+   Run checkpoint in step 4; do not expand it by listing Issues again after
+   resuming.
 3. Identify dependencies, overlapping areas, and potential conflicts from that
    summary. Open an Issue body only when a dependency or an overlap involving
    that Issue cannot be decided otherwise, and only for the Issues involved
@@ -226,8 +230,9 @@ only after the user confirms.
    worker to start from the
    latest `origin/main`, which includes those merges.
 6. Before the first dispatch, briefly present the execution plan to the
-   user: Task dependencies, dispatch order, and the resolved worker model,
-   effort, and `MAX_WORKERS` from step 0. For Tasks that edit the same file
+   user: the fixed Issue set by number, Task dependencies, dispatch order,
+   and the resolved worker model, effort, and `MAX_WORKERS` from step 0.
+   For Tasks that edit the same file
    but run in parallel, state that decision and its reason (e.g. which
    parts each edits). Then start dispatching without waiting for approval,
    unless step 3 requires asking for the order.
@@ -444,12 +449,31 @@ Use these checks in steps 12 and 14, against the current PR head:
       Issue for a test that failed this way more than once.
 15. Merge the PR yourself only when all conditions are met and the quota
     `check` immediately before the merge is READY.
+    Use only this command, with `<sha>` equal to the full `headRefOid`
+    verified in step 14:
+
+    ```bash
+    gh pr checks <pr> && gh pr merge <pr> --merge --match-head-commit <sha>
+    ```
+
+    The merge method is fixed to `--merge`; never use `--squash`, `--rebase`,
+    `--auto`, or `--admin`. If `gh pr checks <pr>` exits non-zero (including
+    pending exit `8`), do not merge: return to step 14's CI handling.
+    If `gh pr merge` fails, reread the head with
+    `gh pr view <pr> --json headRefOid --jq .headRefOid`:
+    - If the head differs from `<sha>`, restart verification from step 14
+      for the new head. Never retry by removing `--match-head-commit` or
+      merely replacing `<sha>` with the new head.
+    - If the head is unchanged, do not retry: block this PR and follow
+      **Asking the user** (e.g. merge commits may be disabled).
 16. After each merge, fetch the latest `origin/main` and repeat
     merge preparation for the next PR. If `main` changes before
     merging, revalidate the affected PR. Dispatch any dependent Task whose
     dependency PRs are now all merged (see step 5).
 17. Mark only confirmed merged Issues as complete. Report the
     outcome and PR URL for each Issue.
+    List any open Issues outside the fixed set that you noticed during the
+    Run as outside this Run's scope, with their numbers and titles.
     Collect each Issue handoff's `follow-up candidates:` under **起票候補**,
     with each suggestion's summary and review comment URL. Do not create
     Issues; the user decides which candidates to file.
@@ -631,6 +655,15 @@ Follow [Waiting](references/waiting.md) in both Claude Code and Codex
 
 ## Rules
 
+- Do not add or dispatch Issues that appear during the Run, regardless of
+  who created them, and do not ask whether to add them. The only exception
+  is an explicit instruction from the user in chat naming Issue numbers:
+  apply step 3's dependency/overlap assessment and step 5's DAG rules to
+  those Issues, then update the checkpoint's `issues:` line before dispatch.
+  Never treat silence as consent (e.g. "reply if you want to stop it").
+- Report Issue provenance only as verified facts: author account and
+  creation time. Do not infer who requested or why someone created an Issue;
+  an `app/claude` author does not establish that a worker created it.
 - **Only the Coordinator may merge.** Workers must stop after their
   assigned phase and report through ORCA Orchestration.
 - Preserve the existing `implement-review-merge` workflow,
