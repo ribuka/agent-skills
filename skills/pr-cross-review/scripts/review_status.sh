@@ -12,6 +12,8 @@
 #   review-latest: <comment-url>   the latest cross-review comment, or `none`
 #   review-latest-commit: <sha>    the commit the latest cross-review saw (its
 #                                  `Reviewed commit:` footer), or `none`
+#   review-latest-findings: must=<n> optional=<n>, `none` without a review,
+#                           or `unknown` for historical reviews without counts
 
 set -euo pipefail
 
@@ -45,8 +47,12 @@ latest_url=$(
 latest_commit=$(
     printf '%s\n' "$review_history" | awk -F '\t' 'NF { commit=$3 } END { print commit }'
 )
+latest_findings=$(
+    printf '%s\n' "$review_history" | awk -F '\t' 'NF { findings=$5 } END { print findings }'
+)
 
 echo "review-count: ${review_count}/${MAX_REVIEWS}"
 echo "review-extra: $((review_count > MAX_REVIEWS ? review_count - MAX_REVIEWS : 0))"
 echo "review-latest: ${latest_url:-none}"
 echo "review-latest-commit: ${latest_commit:-none}"
+echo "review-latest-findings: ${latest_findings:-none}"

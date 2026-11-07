@@ -39,7 +39,7 @@ Task:
      same conversation would be written to the cache again in full and then
      resent on every call. Release the worker as `SKILL.md` step 11 says.
 2. Record in the checkpoint the Task, dispatch ID, terminal handle,
-   worktree, branch, PR URL, review count, open findings, the work left,
+   worktree, branch, PR URL, review count, unresolved must findings, follow-up candidates, the work left,
    `context-tokens`, and the chosen resume method.
 3. Run `<quota-check>`. On PAUSED_QUOTA or UNKNOWN, follow
    **On PAUSED_QUOTA or UNKNOWN** (or **While paused** when the Run is
@@ -56,7 +56,7 @@ written to the expired prompt cache again in full. Always use the **fresh
 worker** method:
 
 1. Record in the checkpoint the Task, dispatch ID, terminal handle,
-   worktree, branch, PR URL (if any), review count, open findings, and the
+   worktree, branch, PR URL (if any), review count, unresolved must findings, follow-up candidates, and the
    resume method `fresh worker`. The work left is unknown until the branch
    and PR are checked (**Handoff to a retried worker**).
 2. Stop the old dispatch, so that it cannot continue beside its successor:
@@ -89,7 +89,7 @@ that handoff in the checkpoint. It holds:
 
 - Issue number, PR URL, branch, and worktree.
 - The review count (the larger of the recorded and printed counts) and the
-  open findings from the latest review.
+  unresolved must findings from the latest review, plus `follow-up candidates:`.
 - The work left in the phase, any blockers, and any user approvals (an
   extra review, merging a head as is).
 

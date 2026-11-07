@@ -255,7 +255,7 @@ only after the user confirms.
      only limits specific to the Issue, such as the E2E suite or benchmark
      scale it needs.
    - Require implementation, tests, commit, push, PR creation,
-     and `pr-cross-review` with findings addressed. Codex workers use the
+     and `pr-cross-review` with must findings addressed. Codex workers use the
      Claude reviewer; Claude workers use the Codex reviewer, as that skill
      specifies.
    - Require the handoff fields in its `worker_done` report (see the
@@ -326,8 +326,10 @@ Use these checks in steps 12 and 14, against the current PR head:
   configured. Exit `8` means pending; inspect any other non-zero result
   and report monitoring errors as blockers instead of treating them as
   pending. An empty check set is not proof of success.
-- No review findings are open, per the worker handoff and the latest
-  cross-review.
+- `review_status.sh` reports `review-latest-findings: must=0 optional=<n>`,
+  consistent with the worker handoff. For `review-latest-findings: unknown`,
+  read only the latest review body to determine whether unresolved must
+  findings remain. `review-latest-findings: none` means no review; do not merge.
 - The latest cross-review saw the current head: run
   `bash ~/.agents/skills/pr-cross-review/scripts/review_status.sh <pr-number>`
   and compare its `review-latest-commit: <sha>` with
@@ -361,11 +363,12 @@ Use these checks in steps 12 and 14, against the current PR head:
     worker's conversation. The `<handoff>` is short:
     - Issue number, PR URL, branch, and worktree.
     - Cross-reviews used so far (the latest `review-count: <count>/<max>`)
-      and any open findings or blockers.
+      and any unresolved must findings or blockers, plus
+      `follow-up candidates:` from the Implementation handoff.
     - When the latest cross-review did not see the head (**Unreviewed
       head** in steps 12 and 14): the reviewed commit and the head, and the
       task to run cross-review on the unreviewed commits and address its
-      findings before rebasing. When the user chose **Merge as is** for
+      must findings before rebasing. When the user chose **Merge as is** for
       the head instead: that head, and that the user approved merging it
       without a further review.
     - The tasks: fetch and rebase onto the latest `origin/main` as needed;
@@ -387,8 +390,8 @@ Use these checks in steps 12 and 14, against the current PR head:
     - Recheck **Common verification conditions** above, with only the
       rebase exception below for the head comparison.
     - Only if the merge-preparation worker reported a `newly written`
-      resolution: a cross-review ran after it with no outstanding findings.
-      If that review is missing, has open findings, or could not run
+      resolution: a cross-review ran after it with no unresolved must findings.
+      If that review is missing, has unresolved must findings, or could not run
       because the limit was reached, block the PR and ask the user.
     - A rebase in merge preparation can change the head without a new
       review; accept that
@@ -442,6 +445,9 @@ Use these checks in steps 12 and 14, against the current PR head:
     dependency PRs are now all merged (see step 5).
 17. Mark only confirmed merged Issues as complete. Report the
     outcome and PR URL for each Issue.
+    Collect each Issue handoff's `follow-up candidates:` under **起票候補**,
+    with each suggestion's summary and review comment URL. Do not create
+    Issues; the user decides which candidates to file.
     Remove this Run's reservation, if any (**Run completion** in
     [Waiting](references/waiting.md)).
     Then end the Run. ORCA has no command that closes a Run; the Run ends

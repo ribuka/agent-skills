@@ -71,14 +71,15 @@ review_agent_label() {
     esac
 }
 
-# One line per past cross-review comment: <id> TAB <url> TAB <sha> TAB <agent>.
+# One line per cross-review: <id> TAB <url> TAB <sha> TAB <agent> TAB <findings>.
+# Findings are `must=<n> optional=<n>`, or `unknown` for historical comments.
 # Comments are recognised by the footer post_pr_comment.sh appends.
 list_review_history() {
     local repo=$1
     local pr_number=$2
     local jq_filter
 
-    jq_filter='.[] | (.body | try capture("_Reviewed by (?<agent>Codex|Claude)\\. Posted via pr-cross-review skill\\._\\r?\\nReviewed commit: (?<sha>[0-9a-fA-F]{40})\\r?\\n?$") catch empty) as $footer | [.id, .html_url, $footer.sha, $footer.agent] | @tsv'
+    jq_filter='.[] | (.body | try capture("_Reviewed by (?<agent>Codex|Claude)\\. Posted via pr-cross-review skill\\._\\r?\\nReviewed commit: (?<sha>[0-9a-fA-F]{40})(?:\\r?\\nreview-findings: (?<findings>must=[0-9]+ optional=[0-9]+))?\\r?\\n?$") catch empty) as $footer | [.id, .html_url, $footer.sha, $footer.agent, ($footer.findings // "unknown")] | @tsv'
     gh api --paginate "repos/${repo}/issues/${pr_number}/comments" --jq "$jq_filter"
 }
 
@@ -92,16 +93,17 @@ list_review_comments() {
     agent_label=$(review_agent_label "$agent")
     review_history=$(list_review_history "$repo" "$pr_number") || return $?
     printf '%s\n' "$review_history" |
-        awk -F '\t' -v agent="$agent_label" '$4 == agent { print $1 "\t" $2 }'
+        awk -F '\t' -v agent="$agent_label" '$4 == agent { print $1 "\t" $2 "\t" $5 }'
 }
 
-find_new_review_comment_url() {
+find_new_review_comment() {
     local repo=$1
     local pr_number=$2
     local agent=$3
     local previous_ids=$4
     local comment_id
     local comment_url
+    local findings
     local comments
 
     if ! comments=$(list_review_comments "$repo" "$pr_number" "$agent"); then
@@ -109,7 +111,7 @@ find_new_review_comment_url() {
         return 2
     fi
 
-    while IFS=$'\t' read -r comment_id comment_url; do
+    while IFS=$'\t' read -r comment_id comment_url findings; do
         if [ -z "$comment_id" ]; then
             continue
         fi
@@ -117,7 +119,7 @@ find_new_review_comment_url() {
         case $'\n'"${previous_ids}"$'\n' in
             *$'\n'"${comment_id}"$'\n'*) ;;
             *)
-                printf '%s\n' "$comment_url"
+                printf '%s\t%s\n' "$comment_url" "$findings"
                 return 0
                 ;;
         esac
@@ -246,10 +248,11 @@ build_review_prompt() {
     if [ "$REVIEW_COUNT" -eq 0 ]; then
         REVIEW_PROMPT="Review PR #${pr_number} of this repository. Examine the whole diff of the PR."
     else
-        REVIEW_PROMPT="Re-review PR #${pr_number} of this repository. The scope is limited to the diff ${PREVIOUS_REVIEW_COMMIT}..${REVIEW_HEAD_COMMIT} and the findings of the previous review. Check whether the previous findings have been resolved and whether the fixes introduced new problems. Do not raise new findings about existing code outside that diff."
+        REVIEW_PROMPT="Re-review PR #${pr_number} of this repository. The scope is limited to the diff ${PREVIOUS_REVIEW_COMMIT}..${REVIEW_HEAD_COMMIT} and the must findings of the previous review. Check whether the previous must findings have been resolved and whether the fixes introduced new problems. Do not raise new findings about existing code outside that diff."
     fi
     REVIEW_PROMPT+=" Read code outside the diff only as far as needed to verify a finding (such as callers and dependencies of the changed code); do not explore the rest of the repository."
     REVIEW_PROMPT+=" Write the review comment in ${REVIEW_LANGUAGE}."
+    REVIEW_PROMPT+=" Classify every finding as [must] or [optional], placed at the start of its heading. [must] means it must be fixed before merging: bugs or incorrect behavior, unmet Issue specifications or acceptance criteria, missing required tests, security or data-loss risks, and misleading instructions or documentation errors. [optional] means merging is acceptable without the change: wording, naming, organization, reducing duplication, extra tests beyond requirements, and improvements for future changes. Do not use P0-P3 or other severity labels. End the body with exactly one count line as its last non-empty line: review-findings: must=<n> optional=<n> (non-negative integers; both 0 when there are no findings). On re-review, count only unresolved must findings from the previous review and new findings in this diff; do not repeat previous optional suggestions that were not adopted."
 
     body_file=$(native_path "$REVIEW_BODY_FILE")
     post_command="bash \"$(native_path "$post_script")\" ${pr_number} \"${body_file}\" ${agent}"
@@ -409,19 +412,28 @@ finish_review() {
 }
 
 # report_posted_review <repo> <pr-number> <agent> -- prints `review-posted: <url>`
-# and `review-count: <count>/<max>` (including the new review) and returns 0
+# and `review-count: <count>/<max>`, then `review-findings: must=<n> optional=<n>`
+# (including the new review) and returns 0
 # when the reviewer posted a new comment; otherwise returns 1 (no new comment)
 # or 2 (lookup failed).
 report_posted_review() {
     local repo=$1
     local pr_number=$2
     local agent=$3
+    local comment
     local comment_url
+    local findings
     local status
 
-    if comment_url=$(find_new_review_comment_url "$repo" "$pr_number" "$agent" "$REVIEW_COMMENT_IDS_BEFORE"); then
+    if comment=$(find_new_review_comment "$repo" "$pr_number" "$agent" "$REVIEW_COMMENT_IDS_BEFORE"); then
+        IFS=$'\t' read -r comment_url findings <<<"$comment"
+        if ! [[ "$findings" =~ ^must=[0-9]+\ optional=[0-9]+$ ]]; then
+            echo "error: posted review comment has no valid review-findings footer" >&2
+            return 1
+        fi
         echo "review-posted: ${comment_url}"
         echo "review-count: $((REVIEW_COUNT + 1))/${MAX_REVIEWS}"
+        echo "review-findings: ${findings}"
         return 0
     else
         status=$?

@@ -46,6 +46,19 @@ def test_merge_prep_worker_starts_from_spec_in_pr_worktree() -> None:
     assert "do not pass `--task <task_id>`" in merge_prep_step
 
 
+def test_findings_status_and_followup_candidates() -> None:
+    skill = " ".join(SKILL_MD.read_text(encoding="utf-8").split())
+    common = skill.split("### Common verification conditions", 1)[1].split("### Merge sequence", 1)[0]
+    for text in ("review-latest-findings: must=0 optional=<n>", "consistent with the worker handoff",
+                 "review-latest-findings: unknown", "read only the latest review body",
+                 "review-latest-findings: none", "do not merge"):
+        assert text in common
+    step17 = skill.split("17. Mark", 1)[1].split("## Quota control", 1)[0]
+    for text in ("`follow-up candidates:`", "**起票候補**", "summary and review comment URL",
+                 "Do not create Issues", "user decides"):
+        assert text in step17
+
+
 def test_merge_prep_skipped_when_pr_is_already_ready() -> None:
     skill = SKILL_MD.read_text(encoding="utf-8")
     common = skill.split("### Common verification conditions", 1)[1].split("### Merge sequence", 1)[0]
@@ -67,8 +80,8 @@ def test_merge_prep_skipped_when_pr_is_already_ready() -> None:
     assert "report monitoring errors as blockers" in common
     assert "instead of treating them as\n  pending" in common
     assert "An empty check set is not proof of success" in common
-    assert "No review findings are open" in common
-    assert "per the worker handoff and the latest" in common
+    assert "review-latest-findings: must=0 optional=<n>" in common
+    assert "consistent with the worker handoff" in common
     assert "If CI is empty, pending, or has a monitoring error, do not take" in shortcut
     assert "rebase exception" not in shortcut
     assert "Required tests have passed on the current PR commit" in verify
@@ -589,7 +602,7 @@ def test_merge_requires_latest_review_to_cover_head() -> None:
     assert "`review-latest-commit` or the head approved with **Merge as is**" in verify_step
     assert "its head after the rebase equals the current\n      head" in verify_step
     assert "Only if the merge-preparation worker reported a `newly written`" in verify_step
-    assert "a cross-review ran after it with no outstanding findings" in verify_step
+    assert "a cross-review ran after it with no unresolved must findings" in verify_step
     assert "start merge preparation\n      (step 13)" in verify_step
     for step in (shortcut_step, verify_step):
         assert "**Limit reached with unreviewed fix commits**" in step
@@ -658,7 +671,7 @@ def test_usage_limit_worker_is_retried_by_fresh_worker() -> None:
                  "including every `usageLimitReached` worker",
                  "start it only after its old dispatch has settled",
                  "review count (the larger of the recorded and printed counts)",
-                 "open findings from the latest review",
+                 "unresolved must findings from the latest review",
                  "orchestration reply --id <message-id>",
                  "or only uncommitted changes",
                  "A stopped Merge preparation worker is not retried with `--retry-of`",
