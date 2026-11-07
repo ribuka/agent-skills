@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import subprocess
 import sys
 import time
@@ -16,6 +17,9 @@ SKILL_DIR = Path(__file__).resolve().parents[1]
 
 def wait_for_registration(pr: int, head: str, timeout: int) -> int:
     """Poll gh every 30 seconds until registration or the monotonic deadline."""
+    gh = shutil.which("gh")
+    if gh is None:
+        raise ValueError("gh: command not found")
     deadline = time.monotonic() + timeout
     while True:
         remaining = deadline - time.monotonic()
@@ -24,7 +28,7 @@ def wait_for_registration(pr: int, head: str, timeout: int) -> int:
             return 2
         try:
             result = subprocess.run(
-                ["gh", "pr", "view", str(pr), "--json", "headRefOid,statusCheckRollup"],
+                [gh, "pr", "view", str(pr), "--json", "headRefOid,statusCheckRollup"],
                 capture_output=True, text=True, encoding="utf-8", errors="replace",
                 timeout=remaining,
             )
