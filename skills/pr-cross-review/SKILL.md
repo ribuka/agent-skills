@@ -24,7 +24,8 @@ to focus on). Model, effort and other options can be overridden per run; see
 
 - Success: the script prints `review-posted: <comment-url>` and
   `review-count: <count>/<max>` (cross-reviews on the PR including this one,
-  and the per-PR limit) and exits 0. The reviewer's own reply is not printed.
+  and the per-PR limit), then `review-findings: must=<n> optional=<n>` on
+  the next line, and exits 0. The reviewer's own reply is not printed.
   Read only that comment and address it:
   `gh api repos/{owner}/{repo}/issues/comments/<id> --jq .body`, where `<id>`
   is the number after `#issuecomment-` in the URL. Do not read all PR comments
@@ -53,7 +54,10 @@ bash ~/.agents/skills/pr-cross-review/scripts/review_status.sh <pr-number>
 It prints `review-count: <count>/<max>`, `review-extra: <count>` (reviews
 beyond `<max>`, see below), `review-latest: <comment-url>`, and
 `review-latest-commit: <sha>` (the commit the latest review saw; both are
-`none` when the PR has no cross-review) and exits 0 (other exit codes are in
+`none` when the PR has no cross-review), then on the next line
+`review-latest-findings: must=<n> optional=<n>`. Without a review the latter
+is `review-latest-findings: none`; historical reviews without counts report
+`review-latest-findings: unknown`. It exits 0 (other exit codes are in
 references/options.md). Read the latest review the same way as above. To
 check whether the latest review saw the PR's current head, compare
 `review-latest-commit` with
@@ -74,6 +78,16 @@ need to read the review comment.
 - The reviewer must post through `scripts/post_pr_comment.sh`, which adds the
   footer the scripts use to count reviews. Do not post review comments by hand
   with that footer.
+- Each finding heading must start with `[must]` (must fix before merging) or
+  `[optional]` (safe to leave unadopted), without P0-P3 severity labels.
+  The body's last non-empty line must be exactly
+  `review-findings: must=<n> optional=<n>` with non-negative integer counts
+  (both zero without findings). Re-reviews count unresolved previous must
+  findings and new findings in the diff, never repeat unadopted optional
+  suggestions. The posting script records these counts beside `Reviewed commit:`
+  in the footer. Missing or malformed counts prevent posting, exit 1, and print
+  `error: review body must end with "review-findings: must=<n> optional=<n>"`
+  to stderr.
 - The reviewer writes the comment body to `<REVIEW_BODY_DIR>/pr-<number>-review-<agent>.md`
   (default `tmp/`, from the repository root). The run stops if git would not
   ignore that file, and `post_pr_comment.sh` rejects any other body file

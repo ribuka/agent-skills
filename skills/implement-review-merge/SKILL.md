@@ -20,15 +20,19 @@ whenever a step below says so; never merge on a guess.
   Coordinator, execute the assigned phase:
   - **Implementation:** Execute steps 1–7, then report the PR URL,
     branch, review status, review count (the latest
-    `review-count: <count>/<max>` from `pr-cross-review`), open findings,
-    and any blockers, so a fresh worker can take over. Do not merge.
+    `review-count: <count>/<max>` from `pr-cross-review`), latest reviewed
+    SHA, findings counts, unresolved must findings, blockers, and
+    `follow-up candidates:` (valuable unadopted optional suggestions with
+    their summaries and review comment URLs; `none` if empty), so a fresh
+    worker can take over. Do not merge.
   - **Merge preparation:** Execute steps 8–9 only after the Coordinator
     requests it. This usually starts in a new conversation: rebuild the
     state from the Coordinator's handoff, `gh pr view <pr-number>` (without
     `--comments`), and the `pr-cross-review` status script
     (`bash ~/.agents/skills/pr-cross-review/scripts/review_status.sh <pr-number>`,
     which prints `review-count: <count>/<max>`,
-    `review-latest: <comment-url>`, and `review-latest-commit: <sha>`)
+    `review-latest: <comment-url>`, `review-latest-commit: <sha>`, and
+    `review-latest-findings: must=<n> optional=<n>`)
     before step 8. Read only the latest review comment, and use the larger
     of the handed-off review count and the printed count. If
     `review-latest-commit` differs from the PR's `headRefOid`, commits were
@@ -37,7 +41,8 @@ whenever a step below says so; never merge on a guess.
     Skip this re-review only when the handoff states that the user
     approved merging that head without a further review.
     Report the head before and after the sync (full SHAs), test/CI results,
-    review status, total review count, and any blockers. Do not merge.
+    review status, total review count, unresolved must findings, any
+    blockers, and `follow-up candidates:` as in Implementation. Do not merge.
 - In worker mode:
   - The Coordinator alone decides when and in what order to merge PRs.
   - Report blockers to the Coordinator instead of asking the user directly.
@@ -102,7 +107,8 @@ Push the branch to `origin`.
 
 - First pass: create the pull request.
 - After a review: reply to the review comment, stating how each finding was
-  addressed (or why it was not).
+  addressed (or why it was not). For each optional suggestion not adopted,
+  explain why in the PR reply; do not create Issues automatically.
 
 ### 6. Cross-review
 
@@ -110,7 +116,8 @@ Run the `pr-cross-review` skill for the pull request.
 
 - Wait for the script to finish; do not continue while it is running.
 - On success it prints `review-posted: <comment-url>` and
-  `review-count: <count>/<max>`. Keep the count, and read only that
+  `review-count: <count>/<max>`, followed by
+  `review-findings: must=<n> optional=<n>`. Keep the counts, and read only that
   comment: `gh api repos/{owner}/{repo}/issues/comments/<id> --jq .body`,
   where `<id>` is the number after `#issuecomment-` in the URL. Do not read
   all PR comments with `gh pr view --comments`.
@@ -124,7 +131,22 @@ Run the `pr-cross-review` skill for the pull request.
 
 ### 7. Iterate on findings
 
-If the review has findings, go back to step 2.
+Use `review-findings` to decide whether to go back to step 2:
+
+- **must >= 1:** return to step 2 and fix every must finding. Adopt only
+  worthwhile optional suggestions alongside those fixes; fixing all
+  optional suggestions is not required.
+- **must = 0:** do not change code and do not request a re-review. Reply
+  as step 5 requires, explaining why each optional suggestion is not
+  adopted, then proceed to the next step (or hand off in Implementation).
+- Collect valuable unadopted optional suggestions as follow-up candidates,
+  with a summary and review comment URL for each. In Standalone mode,
+  include them as **起票候補** in the final report; do not create Issues.
+  In both worker phases, include them in `worker_done` as
+  `follow-up candidates:`.
+- If status reports `review-latest-findings: unknown`, read only the latest
+  review body and determine whether unresolved must findings remain.
+  `review-latest-findings: none` means no review; do not merge.
 
 - `pr-cross-review` allows at most `MAX_REVIEWS` reviews per pull request;
   the script rejects further runs.
@@ -175,7 +197,8 @@ Keep test and CI output small (see **Token budget**); never read full logs:
 
 Merge only when all of the following hold:
 
-- The latest review has no outstanding findings.
+- The latest review has no unresolved must findings; optional suggestions
+  do not block merging.
 - The branch is in sync with the latest `main`.
 - Tests and CI all pass on that synced state.
 

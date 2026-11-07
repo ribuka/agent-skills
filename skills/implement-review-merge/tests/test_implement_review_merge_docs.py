@@ -103,3 +103,29 @@ def test_post_merge_completion_is_standalone_only_after_confirmed_merge() -> Non
                  "merge result and local synchronization result separately",
                  "Never retry the merge because synchronization failed"):
         assert text in completion
+
+
+def test_findings_control_iteration_and_merge_gate() -> None:
+    skill = " ".join(SKILL_MD.read_text(encoding="utf-8").split())
+    step7 = skill.split("### 7. Iterate on findings", 1)[1].split("### 8.", 1)[0]
+    for text in ("**must >= 1:**", "fix every must finding", "worthwhile optional suggestions",
+                 "**must = 0:** do not change code and do not request a re-review",
+                 "explaining why each optional suggestion is not adopted",
+                 "review-latest-findings: unknown", "read only the latest review body",
+                 "review-latest-findings: none", "do not merge"):
+        assert text in step7
+    merge = skill.split("### 10. Merge", 1)[1].split("### Standalone", 1)[0]
+    assert "no unresolved must findings" in merge
+    assert "optional suggestions do not block merging" in merge
+
+
+def test_followup_candidates_are_reported_in_all_modes() -> None:
+    skill = " ".join(SKILL_MD.read_text(encoding="utf-8").split())
+    assert "**起票候補** in the final report; do not create Issues" in skill
+    assert "summary and review comment URL for each" in skill
+    assert "In both worker phases" in skill
+    assert "`worker_done` as `follow-up candidates:`" in skill
+    modes = skill.split("## Execution modes", 1)[1].split("## Workflow", 1)[0]
+    assert modes.count("`follow-up candidates:`") == 2
+    step5 = skill.split("### 5.", 1)[1].split("### 6.", 1)[0]
+    assert "For each optional suggestion not adopted, explain why in the PR reply" in step5

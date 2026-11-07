@@ -60,17 +60,28 @@ config.conf and prints `review-count: <count>/<max>`,
 `--extra-review` runs can add; `0` otherwise), and
 `review-latest: <comment-url>` (`none` without a cross-review), and
 `review-latest-commit: <sha>` (the full 40-character commit in the latest
-review's `Reviewed commit:` footer; `none` without a cross-review). Exit codes:
+review's `Reviewed commit:` footer; `none` without a cross-review), followed
+on the next line by `review-latest-findings: must=<n> optional=<n>`.
+It reports `review-latest-findings: none` without a review, or
+`review-latest-findings: unknown` for a historical review without counts. Exit codes:
 0 success, 1 usage/config error, 2 GitHub lookup failed.
 
 ## Exit codes of the review scripts
 
 | Code | Meaning |
 |------|---------|
-| 0 | Review posted (`review-posted: <url>` and `review-count: <count>/<max>` on stdout) |
+| 0 | Review posted (`review-posted: <url>`, `review-count: <count>/<max>`, then `review-findings: must=<n> optional=<n>` on stdout) |
 | 1 | Usage/config error, review limit reached (or `--extra-review` below the limit), no new commits since the last review, or the reviewer exited without posting |
 | 2 | GitHub lookup failed (PR head or comment history) |
 | 124 | Codex hard timeout |
 | 125 | Codex heartbeat timeout (hang suspected) |
 | 75 | The reviewer stopped on its usage limit (`reviewer-quota-exhausted: <agent>`, `reviewer-quota-detected-at: <time>`, and `reviewer-quota-reset: <reset-time>` on stdout) |
 | other | Exit status of `codex exec` / `claude -p` |
+
+## post_pr_comment.sh
+
+The last non-empty line of the body must be
+`review-findings: must=<n> optional=<n>` (non-negative integers). The counts
+are recorded in the provenance footer after `Reviewed commit:`. Missing or
+malformed counts prevent posting and exit 1 with this stderr message:
+`error: review body must end with "review-findings: must=<n> optional=<n>"`.

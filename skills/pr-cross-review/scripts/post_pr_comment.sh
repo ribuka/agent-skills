@@ -82,12 +82,6 @@ if ! [[ "$reviewed_commit" =~ ^[0-9a-fA-F]{40}$ ]]; then
     exit 1
 fi
 
-repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
-
-# Fail fast if the PR does not exist in this repo, rather than letting
-# `gh pr comment` create ambiguity about what was targeted.
-gh pr view "$pr_number" --repo "$repo" --json url >/dev/null
-
 comment_file=$(mktemp)
 trap 'rm -f "$comment_file"' EXIT
 
@@ -97,8 +91,19 @@ else
     cat "$body_file" >"$comment_file"
 fi
 
+findings_line=$(awk '{ sub(/\r$/, "") } /[^[:space:]]/ { last=$0 } END { print last }' "$comment_file")
+if ! [[ "$findings_line" =~ ^review-findings:\ must=[0-9]+\ optional=[0-9]+$ ]]; then
+    echo 'error: review body must end with "review-findings: must=<n> optional=<n>"' >&2
+    exit 1
+fi
+
+repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+# Verify that the PR exists in this repository before posting.
+gh pr view "$pr_number" --repo "$repo" --json url >/dev/null
+
 # The footer format is parsed by list_review_history in common.sh; keep both in sync.
 printf '\n\n_Reviewed by %s. Posted via pr-cross-review skill._\n' "$agent_label" >>"$comment_file"
 printf 'Reviewed commit: %s\n' "$reviewed_commit" >>"$comment_file"
+printf '%s\n' "$findings_line" >>"$comment_file"
 
 GH_APP_PROFILE="$agent" gh pr comment "$pr_number" --repo "$repo" --body-file "$comment_file"

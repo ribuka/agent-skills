@@ -5,6 +5,7 @@ Run with: uv run --with pytest -m pytest <skill-dir>/tests
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -51,11 +52,11 @@ gh() {
                 if [ "$commit" = "missing" ]; then
                     commit=""
                 fi
-                printf '%s\thttps://github.com/owner/repo/pull/123#issuecomment-%s\t%s\t%s\n' \
-                    "$comment_id" "$comment_id" "$commit" "$REVIEW_AGENT_LABEL"
+                printf '%s\thttps://github.com/owner/repo/pull/123#issuecomment-%s\t%s\t%s\t%s\n' \
+                    "$comment_id" "$comment_id" "$commit" "$REVIEW_AGENT_LABEL" "$REVIEW_EXISTING_FINDINGS"
             done
             if [ -f "$REVIEW_STATE_FILE" ]; then
-                printf '1001\thttps://github.com/owner/repo/pull/123#issuecomment-1001\t%s\t%s\n' \
+                printf '1001\thttps://github.com/owner/repo/pull/123#issuecomment-1001\t%s\t%s\tmust=1 optional=2\n' \
                     "$REVIEW_HEAD_COMMIT" "$REVIEW_AGENT_LABEL"
             fi
             ;;
@@ -104,6 +105,7 @@ def run_review_script(
     ignore_body_dir: bool = True,
     reviewer_output: str | None = None,
     reviewer_exit_code: int = 0,
+    existing_findings: str = "unknown",
 ) -> subprocess.CompletedProcess[str]:
     """Run a review script with deterministic fake CLI and GitHub commands."""
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
@@ -127,6 +129,7 @@ def run_review_script(
         "REVIEW_HEAD_COMMIT": head_commit,
         "REVIEW_API_FAILURE_AFTER": str(api_failure_after_review).lower(),
         "REVIEW_AGENT_LABEL": "Claude" if script_name == "run_claude_review.sh" else "Codex",
+        "REVIEW_EXISTING_FINDINGS": existing_findings,
     }
     environment.pop("PR_CROSS_REVIEW_IN_PROGRESS", None)
     return subprocess.run(
@@ -144,13 +147,103 @@ SCRIPT_NAMES = ["run_claude_review.sh", "run_codex_review.sh"]
 
 
 @pytest.mark.parametrize("script_name", SCRIPT_NAMES)
+@pytest.mark.parametrize("existing", [(), (PREVIOUS_COMMIT,)])
+def test_review_prompt_classifies_findings(
+    tmp_path: Path, script_name: str, existing: tuple[str, ...]
+) -> None:
+    """Initial and incremental reviews share the merge-based classification contract."""
+    result = run_review_script(
+        tmp_path, script_name, post_comment=True, existing_review_commits=existing
+    )
+    assert result.returncode == 0, result.stderr
+    for text in (
+        "[must] means it must be fixed before merging", "[optional] means merging is acceptable",
+        "at the start of its heading", "Do not use P0-P3", "last non-empty line",
+        "review-findings: must=<n> optional=<n>", "both 0",
+        "only unresolved must findings", "do not repeat previous optional suggestions",
+        "unmet Issue specifications or acceptance criteria", "missing required tests",
+        "security or data-loss risks", "misleading instructions or documentation errors",
+    ):
+        assert text in result.stdout
+
+
+@pytest.mark.parametrize("findings", ["must=0 optional=0", "must=2 optional=10"])
+def test_review_status_reports_findings(tmp_path: Path, findings: str) -> None:
+    """Known counts follow the latest reviewed commit on the next line."""
+    result = run_review_script(
+        tmp_path, "review_status.sh", post_comment=False,
+        existing_review_commits=(HEAD_COMMIT,), existing_findings=findings,
+    )
+    assert result.returncode == 0, result.stderr
+    assert f"review-latest-commit: {HEAD_COMMIT}\nreview-latest-findings: {findings}\n" in result.stdout
+
+
+@pytest.mark.parametrize("body", [
+    "", "review body", "review-findings: must=-1 optional=0",
+    "review-findings: must=1 optional=2 extra", "review-findings: optional=2 must=1",
+    "review-findings: must=1.5 optional=0", "review-findings: must=0 optional=0\nmore text",
+    "review-findings: must=0", " review-findings: must=0 optional=0",
+])
+def test_post_comment_rejects_invalid_findings(tmp_path: Path, body: str) -> None:
+    """Malformed or missing counts must never reach the posting operation."""
+    result = run_post_comment_script(tmp_path, HEAD_COMMIT, body=body)
+    assert result.returncode == 1
+    assert result.stderr.strip() == (
+        'error: review body must end with "review-findings: must=<n> optional=<n>"'
+    )
+    assert result.stdout == ""
+
+
+@pytest.mark.parametrize("ending", ["", "\n\n \t\n", "\r\n\r\n"])
+def test_post_comment_accepts_last_nonempty_count_line(tmp_path: Path, ending: str) -> None:
+    """No final newline, blank trailing lines, and Windows line endings are supported."""
+    result = run_post_comment_script(
+        tmp_path, HEAD_COMMIT, body="review body\r\nreview-findings: must=0 optional=3" + ending
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.endswith(f"Reviewed commit: {HEAD_COMMIT}\nreview-findings: must=0 optional=3\n")
+
+
+def test_history_parses_real_footer_counts_and_historical_reviews(tmp_path: Path) -> None:
+    """Execute the actual gh jq filter against local comment fixtures without GitHub."""
+    jq = shutil.which("jq")
+    if jq is None:
+        pytest.skip("jq is needed to exercise the GitHub CLI filter (available in CI)")
+    footer = f"_Reviewed by Claude. Posted via pr-cross-review skill._\nReviewed commit: {HEAD_COMMIT}"
+    comments = [
+        {"id": 1, "html_url": "old", "body": "old review\n" + footer + "\n"},
+        {"id": 2, "html_url": "new", "body": footer + "\nreview-findings: must=0 optional=4\n"},
+        {"id": 3, "html_url": "ordinary", "body": "review-findings: must=0 optional=0"},
+        {"id": 4, "html_url": "crlf", "body": (footer + "\nreview-findings: must=12 optional=3\n").replace("\n", "\r\n")},
+    ]
+    fixtures = tmp_path / "comments.json"
+    fixtures.write_text(json.dumps(comments), encoding="utf-8")
+    result = subprocess.run(
+        [find_bash(), "-c", r'''
+source "$COMMON_SCRIPT"
+gh() { "$JQ_EXECUTABLE" -r "${!#}" "$COMMENTS_FILE"; }
+list_review_history owner/repo 123
+'''],
+        env={**os.environ, "COMMON_SCRIPT": (SCRIPTS_DIR / "common.sh").as_posix(),
+             "JQ_EXECUTABLE": Path(jq).as_posix(), "COMMENTS_FILE": fixtures.as_posix()},
+        capture_output=True, text=True, encoding="utf-8", check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines() == [
+        f"1\told\t{HEAD_COMMIT}\tClaude\tunknown",
+        f"2\tnew\t{HEAD_COMMIT}\tClaude\tmust=0 optional=4",
+        f"4\tcrlf\t{HEAD_COMMIT}\tClaude\tmust=12 optional=3",
+    ]
+
+
+@pytest.mark.parametrize("script_name", SCRIPT_NAMES)
 def test_review_script_reports_new_comment_url(tmp_path: Path, script_name: str) -> None:
     """A newly posted review comment is reported as successful completion."""
     result = run_review_script(tmp_path, script_name, post_comment=True)
 
     assert result.returncode == 0, result.stderr
     assert "review-posted: https://github.com/owner/repo/pull/123#issuecomment-1001\n" in result.stdout
-    assert "review-count: 1/3\n" in result.stdout
+    assert "review-count: 1/3\nreview-findings: must=1 optional=2\n" in result.stdout
     assert f"reviewed-commit: {HEAD_COMMIT}" in result.stdout
     assert "Examine the whole diff" in result.stdout
     assert EXPLORATION_SCOPE in result.stdout
@@ -366,6 +459,7 @@ def test_review_status_reports_count_and_latest_review(tmp_path: Path) -> None:
         f"review-latest-commit: {HEAD_COMMIT}\n"
     )
     assert "api-calls: 1" in result.stdout
+    assert "review-latest-findings: unknown\n" in result.stdout
 
 
 def test_review_status_reports_commit_of_latest_review(tmp_path: Path) -> None:
@@ -396,6 +490,7 @@ def test_review_status_without_review(tmp_path: Path) -> None:
         "review-extra: 0\n"
         "review-latest: none\n"
         "review-latest-commit: none\n"
+        "review-latest-findings: none\n"
     )
 
 
@@ -613,6 +708,7 @@ def run_post_comment_script(
     reviewed_commit: str | None,
     *,
     body_arg: str | None = None,
+    body: str = "review body\nreview-findings: must=1 optional=2\n",
 ) -> subprocess.CompletedProcess[str]:
     """Run post_pr_comment.sh with a fake GitHub CLI.
 
@@ -620,7 +716,7 @@ def run_post_comment_script(
     passed to the script.
     """
     body_file = tmp_path / "body.md"
-    body_file.write_text("review body", encoding="utf-8")
+    body_file.write_text(body, encoding="utf-8", newline="\n")
     environment = {
         **os.environ,
         "POST_SCRIPT": (SCRIPTS_DIR / "post_pr_comment.sh").as_posix(),
@@ -650,6 +746,7 @@ def test_post_comment_records_reviewed_commit(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     assert "_Reviewed by Claude. Posted via pr-cross-review skill._" in result.stdout
     assert f"Reviewed commit: {HEAD_COMMIT}" in result.stdout
+    assert result.stdout.endswith(f"Reviewed commit: {HEAD_COMMIT}\nreview-findings: must=1 optional=2\n")
 
 
 @pytest.mark.parametrize("reviewed_commit", [None, "not-a-sha"])
