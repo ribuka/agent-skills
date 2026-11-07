@@ -65,8 +65,9 @@ everywhere. Update it before ending every turn and right after every
   (needed by `local_main.py finish` at the end of the Run).
 - Per Task: phase, dispatch ID, worktree, branch, PR URL, review count, open
   findings, blockers, `unmet/unverified acceptance criteria:` with reasons,
-  any user decision and approved head, and the IDs of the messages already
-  processed.
+  any split-off Issue (number and URL, criteria, reasons, and merge-target
+  head as a full SHA), any head approved with **Merge as is**, and the IDs
+  of the messages already processed.
 - Pending CI: PR, head SHA, and absolute deadline.
 - Every pending time as its own line
   `wake-at: <ISO-8601 time with offset> <reason>` (e.g.

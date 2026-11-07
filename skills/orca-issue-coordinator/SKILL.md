@@ -177,15 +177,20 @@ only after the user confirms.
 3. Identify dependencies, overlapping areas, and potential conflicts from that
    summary. Open an Issue body only when a dependency or an overlap involving
    that Issue cannot be decided otherwise, and only for the Issues involved
-   (`gh issue view <n> --json body`), once each. Decide how Tasks that edit
-   the same file run:
-   - **Same part of the same file** (the Issue titles or existing PRs and
-     branches show they edit the same step, section, or function): treat
-     this as a dependency and run the Tasks in order (step 5).
+   (`gh issue view <n> --json body`), once each. Classify each relation
+   between two Tasks as one of:
+   - **Functional dependency:** the Issue states it (e.g. "after #12",
+     "depends on", "blocked by"), or the later Task relies on code, an API,
+     a configuration, or data that the earlier PR adds or changes. Record it
+     in the task DAG (step 5); dispatch the later Task only after the
+     earlier PR is **merged**.
+   - **Ordering:** no functional dependency, but the Tasks edit the same
+     part of the same file (the Issue titles or existing PRs and branches
+     show the same step, section, or function), or whether they overlap is
+     still unclear after reading the Issue bodies. Do not record it in the
+     DAG; only the dispatch order matters (step 5).
    - **Distant parts of the same file only:** run the Tasks in parallel and
      expect merge preparation (step 13) to resolve the resulting conflicts.
-   - If the overlap is still unclear after reading the Issue bodies, run the
-     Tasks in order.
 
    Then decide the execution order:
    - **Listed Issues** (e.g. "#1,2,3,4 serially"): the list sets which Issues
@@ -204,7 +209,8 @@ only after the user confirms.
    - **Independent Task** (no dependencies): do not create it in advance.
      `worker-start --spec "<brief>" --task-title "#<issue> <title>" --agent <agent>`
      creates the Task and starts its worker in one call (step 6).
-   - **Dependent Task** (has dependencies, or other Tasks depend on it):
+   - **Dependent Task** (has functional dependencies, or other Tasks
+     functionally depend on it):
      create it up front with
      `task-create --spec "<brief>" --task-title "#<issue> <title>" --deps '<json_array>'`
      so the DAG is recorded, then start it with
@@ -221,18 +227,25 @@ only after the user confirms.
      reports (step 11). `--worktree new` does not exist
      (`selector_not_found`), and omitting `--name` gives a random name; do
      not load the placement reference for this.
-5. Represent actual dependencies in the task DAG, including the
-   same-part overlaps from step 3. Orca unblocks a dependent
+5. Represent only functional dependencies from step 3 in the task DAG
+   (`--deps`). Orca unblocks a dependent
    Task as soon as its dependency Task completes, and an Implementation Task
    completes when its PR is opened, before the PR is merged. Dispatch a
    dependent Task only after every dependency's PR has been **merged**; never
    dispatch on Orca's ready state (`task-list --ready`) alone. Tell its
    worker to start from the
    latest `origin/main`, which includes those merges.
+   An ordered Task (step 3's **Ordering**) is an Independent Task (step 4,
+   `--spec`); the Coordinator only keeps its dispatch order. Dispatch it
+   from the latest `origin/main` as soon as the earlier PR is merged, or the
+   earlier PR is waiting for the user's decision or held by the user's
+   choice. Merge preparation (step 13) resolves the resulting conflicts.
 6. Before the first dispatch, briefly present the execution plan to the
-   user: the fixed Issue set by number, Task dependencies, dispatch order,
+   user: the fixed Issue set by number, functional dependencies and
+   orderings (listed separately), dispatch order,
    and the resolved worker model, effort, and `MAX_WORKERS` from step 0.
-   For Tasks that edit the same file
+   For each ordering, state the reason (which part both Tasks edit, or that
+   the overlap is unclear). For Tasks that edit the same file
    but run in parallel, state that decision and its reason (e.g. which
    parts each edits). Then start dispatching without waiting for approval,
    unless step 3 requires asking for the order.
@@ -285,7 +298,8 @@ only after the user confirms.
      also kills the Coordinator's and other workers' processes.
 8. Fill available worker slots before waiting for completions.
    Dispatch additional tasks as slots become available, holding back
-   dependent Tasks until their dependency PRs are merged (step 5).
+   dependent Tasks until their dependency PRs are merged, and ordered Tasks
+   until the earlier PR is merged or waiting for the user (step 5).
 9. Then save the checkpoint and end the turn; Orca wakes you (see
    **Waiting**). Never run a watcher, a waiter, or a `check` loop.
 10. Track each Task's worktree, branch, PR URL, review status, review count,
@@ -325,9 +339,9 @@ only after the user confirms.
 
 Use these checks in steps 12 and 14, against the current PR head:
 
-- The worker handoff's `unmet/unverified acceptance criteria:` is `none`,
-  or the user explicitly approved the outstanding criteria for this head
-  under **Unmet or unverified acceptance criteria**. A missing field is not
+- The latest worker handoff's `unmet/unverified acceptance criteria:` is
+  `none`, or the split in **Unmet or unverified acceptance criteria** is
+  done right before the merge (step 15). A missing field is not
   `none`: ask the worker for it before proceeding.
 - The PR branch includes the latest `origin/main`: after
   `git fetch --prune origin`,
@@ -380,7 +394,7 @@ Use these checks in steps 12 and 14, against the current PR head:
     - Cross-reviews used so far (the latest `review-count: <count>/<max>`)
       and any unresolved must findings or blockers, plus
       `follow-up candidates:` and `unmet/unverified acceptance criteria:`
-      from the Implementation handoff, with any user decision on them.
+      from the Implementation handoff.
     - When the latest cross-review did not see the head (**Unreviewed
       head** in steps 12 and 14): the reviewed commit and the head, and the
       task to run cross-review on the unreviewed commits and address its
@@ -455,7 +469,9 @@ Use these checks in steps 12 and 14, against the current PR head:
       the PR and ask the user. In step 17, list every rerun and suggest an
       Issue for a test that failed this way more than once.
 15. Merge the PR yourself only when all conditions are met and the quota
-    `check` immediately before the merge is READY.
+    `check` immediately before the merge is READY. When the latest handoff's
+    `unmet/unverified acceptance criteria:` is not `none`, first split the
+    remaining criteria as **Unmet or unverified acceptance criteria** says.
     Use only this command, with `<sha>` equal to the full `headRefOid`
     verified in step 14:
 
@@ -476,7 +492,11 @@ Use these checks in steps 12 and 14, against the current PR head:
 16. After each merge, fetch the latest `origin/main` and repeat
     merge preparation for the next PR. If `main` changes before
     merging, revalidate the affected PR. Dispatch any dependent Task whose
-    dependency PRs are now all merged (see step 5).
+    dependency PRs are now all merged, and any ordered Task now allowed
+    (see step 5).
+    Report each merge to the user; for a PR merged with a split (**Unmet or
+    unverified acceptance criteria**), also list the original Issue (closed
+    by the merge), the split-off Issue, and the remaining criteria.
 17. Mark only confirmed merged Issues as complete. Report the
     outcome and PR URL for each Issue.
     List any open Issues outside the fixed set that you noticed during the
@@ -484,6 +504,9 @@ Use these checks in steps 12 and 14, against the current PR head:
     Collect each Issue handoff's `follow-up candidates:` under **起票候補**,
     with each suggestion's summary and review comment URL. Do not create
     Issues; the user decides which candidates to file.
+    List every PR merged with a split (**Unmet or unverified acceptance
+    criteria**): the PR, the original Issue and its state (closed by the
+    merge), the split-off Issue, and the remaining criteria with reasons.
     Remove this Run's reservation, if any (**Run completion** in
     [Waiting](references/waiting.md)).
     Then end the Run. ORCA has no command that closes a Run; the Run ends
@@ -601,22 +624,29 @@ with the Task; no terminal handle is needed.
   from `unmet/unverified acceptance criteria:` in the handoff; do not open
   Issue bodies to discover missing criteria. If the field is missing, ask
   the worker to supply it; never infer `none` from success or a clean review.
-- When the field is not `none`, do not merge. Ask the user before merging,
-  following **Asking the user**, naming each affected criterion and reason.
-  Never decide on your own that a criterion is unnecessary, even if the
-  implementation and review otherwise pass. Offer these default options:
-  - Merge and split the remaining work into a new Issue: only after the
-    user chooses this, create the follow-up Issue and change the PR to use
-    `Refs #<issue>` instead of `Closes #<issue>` for the original Issue
-    (remove any other auto-closing reference to it) before merging.
-    Do not dispatch the new Issue without the user's explicit instruction.
-  - Provide the missing value or verification and fix before merging:
-    send the work back to a worker and require an updated handoff.
-  - Hold the PR: leave it open and unmerged.
-- Record the criteria, reasons, user decision, and approved head (full SHA)
-  in the Run checkpoint. Approval to defer applies only to those criteria
-  on that head; a changed head or newly reported criterion needs a new
-  decision. All other merge conditions still apply.
+- Use the latest of the Implementation and Merge preparation handoffs.
+  When its field is not `none`, do not ask the user. Once every other merge
+  condition holds (sync, review, tests, CI), split the remaining criteria
+  right before the merge (step 15), in this order:
+  1. Create a split-off Issue whose body lists each remaining criterion,
+     its reason, and references to the original Issue and the PR. Do not
+     add it to the Run or dispatch it; start it only on the user's explicit
+     instruction.
+  2. Comment on the original Issue that the remaining acceptance criteria
+     moved to `#<split-off>`. Keep `Closes #<issue>` in the PR body so the
+     merge closes the original Issue; do not change it to `Refs`.
+  3. Record the split-off Issue's number and URL, the criteria, the
+     reasons, and the merge-target head (full SHA) in the Run checkpoint,
+     then merge.
+  - If creating the Issue or the comment cannot be confirmed, do not
+    merge; handle the failure as a blocker.
+- On resume, reuse a split-off Issue recorded in the checkpoint. If none
+  is recorded and it is unknown whether creation succeeded, search for an
+  Issue that references both the original Issue and the PR before creating
+  one. Never create a duplicate.
+- Never decide on your own that a criterion is unnecessary, and never close
+  the original Issue or merge without a split-off Issue for the remaining
+  criteria.
 
 ## Asking the user
 
@@ -638,6 +668,12 @@ Code Coordinators (blockers, decisions, model choices, or anything else).
   question.
 - Ask related pending questions together in one message, numbered, instead
   of one at a time.
+- **Keep other work going while waiting.** While any question is
+  unanswered, keep dispatching and processing other Tasks that do not
+  functionally depend on the affected PR (step 3), within `MAX_WORKERS` and
+  the quota (not while it is PAUSED_QUOTA or UNKNOWN). Only the affected
+  PR and its functionally dependent Tasks wait; an ordered Task may start
+  (step 5).
 - While a question is unanswered, end every later turn (including
   notification-only and wake-up turns) with a one-line reminder that names the
   pending question and the expected reply, instead of an empty or
