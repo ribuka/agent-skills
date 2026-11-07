@@ -38,8 +38,8 @@ def status_json(reachable: bool = True, capabilities: list[str] | None = None) -
 @pytest.fixture
 def cp(monkeypatch: pytest.MonkeyPatch):
     module = load_module()
+    orca_responses: dict[str, tuple[int, str, str]] = {ORCA: (0, status_json(), "")}
     responses: dict[str, tuple[int, str]] = {
-        "orca": (0, status_json()),
         "gh": (0, "Logged in to github.com"),
         "rev-parse": (0, CHECKOUT),
         "rev-parse HEAD": (0, HEAD_SHA),
@@ -55,13 +55,19 @@ def cp(monkeypatch: pytest.MonkeyPatch):
         # git commands are keyed by subcommand: git -C <dir> <subcommand> ...
         if cmd[0] == "git":
             return responses["rev-parse HEAD" if cmd[3:] == ["rev-parse", "HEAD"] else cmd[3]]
-        return responses["orca" if cmd[0] == ORCA else cmd[0]]
+        return responses[cmd[0]]
+
+    def fake_run_split(cmd: list[str]) -> tuple[int, str, str]:
+        calls.append(cmd)
+        return orca_responses[cmd[0]]
 
     executables = {"orca": ORCA}
     monkeypatch.setattr(module.shutil, "which", executables.get)
     monkeypatch.setattr(module, "run", fake_run)
+    monkeypatch.setattr(module, "run_split", fake_run_split)
     monkeypatch.setenv("ORCA_TERMINAL_HANDLE", "term_test")
     module.responses = responses
+    module.orca_responses = orca_responses
     module.calls = calls
     module.executables = executables
     return module
@@ -164,18 +170,54 @@ def test_blank_terminal_handle_stops(cp, monkeypatch: pytest.MonkeyPatch) -> Non
     assert cp.main(args()) == 1
 
 
+CRASHPAD_WARNING = ("[1107/130026.817:ERROR:third_party/crashpad/crashpad/util/win/"
+                    "registration_protocol_win.cc:108] CreateFile: (0x2)")
+
+
 @pytest.mark.parametrize("response, expected", [
-    ((1, "connection refused"), f"`{ORCA} status --json` failed (exit 1)"),
-    ((127, "orca: command not found"), f"`{ORCA} status --json` failed (exit 127)"),
-    ((0, "not json"), "unexpected output"),
-    ((0, json.dumps({"ok": True, "result": {"runtime": []}})), "unexpected output"),
-    ((0, status_json(reachable=False)), "Orca runtime is not reachable"),
+    ((1, "", "connection refused\n"), f"`{ORCA} status --json` failed (exit 1): connection refused"),
+    ((1, "partial\n", "boom"), f"`{ORCA} status --json` failed (exit 1): partial\nboom"),
+    ((127, "", "orca: command not found"),
+     f"`{ORCA} status --json` failed (exit 127): orca: command not found"),
+    ((0, json.dumps({"ok": True, "result": {"runtime": []}}), ""), "unexpected output"),
+    ((0, status_json(reachable=False), CRASHPAD_WARNING), "Orca runtime is not reachable"),
 ])
 def test_orca_runtime_failure_stops(cp, capsys: pytest.CaptureFixture[str],
-                                    response: tuple[int, str], expected: str) -> None:
-    cp.responses["orca"] = response
+                                    response: tuple[int, str, str], expected: str) -> None:
+    cp.orca_responses[ORCA] = response
     assert cp.main(args()) == 1
     assert expected in capsys.readouterr().out
+
+
+def test_orca_stderr_warning_is_ignored(cp, capsys: pytest.CaptureFixture[str]) -> None:
+    cp.orca_responses[ORCA] = (0, status_json(), CRASHPAD_WARNING + "\n")
+    assert cp.main(args()) == 0
+    out = capsys.readouterr().out
+    assert out.splitlines()[0] == "preconditions: ok"
+    assert "crashpad" not in out
+
+
+def test_unexpected_orca_output_shows_stderr(cp, capsys: pytest.CaptureFixture[str]) -> None:
+    cp.orca_responses[ORCA] = (0, "not json\n", CRASHPAD_WARNING + "\n")
+    assert cp.main(args()) == 1
+    assert (f"`{ORCA} status --json` returned unexpected output: not json; "
+            f"stderr: {CRASHPAD_WARNING}") in capsys.readouterr().out
+
+
+def test_unexpected_orca_output_without_stderr(cp, capsys: pytest.CaptureFixture[str]) -> None:
+    cp.orca_responses[ORCA] = (0, "not json", "  \n")
+    assert cp.main(args()) == 1
+    out = capsys.readouterr().out
+    assert f"`{ORCA} status --json` returned unexpected output: not json" in out
+    assert "; stderr:" not in out
+
+
+def test_run_joins_non_empty_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    module = load_module()
+    monkeypatch.setattr(module, "run_split", lambda cmd: (1, "  out \n", "err\n"))
+    assert module.run(["gh", "auth", "status"]) == (1, "out\nerr")
+    monkeypatch.setattr(module, "run_split", lambda cmd: (0, "", " err "))
+    assert module.run(["gh", "auth", "status"]) == (0, "err")
 
 
 def test_gh_auth_failure_stops(cp, capsys: pytest.CaptureFixture[str]) -> None:
@@ -255,7 +297,7 @@ def test_real_checkout_compares_with_fetched_main(tmp_path: Path,
 @pytest.mark.parametrize("capabilities", [[], ["orchestration.worker-keep-open.v1"]])
 def test_runtime_without_auto_release_stops(cp, capsys: pytest.CaptureFixture[str],
                                             capabilities: list[str]) -> None:
-    cp.responses["orca"] = (0, status_json(capabilities=capabilities))
+    cp.orca_responses[ORCA] = (0, status_json(capabilities=capabilities), "")
     assert cp.main(args()) == 1
     out = capsys.readouterr().out
     assert f"STOP: the Orca runtime does not advertise {AUTO_RELEASE}" in out
@@ -263,8 +305,8 @@ def test_runtime_without_auto_release_stops(cp, capsys: pytest.CaptureFixture[st
 
 
 def test_runtime_status_without_capabilities_stops(cp) -> None:
-    cp.responses["orca"] = (0, json.dumps({"ok": True, "result": {"runtime": {
-        "reachable": True}}}))
+    cp.orca_responses[ORCA] = (0, json.dumps({"ok": True, "result": {"runtime": {
+        "reachable": True}}}), "")
     assert cp.main(args()) == 1
 
 
@@ -284,7 +326,7 @@ def test_unresolvable_orca_stops_without_fallback(cp, capsys: pytest.CaptureFixt
 def test_selected_orca_is_the_only_candidate(cp, capsys: pytest.CaptureFixture[str]) -> None:
     ide = os.path.abspath("/usr/local/bin/orca-ide")
     cp.executables["orca-ide"] = ide
-    cp.responses[ide] = (0, status_json())
+    cp.orca_responses[ide] = (0, status_json(), "")
     assert cp.main(["--orca", "orca-ide"]) == 0
     assert f"orca-executable: {ide}" in capsys.readouterr().out
     assert [ide, "status", "--json"] in cp.calls
