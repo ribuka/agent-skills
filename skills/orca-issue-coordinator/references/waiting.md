@@ -58,6 +58,8 @@ everywhere. Update it before ending every turn and right after every
 
 - Run ID, Coordinator terminal handle, agent, absolute `<orca>` path, and the
   resolved worker settings.
+- `issues: #<n> #<n> ...`: the Issue set fixed in step 2. Update this line
+  only for additions explicitly instructed by the user, before dispatch.
 - `skill-checkout-frozen: <sha|no>` as `local_main.py freeze` printed it
   (needed by `local_main.py finish` at the end of the Run).
 - Per Task: phase, dispatch ID, worktree, branch, PR URL, review count, open
@@ -130,7 +132,9 @@ way. If one arrives during an active turn, finish the current operation first.
    **Quota control**).
 4. Process the messages as in **Receive messages**.
 5. Reconcile once: compare the checkpoint with live state (`list_workers.py`
-   from `SKILL.md`, `task-list`, PRs). Never repeat a dispatch, phase, or
+   from `SKILL.md`, `task-list`, PRs). Use the checkpoint's `issues:` line
+   as the Run's Issue set; never list Issues again to expand that set.
+   Never repeat a dispatch, phase, or
    merge the checkpoint or live state shows as done or in progress; a second
    wake for the same event is not a new event.
 6. Handle due `wake-at:` times (pending CI, a reviewer retry per

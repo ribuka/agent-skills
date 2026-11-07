@@ -707,3 +707,54 @@ def test_execution_order_rules_live_in_plan_and_dispatch() -> None:
     assert "ask the user for the order\n     before the first dispatch" in dispatch_section
     assert "unless step 3 requires asking for the order" in dispatch_section
     assert "only then dispatch the\n   next Issue" in dispatch_section
+
+
+def test_merge_command_pins_verified_head_and_handles_failures() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    merge = " ".join(skill.split("15. Merge", 1)[1].split("16. After", 1)[0].split())
+    assert "gh pr checks <pr> && gh pr merge <pr> --merge --match-head-commit <sha>" in merge
+    assert "full `headRefOid` verified in step 14" in merge
+    assert "never use `--squash`, `--rebase`, `--auto`, or `--admin`" in merge
+    assert "including pending exit `8`" in merge
+    assert "return to step 14's CI handling" in merge
+    assert "If `gh pr merge` fails, reread the head" in merge
+    assert "gh pr view <pr> --json headRefOid --jq .headRefOid" in merge
+    assert "If the head differs from `<sha>`, restart verification from step 14" in merge
+    assert "Never retry by removing `--match-head-commit`" in merge
+    assert "merely replacing `<sha>` with the new head" in merge
+    assert "If the head is unchanged, do not retry: block this PR" in merge
+    assert "**Asking the user**" in merge
+
+
+def test_issue_set_is_fixed_planned_and_restored_from_checkpoint() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    inspect = " ".join(skill.split("2. Inspect", 1)[1].split("3. Identify", 1)[0].split())
+    assert "Fix the Run's Issue set at this step" in inspect
+    assert 'resolve even "all open Issues" to the Issues open now' in inspect
+    plan = " ".join(skill.split("6. Before", 1)[1].split("## 2.", 1)[0].split())
+    assert "the fixed Issue set by number" in plan
+    waiting = WAITING.read_text(encoding="utf-8")
+    checkpoint = waiting.split("## Checkpoint", 1)[1].split("\n## ", 1)[0]
+    assert "`issues: #<n> #<n> ...`" in checkpoint
+    assert "only for additions explicitly instructed by the user" in checkpoint
+    resume = " ".join(waiting.split("## On every resume", 1)[1].split("\n## ", 1)[0].split())
+    assert "Use the checkpoint's `issues:` line as the Run's Issue set" in resume
+    assert "never list Issues again to expand that set" in resume
+
+
+def test_issue_additions_require_explicit_instruction_and_no_provenance_guess() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    rules = " ".join(skill.split("## Rules", 1)[1].split())
+    for rule in ("Do not add or dispatch Issues that appear during the Run",
+                 "regardless of who created them",
+                 "do not ask whether to add them",
+                 "an explicit instruction from the user in chat naming Issue numbers",
+                 "step 3's dependency/overlap assessment and step 5's DAG rules",
+                 "update the checkpoint's `issues:` line before dispatch",
+                 "Never treat silence as consent",
+                 "only as verified facts: author account and creation time",
+                 "Do not infer who requested or why someone created an Issue",
+                 "an `app/claude` author does not establish that a worker created it"):
+        assert rule in rules, rule
+    report = " ".join(skill.split("17. Mark", 1)[1].split("\n## ", 1)[0].split())
+    assert "outside this Run's scope, with their numbers and titles" in report
