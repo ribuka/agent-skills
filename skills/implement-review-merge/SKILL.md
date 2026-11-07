@@ -52,6 +52,22 @@ whenever a step below says so; never merge on a guess.
     criterion not met or not verified, with the reason for each (for example,
     real hardware is unavailable); write `none` only when all criteria are
     met and verified. Keep this separate from review findings and blockers.
+  - Judge criteria and how to verify them as
+    [Verification](references/verification.md) says:
+    - Verify with the method the repository's docs (`AGENTS.md`,
+      `CLAUDE.md`, and the docs they reference) set for that kind of
+      change; without one, use the repository's tests and a check you
+      actually ran locally.
+    - Never add, as a criterion, verification in an environment or with
+      data the Issue does not require (production, an executable, real
+      hardware, real data, and so on).
+    - An environment that appears only in the Issue's background, current
+      state, or measurement notes is not a criterion; only the Issue's
+      tasks and acceptance criteria are.
+    - Still report a missing behavior the Issue's goal clearly requires,
+      even if the Issue does not state it; a missing behavior is not an
+      added criterion.
+    - State what you verified with in the PR body's test section.
   - The Coordinator alone decides when and in what order to merge PRs.
   - Report blockers to the Coordinator instead of asking the user directly.
   - Preserve the `pr-cross-review` per-PR review limit (`MAX_REVIEWS`)
@@ -102,6 +118,12 @@ whenever a step below says so; never merge on a guess.
 Implement the task, or address the review findings from step 6.
 
 Run the relevant tests as **Token budget** below says.
+
+When the Issue fixes a bug and states its reproduction conditions (data
+shape and scale, steps, environment), confirm the fix under those
+conditions once at the end; synthesize data the Issue describes, and report
+only an environment you cannot prepare, with the reason, as unverified.
+See [Verification](references/verification.md).
 
 ### 3. Commit
 
@@ -264,7 +286,8 @@ its scope narrow.
   options that narrow the output (e.g. pytest `-q --tb=short`) and read only
   the information about failed tests.
 - **Benchmarks:** while developing, run on small data with few repetitions.
-  Run once at the scale the acceptance criteria require, at the end.
+  Run once at the scale the acceptance criteria or a bug's reproduction
+  conditions require, at the end.
 - **Images** (screenshots, E2E captures): do not load them into the
   conversation by default. Only when the acceptance criteria require a
   visual check, load downscaled images one at a time.
