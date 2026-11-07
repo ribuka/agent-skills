@@ -211,17 +211,25 @@ def test_implementation_workers_do_not_sync_with_main() -> None:
     assert "never tells\n  a worker still implementing to rebase" in rules
 
 
-def test_overlapping_tasks_rule_and_plan() -> None:
-    skill = SKILL_MD.read_text(encoding="utf-8")
-    overlap_step = skill.split("3. Identify dependencies", 1)[1].split("4. Create one", 1)[0]
-    assert "**Same part of the same file**" in overlap_step
-    assert "this as a dependency and run the Tasks in order" in overlap_step
-    assert "**Distant parts of the same file only:** run the Tasks in parallel" in overlap_step
-    assert "merge preparation (step 13)" in overlap_step
-    dag_step = skill.split("5. Represent actual dependencies", 1)[1].split("6. Before", 1)[0]
-    assert "same-part overlaps from step 3" in dag_step
+def test_functional_dependencies_and_orderings_are_separate() -> None:
+    skill = " ".join(SKILL_MD.read_text(encoding="utf-8").split())
+    step3 = skill.split("3. Identify dependencies", 1)[1].split("4. Create one", 1)[0]
+    for phrase in ("**Functional dependency:**", "\"depends on\"", "\"blocked by\"",
+                   "relies on code, an API, a configuration, or data",
+                   "only after the earlier PR is **merged**", "**Ordering:**",
+                   "same part of the same file", "still unclear after reading the Issue bodies",
+                   "Do not record it in the DAG",
+                   "**Distant parts of the same file only:** run the Tasks in parallel",
+                   "merge preparation (step 13)"):
+        assert phrase in step3
+    step5 = skill.split("5. Represent only functional dependencies", 1)[1].split("6. Before", 1)[0]
+    for phrase in ("(`--deps`)", "An ordered Task", "Independent Task (step 4, `--spec`)",
+                   "from the latest `origin/main`", "the earlier PR is merged",
+                   "waiting for the user's decision or held by the user's choice"):
+        assert phrase in step5
     plan_step = skill.split("6. Before the first dispatch", 1)[1].split("## 2.", 1)[0]
-    assert "For Tasks that edit the same file" in plan_step
+    assert "functional dependencies and orderings (listed separately)" in plan_step
+    assert "For each ordering, state the reason" in plan_step
     assert "state that decision and its reason" in plan_step
 
 
@@ -270,40 +278,57 @@ def test_worker_questions_that_change_the_issue_go_to_the_user() -> None:
     assert "acceptance criteria is never routine" in " ".join(skill.split())
 
 
-def test_unmet_criteria_require_user_decision_from_handoff_before_merge() -> None:
-    skill = SKILL_MD.read_text(encoding="utf-8")
-    section = " ".join(skill.split("### Unmet or unverified acceptance criteria", 1)[1]
-                       .split("\n## ", 1)[0].split())
+def test_unmet_criteria_are_split_off_before_merge_without_asking() -> None:
+    skill = " ".join(SKILL_MD.read_text(encoding="utf-8").split())
+    section = skill.split("### Unmet or unverified acceptance criteria", 1)[1].split("## Asking the user", 1)[0]
     for phrase in ("every Implementation or Merge preparation `worker_done`",
                    "`unmet/unverified acceptance criteria:` in the handoff",
                    "do not open Issue bodies", "field is missing, ask the worker",
                    "never infer `none` from success or a clean review",
-                   "When the field is not `none`, do not merge",
-                   "Ask the user before merging", "**Asking the user**",
+                   "latest of the Implementation and Merge preparation handoffs",
+                   "do not ask the user", "right before the merge (step 15)",
+                   "Create a split-off Issue",
+                   "its reason, and references to the original Issue and the PR",
+                   "Do not add it to the Run or dispatch it",
+                   "Comment on the original Issue", "Keep `Closes #<issue>`",
+                   "do not change it to `Refs`", "merge-target head (full SHA)",
+                   "in the Run checkpoint, then merge", "cannot be confirmed, do not merge",
+                   "reuse a split-off Issue recorded in the checkpoint",
+                   "Never create a duplicate",
                    "Never decide on your own that a criterion is unnecessary",
-                   "Merge and split", "`Refs #<issue>` instead of `Closes #<issue>`",
-                   "remove any other auto-closing reference", "before merging",
-                   "Provide the missing value or verification and fix before merging",
-                   "require an updated handoff", "Hold the PR",
-                   "approved head (full SHA)", "changed head or newly reported criterion",
-                   "All other merge conditions still apply"):
+                   "never close the original Issue or merge without a split-off Issue"):
         assert phrase in section
-    common = " ".join(skill.split("### Common verification conditions", 1)[1]
-                      .split("### Merge sequence", 1)[0].split())
-    for phrase in ("`unmet/unverified acceptance criteria:` is `none`",
-                   "user explicitly approved", "missing field is not `none`"):
-        assert phrase in common
-    handoff = " ".join(skill.split("13. When a worker slot is free", 1)[1]
-                       .split("14. Independently", 1)[0].split())
-    assert "`unmet/unverified acceptance criteria:` from the Implementation handoff" in handoff
-    assert "with any user decision on them" in handoff
+    for phrase in ("Hold the PR", "approved head", "Provide the missing value",
+                   "Ask the user before merging"):
+        assert phrase not in section
+    common = skill.split("### Common verification conditions", 1)[1].split("### Merge sequence", 1)[0]
+    assert "`unmet/unverified acceptance criteria:` is `none`, or the split" in common
+    assert "missing field is not `none`" in common
+    assert "user explicitly approved" not in common
+    handoff = skill.split("13. When a worker slot is free", 1)[1].split("14. Independently", 1)[0]
+    assert "`unmet/unverified acceptance criteria:` from the Implementation handoff." in handoff
+    assert "user decision" not in handoff
+    step15 = skill.split("15. Merge the PR yourself", 1)[1].split("16. ", 1)[0]
+    assert "first split the remaining criteria" in step15
+    step16 = skill.split("16. After each merge", 1)[1].split("17. ", 1)[0]
+    step17 = skill.split("17. Mark only confirmed", 1)[1].split("## Quota control", 1)[0]
+    for step in (step16, step17):
+        assert "the split-off Issue, and the remaining criteria" in step
+    assert "closed by the merge" in step17
     waiting = " ".join(WAITING.read_text(encoding="utf-8").split())
     assert "**Unmet or unverified acceptance criteria** before any merge decision" in waiting
     assert "`unmet/unverified acceptance criteria:` with reasons" in waiting
+    assert "any split-off Issue (number and URL, criteria, reasons, and merge-target head" in waiting
+    assert "user decision" not in waiting
 
 
-
-
+def test_waiting_for_the_user_keeps_independent_tasks_going() -> None:
+    skill = " ".join(SKILL_MD.read_text(encoding="utf-8").split())
+    section = skill.split("## Asking the user", 1)[1].split("## Waiting", 1)[0]
+    for phrase in ("**Keep other work going while waiting.**", "While any question is unanswered",
+                   "do not functionally depend on the affected PR", "within `MAX_WORKERS`",
+                   "not while it is PAUSED_QUOTA or UNKNOWN", "an ordered Task may start"):
+        assert phrase in section
 
 
 def test_guides_and_references_are_read_once_per_run() -> None:
