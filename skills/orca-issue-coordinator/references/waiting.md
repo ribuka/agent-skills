@@ -146,12 +146,16 @@ is never a reason to stop, retry, abandon, or release a worker.
 
 ## Pending CI
 
-Run `gh pr checks <pr>` once. Exit `8` means pending: record the PR, its head
+Run `gh pr checks <pr>` once. Exit `8` or an empty check set on the current
+head means pending; do not ask the user. In either case record the PR, its head
 SHA, and an absolute deadline 30 minutes after the first pending observation,
 add `wake-at:` for the earlier of 15 minutes from now and the deadline, update
 the reservation, and end the turn. On that wake-up inspect the PR once more
 the same way; never reset the deadline on a later wake or after a context
-restart. If the deadline passes while CI is still pending, report
+restart. Empty and pending observations share this deadline; a transition
+between them never resets it. If the deadline passes with an empty check
+set, report `monitor-error: no checks reported` and block the PR.
+If the deadline passes while CI is still pending, report
 `monitor-error: CI deadline exceeded` and block the PR. Other errors and failed
 or cancelled checks also block it; an empty check set is not success. Recheck
 the current head and all checks immediately before merging; a new head needs

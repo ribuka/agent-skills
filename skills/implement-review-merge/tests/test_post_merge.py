@@ -13,6 +13,7 @@ SCRIPT = Path(__file__).resolve().parents[1] / "scripts/post_merge.py"
 
 @pytest.fixture
 def module(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.syspath_prepend(str(SCRIPT.parent))
     spec = importlib.util.spec_from_file_location("post_merge", SCRIPT)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -20,7 +21,8 @@ def module(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     return mod
 
 
-@pytest.mark.parametrize("config", [None, "", "# comment\n", "SYNC_LOCAL_MAIN_AFTER_MERGE=true"])
+@pytest.mark.parametrize("config", [None, "", "# comment\n", "SYNC_LOCAL_MAIN_AFTER_MERGE=true",
+                                   "CI_REGISTRATION_TIMEOUT_SECONDS=60"])
 def test_enabled_defaults_invoke_public_cli(module, tmp_path, monkeypatch, config) -> None:
     if config is not None:
         (tmp_path / "config.conf").write_text(config)

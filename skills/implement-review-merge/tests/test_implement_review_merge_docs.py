@@ -12,6 +12,18 @@ SKILL_MD = SKILL_DIR / "SKILL.md"
 COORDINATOR_MD = SKILL_DIR.parent / "orca-issue-coordinator" / "SKILL.md"
 
 
+def test_ci_registration_and_worker_completion_contract() -> None:
+    skill = " ".join(SKILL_MD.read_text(encoding="utf-8").split())
+    waiting = " ".join((SKILL_DIR / "references/ci-waiting.md").read_text(encoding="utf-8").split())
+    for text in (skill, waiting):
+        for phrase in ("wait_ci_registration.py --pr <pr-number> --head <full-sha>",
+                       "CI_REGISTRATION_TIMEOUT_SECONDS", "30 seconds", "Exit `0`",
+                       "Exit `2`", "Exit `1`", "monitor-error: no checks reported on",
+                       "CI completion (success or failure) on the synced head before `worker_done`",
+                       "never hand off with `CI pending`"):
+            assert phrase in text
+
+
 def _section(text: str, heading: str) -> str:
     return text.split(f"\n## {heading}\n", 1)[1].split("\n## ", 1)[0]
 
