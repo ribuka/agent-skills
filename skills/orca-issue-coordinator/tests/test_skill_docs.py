@@ -270,6 +270,38 @@ def test_worker_questions_that_change_the_issue_go_to_the_user() -> None:
     assert "acceptance criteria is never routine" in " ".join(skill.split())
 
 
+def test_unmet_criteria_require_user_decision_from_handoff_before_merge() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    section = " ".join(skill.split("### Unmet or unverified acceptance criteria", 1)[1]
+                       .split("\n## ", 1)[0].split())
+    for phrase in ("every Implementation or Merge preparation `worker_done`",
+                   "`unmet/unverified acceptance criteria:` in the handoff",
+                   "do not open Issue bodies", "field is missing, ask the worker",
+                   "never infer `none` from success or a clean review",
+                   "When the field is not `none`, do not merge",
+                   "Ask the user before merging", "**Asking the user**",
+                   "Never decide on your own that a criterion is unnecessary",
+                   "Merge and split", "`Refs #<issue>` instead of `Closes #<issue>`",
+                   "remove any other auto-closing reference", "before merging",
+                   "Provide the missing value or verification and fix before merging",
+                   "require an updated handoff", "Hold the PR",
+                   "approved head (full SHA)", "changed head or newly reported criterion",
+                   "All other merge conditions still apply"):
+        assert phrase in section
+    common = " ".join(skill.split("### Common verification conditions", 1)[1]
+                      .split("### Merge sequence", 1)[0].split())
+    for phrase in ("`unmet/unverified acceptance criteria:` is `none`",
+                   "user explicitly approved", "missing field is not `none`"):
+        assert phrase in common
+    handoff = " ".join(skill.split("13. When a worker slot is free", 1)[1]
+                       .split("14. Independently", 1)[0].split())
+    assert "`unmet/unverified acceptance criteria:` from the Implementation handoff" in handoff
+    assert "with any user decision on them" in handoff
+    waiting = " ".join(WAITING.read_text(encoding="utf-8").split())
+    assert "**Unmet or unverified acceptance criteria** before any merge decision" in waiting
+    assert "`unmet/unverified acceptance criteria:` with reasons" in waiting
+
+
 
 
 

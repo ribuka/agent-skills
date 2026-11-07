@@ -47,6 +47,11 @@ whenever a step below says so; never merge on a guess.
     never hand off with `CI pending`. Report monitor-error as a blocker.
     Do not merge.
 - In worker mode:
+  - In both Implementation and Merge preparation, include
+    `unmet/unverified acceptance criteria:` in `worker_done`: list every
+    criterion not met or not verified, with the reason for each (for example,
+    real hardware is unavailable); write `none` only when all criteria are
+    met and verified. Keep this separate from review findings and blockers.
   - The Coordinator alone decides when and in what order to merge PRs.
   - Report blockers to the Coordinator instead of asking the user directly.
   - Preserve the `pr-cross-review` per-PR review limit (`MAX_REVIEWS`)

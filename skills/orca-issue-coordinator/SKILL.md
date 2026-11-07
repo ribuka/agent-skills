@@ -289,8 +289,10 @@ only after the user confirms.
 9. Then save the checkpoint and end the turn; Orca wakes you (see
    **Waiting**). Never run a watcher, a waiter, or a `check` loop.
 10. Track each Task's worktree, branch, PR URL, review status, review count,
-    and blockers. Verify reports rather than treating `worker_done`
-    as proof of completion; a failed `worker_done` is never a completed Task.
+    blockers, and `unmet/unverified acceptance criteria:`. Apply **Unmet or
+    unverified acceptance criteria** below to each handoff. Verify reports
+    rather than treating `worker_done` as proof of completion; a failed
+    `worker_done` is never a completed Task.
     Run the quota `check` after processing each `worker_done`. To inspect
     workers, list every worker of the Run, across all pages:
 
@@ -323,6 +325,10 @@ only after the user confirms.
 
 Use these checks in steps 12 and 14, against the current PR head:
 
+- The worker handoff's `unmet/unverified acceptance criteria:` is `none`,
+  or the user explicitly approved the outstanding criteria for this head
+  under **Unmet or unverified acceptance criteria**. A missing field is not
+  `none`: ask the worker for it before proceeding.
 - The PR branch includes the latest `origin/main`: after
   `git fetch --prune origin`,
   `git merge-base --is-ancestor origin/main origin/<branch>` exits `0`.
@@ -373,7 +379,8 @@ Use these checks in steps 12 and 14, against the current PR head:
     - Issue number, PR URL, branch, and worktree.
     - Cross-reviews used so far (the latest `review-count: <count>/<max>`)
       and any unresolved must findings or blockers, plus
-      `follow-up candidates:` from the Implementation handoff.
+      `follow-up candidates:` and `unmet/unverified acceptance criteria:`
+      from the Implementation handoff, with any user decision on them.
     - When the latest cross-review did not see the head (**Unreviewed
       head** in steps 12 and 14): the reviewed commit and the head, and the
       task to run cross-review on the unreviewed commits and address its
@@ -587,6 +594,29 @@ with the Task; no terminal handle is needed.
   decide. Reply to the worker that it must wait for the user's decision, then
   ask the user (see **Asking the user**), naming the affected criterion.
   Answer the worker only after the user replies.
+
+### Unmet or unverified acceptance criteria
+
+- On every Implementation or Merge preparation `worker_done`, judge this
+  from `unmet/unverified acceptance criteria:` in the handoff; do not open
+  Issue bodies to discover missing criteria. If the field is missing, ask
+  the worker to supply it; never infer `none` from success or a clean review.
+- When the field is not `none`, do not merge. Ask the user before merging,
+  following **Asking the user**, naming each affected criterion and reason.
+  Never decide on your own that a criterion is unnecessary, even if the
+  implementation and review otherwise pass. Offer these default options:
+  - Merge and split the remaining work into a new Issue: only after the
+    user chooses this, create the follow-up Issue and change the PR to use
+    `Refs #<issue>` instead of `Closes #<issue>` for the original Issue
+    (remove any other auto-closing reference to it) before merging.
+    Do not dispatch the new Issue without the user's explicit instruction.
+  - Provide the missing value or verification and fix before merging:
+    send the work back to a worker and require an updated handoff.
+  - Hold the PR: leave it open and unmerged.
+- Record the criteria, reasons, user decision, and approved head (full SHA)
+  in the Run checkpoint. Approval to defer applies only to those criteria
+  on that head; a changed head or newly reported criterion needs a new
+  decision. All other merge conditions still apply.
 
 ## Asking the user
 

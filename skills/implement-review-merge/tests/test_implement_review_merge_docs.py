@@ -94,6 +94,18 @@ def test_worker_quota_pause_report_includes_context_size() -> None:
         assert text in skill
 
 
+def test_both_worker_phases_report_unmet_or_unverified_criteria() -> None:
+    modes = " ".join(_section(SKILL_MD.read_text(encoding="utf-8"), "Execution modes").split())
+    contract = modes.split("- In worker mode:", 1)[1].split(
+        "The Coordinator alone decides", 1)[0]
+    for phrase in ("In both Implementation and Merge preparation",
+                   "`unmet/unverified acceptance criteria:` in `worker_done`",
+                   "every criterion not met or not verified",
+                   "reason for each", "`none` only when all criteria are met and verified",
+                   "separate from review findings and blockers"):
+        assert phrase in contract
+
+
 def test_resumed_phase_asks_for_handoff_first() -> None:
     skill = " ".join(SKILL_MD.read_text(encoding="utf-8").split())
     resumed = skill.split("**Resumed phase:**", 1)[1].split("**Quota pause:**", 1)[0]
