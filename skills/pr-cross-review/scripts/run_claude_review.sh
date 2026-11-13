@@ -5,7 +5,7 @@
 # Usage:
 #   run_claude_review.sh <pr-number> [options] [-- <extra instructions>]
 #
-# Options (defaults come from config.conf):
+# Options (defaults come from config.local.conf, then config.conf):
 #   --model <model>            CLAUDE_MODEL
 #   --effort <effort>          CLAUDE_EFFORT (low|medium|high|xhigh|max)
 #   --permission-mode <mode>   CLAUDE_PERMISSION_MODE
@@ -70,9 +70,9 @@ done
 
 command -v claude >/dev/null 2>&1 || die "claude command not found in PATH"
 
+prepare_body_file "$pr_number" claude
 repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
 prepare_review_context "$repo" "$pr_number" claude "$extra_review"
-prepare_body_file "$pr_number" claude
 build_review_prompt "$pr_number" claude "$extra_instructions"
 export_review_environment
 

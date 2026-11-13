@@ -5,7 +5,7 @@
 # Usage:
 #   run_codex_review.sh <pr-number> [options] [-- <extra instructions>]
 #
-# Options (defaults come from config.conf):
+# Options (defaults come from config.local.conf, then config.conf):
 #   --model <model>                   CODEX_MODEL
 #   --effort <effort>                 CODEX_EFFORT, passed as `-c model_reasoning_effort=<effort>`
 #   --sandbox <mode>                  CODEX_SANDBOX (read-only|workspace-write|danger-full-access)
@@ -102,9 +102,9 @@ require_positive_int "heartbeat timeout seconds" "$heartbeat_timeout_seconds"
 
 command -v codex >/dev/null 2>&1 || die "codex command not found in PATH"
 
+prepare_body_file "$pr_number" codex
 repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
 prepare_review_context "$repo" "$pr_number" codex "$extra_review"
-prepare_body_file "$pr_number" codex
 build_review_prompt "$pr_number" codex "$extra_instructions"
 export_review_environment
 

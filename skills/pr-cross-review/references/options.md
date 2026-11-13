@@ -1,8 +1,42 @@
 # pr-cross-review options
 
-Defaults come from `config.conf` in the skill directory. It is the only place
-defaults are defined; a missing key stops the script. Command-line options
-override it for a single run.
+## Settings
+
+Each value comes from, in order of precedence:
+
+1. The matching command-line option, for a single run.
+2. `config.local.conf` in the skill directory: the user's personal settings,
+   ignored by git and optional. Set only the keys to change.
+3. `config.conf` in the skill directory: the shared defaults, the only place
+   defaults are defined. A missing key stops the script.
+
+Both files use the same format, with LF or CRLF line endings:
+
+- One `KEY=value` per line. Blank lines and lines whose first non-blank
+  character is `#` are skipped.
+- Spaces around the key and the value are trimmed. Everything after the first
+  `=` is the literal value, keeping inner spaces and `=`: no shell evaluation,
+  no quote removal, no inline comments.
+- Examples: `MAX_REVIEWS=5`, `CLAUDE_EFFORT=high`, `REVIEW_BODY_DIR=tmp/review drafts`.
+
+Every script (`run_*_review.sh`, `review_status.sh`, `post_pr_comment.sh`)
+checks both whole files before any GitHub lookup or reviewer launch. An
+unknown key, a duplicate key, an empty value, a line without `=`, or an
+unreadable file prints `error: <file>: ...` to stderr and exits 1. Final values
+are then checked as the options are. `MAX_REVIEWS` is a decimal integer from 1
+to 2147483647 without leading zeros.
+
+`MAX_REVIEWS` is the normal per-PR limit for every PR; the run scripts and
+`review_status.sh` use the same effective value. To go past it on one PR, use
+`--extra-review` with the user's approval; never edit either file for that.
+
+Keys: common `REVIEW_LANGUAGE`, `MAX_REVIEWS`, `REVIEW_BODY_DIR`,
+`REVIEW_BODY_NOT_IGNORED`, `REVIEW_BODY_PATH_ENFORCED`; Codex `CODEX_MODEL`,
+`CODEX_EFFORT`, `CODEX_SANDBOX`, `CODEX_NETWORK_ACCESS`,
+`CODEX_TIMEOUT_SECONDS`, `CODEX_HEARTBEAT_TIMEOUT_SECONDS`; Claude
+`CLAUDE_MODEL`, `CLAUDE_EFFORT`, `CLAUDE_PERMISSION_MODE`.
+
+## Options
 
 Common to both scripts:
 
@@ -10,11 +44,11 @@ Common to both scripts:
 <script> <pr-number> [options] [-- <extra instructions>]
 ```
 
-| config.conf key   | Meaning |
-|-------------------|---------|
+| Key | Meaning |
+|-----|---------|
 | `REVIEW_LANGUAGE` | Language of the review comment, as an English name (`Japanese`, `English`, ...) |
 | `MAX_REVIEWS`     | Maximum cross-reviews per PR (Codex + Claude combined) |
-| `REVIEW_BODY_DIR` | Directory for the comment body file `pr-<number>-review-<agent>.md`; relative paths start at the repository root. The script creates it and passes the exact file path in the prompt |
+| `REVIEW_BODY_DIR` | Directory for the comment body file `pr-<number>-review-<agent>.md`; relative paths start at the repository root. The script creates it and passes the exact file path in the prompt, single-quoted in the post command, so the path must not contain `'` or the quotes PowerShell treats alike, U+2018 to U+201B (exit 1 before any GitHub lookup) |
 | `REVIEW_BODY_NOT_IGNORED` | `error` / `warn`: what to do when that file is not ignored by git |
 | `REVIEW_BODY_PATH_ENFORCED` | `true` / `false`: `post_pr_comment.sh` rejects any other body file (and stdin) |
 
@@ -32,8 +66,8 @@ Option of both review scripts:
 
 ## run_codex_review.sh
 
-| Option | config.conf key | Notes |
-|--------|----------------|-------|
+| Option | Key | Notes |
+|--------|-----|-------|
 | `--model <model>` | `CODEX_MODEL` | |
 | `--effort <effort>` | `CODEX_EFFORT` | Passed as `-c model_reasoning_effort=<effort>` |
 | `--sandbox <mode>` | `CODEX_SANDBOX` | `read-only` / `workspace-write` / `danger-full-access` |
@@ -46,16 +80,16 @@ The reviewer log's path is printed to stderr at start, so it can be tailed.
 
 ## run_claude_review.sh
 
-| Option | config.conf key | Notes |
-|--------|----------------|-------|
+| Option | Key | Notes |
+|--------|-----|-------|
 | `--model <model>` | `CLAUDE_MODEL` | |
 | `--effort <effort>` | `CLAUDE_EFFORT` | `low` / `medium` / `high` / `xhigh` / `max` |
 | `--permission-mode <mode>` | `CLAUDE_PERMISSION_MODE` | The reviewer runs `gh` via post_pr_comment.sh non-interactively |
 
 ## review_status.sh
 
-`review_status.sh <pr-number>` takes no options. It reads `MAX_REVIEWS` from
-config.conf and prints `review-count: <count>/<max>`,
+`review_status.sh <pr-number>` takes no options. It reads the effective
+`MAX_REVIEWS` and prints `review-count: <count>/<max>`,
 `review-extra: <count>` (cross-reviews beyond `<max>`, which only
 `--extra-review` runs can add; `0` otherwise), and
 `review-latest: <comment-url>` (`none` without a cross-review), and
