@@ -15,6 +15,10 @@ can pick up without asking a single question.
 - No ambiguity remains in the specification or the implementation approach.
   Every open point was either settled from the codebase or decided by the
   user through a multiple-choice question.
+- Every acceptance criterion has a check the implementing agent can run in
+  its expected environment and permissions, with a stated passing result,
+  or is a user-required pre-merge check with a plan recorded in the issue
+  (see step 4).
 
 ## Inputs
 
@@ -49,7 +53,35 @@ UI/CLI/API shape, configuration, compatibility, data migration, tests,
 documentation. Treat vague words ("fast", "appropriate", "etc.", "as needed")
 as open points until they are made concrete.
 
-### 4. Interview the user
+### 4. Plan how each acceptance criterion is verified
+
+For each draft acceptance criterion, name the test, command, or operation
+the implementing agent can run with the environment and permissions it is
+expected to have, and the result that counts as passing.
+
+- When a criterion needs real GUI interaction, a specific device, an
+  account, or a human, look for an available way to check the same
+  behavior (automated tests, simulated input, a headless run). If a
+  simulated check covers only part of the path, state what it covers and
+  what it does not (e.g. a synthetic drop event reaches the handler but
+  skips the OS drag-and-drop between processes).
+- A check the agent cannot run by itself is not an acceptance criterion by
+  default. If the check is still wanted, record it as a post-merge check.
+- Only when the user explicitly requires such a check before merging, keep
+  it as a pre-merge acceptance criterion and decide, before publishing: who
+  runs it, the environment and steps, when it runs (e.g. after review, on
+  the PR head), the passing result, and what happens if it cannot be run.
+  Ask the user only for the points the code and existing procedures cannot
+  settle.
+- When whether a merge-deciding check can be run at all cannot be judged
+  from the code and existing tests, split off a short investigation first
+  (a separate issue or a first implementation step whose result decides the
+  remaining criteria), and settle the criteria from its result.
+
+Add every point this leaves undecided (e.g. whether a real-device check
+must block the merge) to the open points.
+
+### 5. Interview the user
 
 Resolve the open points with a multiple-choice question tool, within that
 tool's limits:
@@ -69,7 +101,7 @@ tool's limits:
   points.
 - After each round, go back to step 3. Repeat until no open point remains.
 
-### 5. Write the issue
+### 6. Write the issue
 
 Follow [the issue template](references/issue-template.md). Write the issue
 in the language of the user's request (Update mode: of the existing issue).
@@ -79,16 +111,16 @@ in the language of the user's request (Update mode: of the existing issue).
   comments into the new one. Update the title too if it no longer fits.
 
 Before publishing, check the draft against "Done when". If any sentence
-still allows two readings, go back to step 4.
+still allows two readings, go back to step 5.
 
-### 6. Confirm (optional)
+### 7. Confirm (optional)
 
 Read `CONFIRM_BEFORE_PUBLISH` from `~/.agents/skills/refine-issue/config.conf`.
 If `true`, show the title and body and ask for approval with the
 multiple-choice tool (approve / request changes). Apply requested changes and
-ask again. If `false`, go straight to step 7.
+ask again. If `false`, go straight to step 8.
 
-### 7. Publish
+### 8. Publish
 
 Write the body to a file under `tmp/` (git-ignored) and pass it with
 `--body-file`, never inline. Delete the file afterwards.
@@ -123,7 +155,7 @@ gh repo view --json nameWithOwner --jq .nameWithOwner
     (`issue_2026-11-02T1430_2.md`), using the first free one.
   - Put the title as the first line (`# <title>`), followed by the body.
 
-### 8. Report
+### 9. Report
 
 Report the issue URL or the file path, and list the decisions made in the
 interview.
