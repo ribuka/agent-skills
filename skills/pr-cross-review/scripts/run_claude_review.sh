@@ -5,7 +5,7 @@
 # Usage:
 #   run_claude_review.sh <pr-number> [options] [-- <extra instructions>]
 #
-# Options (defaults come from config.conf):
+# Options (defaults come from config.local.conf, then config.conf):
 #   --model <model>            CLAUDE_MODEL
 #   --effort <effort>          CLAUDE_EFFORT (low|medium|high|xhigh|max)
 #   --permission-mode <mode>   CLAUDE_PERMISSION_MODE

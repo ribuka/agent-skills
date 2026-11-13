@@ -8,29 +8,90 @@
 
 skill_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 config_file="${skill_dir}/config.conf"
+local_config_file="${skill_dir}/config.local.conf"
 post_script="${skill_dir}/scripts/post_pr_comment.sh"
 in_progress_variable="PR_CROSS_REVIEW_IN_PROGRESS"
+
+# Every key config.conf and config.local.conf may set.
+config_keys=(
+    REVIEW_LANGUAGE MAX_REVIEWS REVIEW_BODY_DIR REVIEW_BODY_NOT_IGNORED REVIEW_BODY_PATH_ENFORCED
+    CODEX_MODEL CODEX_EFFORT CODEX_SANDBOX CODEX_NETWORK_ACCESS CODEX_TIMEOUT_SECONDS
+    CODEX_HEARTBEAT_TIMEOUT_SECONDS
+    CLAUDE_MODEL CLAUDE_EFFORT CLAUDE_PERMISSION_MODE
+)
+max_int32=2147483647
 
 die() {
     echo "error: $*" >&2
     exit 1
 }
 
-# load_config KEY... -- source config.conf and require every listed key.
-# The keys are unset first so that a stray environment variable cannot stand
-# in for a value missing from config.conf.
+# read_config_file <file> -- validate the whole file and store its values in
+# config_values. Lines are KEY=value (LF or CRLF); blank lines and lines whose
+# first non-blank character is `#` are skipped. Key and value are trimmed, and
+# everything after the first `=` is taken literally: no shell evaluation, quote
+# removal, or inline comments.
+read_config_file() {
+    local file=$1
+    local name
+    local line
+    local line_number=0
+    local key
+    local value
+    local -A seen=()
+
+    name=$(basename -- "$file")
+    [ -f "$file" ] && [ -r "$file" ] || die "${name}: cannot read ${file}"
+    { : <"$file"; } 2>/dev/null || die "${name}: cannot read ${file}"
+    while IFS= read -r line || [ -n "$line" ]; do
+        line_number=$((line_number + 1))
+        line=${line%$'\r'}
+        [[ "$line" =~ ^[[:space:]]*(#.*)?$ ]] && continue
+        [[ "$line" == *=* ]] || die "${name}: line ${line_number}: expected KEY=value"
+        key=${line%%=*}
+        value=${line#*=}
+        [[ "$key" =~ ^[[:space:]]*([^[:space:]].*[^[:space:]]|[^[:space:]])[[:space:]]*$ ]] \
+            || die "${name}: line ${line_number}: missing key"
+        key=${BASH_REMATCH[1]}
+        if [[ "$value" =~ ^[[:space:]]*([^[:space:]].*[^[:space:]]|[^[:space:]])[[:space:]]*$ ]]; then
+            value=${BASH_REMATCH[1]}
+        else
+            die "${name}: line ${line_number}: empty value for ${key}"
+        fi
+        case " ${config_keys[*]} " in
+            *" ${key} "*) ;;
+            *) die "${name}: line ${line_number}: unknown key: ${key}" ;;
+        esac
+        [ -z "${seen[$key]:-}" ] || die "${name}: line ${line_number}: duplicate key: ${key}"
+        seen[$key]=1
+        config_values[$key]=$value
+    done <"$file"
+}
+
+# load_config KEY... -- read config.conf, then config.local.conf when present
+# (its keys override config.conf), validate both files whole, and set every
+# listed key as a shell variable. No value comes from the environment.
 load_config() {
     local key
-    [ -f "$config_file" ] || die "config file not found: $config_file"
+    declare -gA config_values=()
+    read_config_file "$config_file"
+    if [ -e "$local_config_file" ] || [ -L "$local_config_file" ]; then
+        read_config_file "$local_config_file"
+    fi
     for key in "$@"; do
-        unset "$key"
+        [ -n "${config_values[$key]:-}" ] || die "${key} is not set in ${config_file}"
+        printf -v "$key" '%s' "${config_values[$key]}"
     done
-    # Strip CR so that a config.conf saved with CRLF line endings still works.
-    # shellcheck source=/dev/null
-    source <(tr -d '\r' <"$config_file")
-    for key in "$@"; do
-        [ -n "${!key:-}" ] || die "${key} is not set in ${config_file}"
-    done
+    if [ -n "${config_values[MAX_REVIEWS]:-}" ]; then
+        require_max_reviews "${config_values[MAX_REVIEWS]}"
+    fi
+}
+
+# MAX_REVIEWS: a decimal integer without leading zeros, 1..2147483647.
+require_max_reviews() {
+    if ! [[ "$1" =~ ^[1-9][0-9]{0,9}$ ]] || [ "$1" -gt "$max_int32" ]; then
+        die "MAX_REVIEWS must be an integer from 1 to ${max_int32} without leading zeros, got: $1"
+    fi
 }
 
 require_value() {

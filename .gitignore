@@ -5,3 +5,4 @@ __pycache__/
 .pytest_cache/
 tmp/
 *.env
+skills/pr-cross-review/config.local.conf

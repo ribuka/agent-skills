@@ -17,8 +17,10 @@ the current checkout).
 
 Append `-- <text>` to add instructions to the review prompt (for example what
 to focus on). Model, effort and other options can be overridden per run; see
-[references/options.md](references/options.md). Persistent defaults live in
-`~/.agents/skills/pr-cross-review/config.conf`.
+[references/options.md](references/options.md). Shared defaults live in
+`~/.agents/skills/pr-cross-review/config.conf`; the user's git-ignored
+`config.local.conf` beside it overrides any of its keys, and command-line
+options override both (format and keys in the reference).
 
 ## Result
 
@@ -68,12 +70,14 @@ need to read the review comment.
 
 - The first review covers the whole PR; later reviews cover only commits added
   since the previous review. Re-running without new commits is rejected.
-- At most `MAX_REVIEWS` (config.conf) cross-reviews per PR, Codex and Claude combined.
+- At most `MAX_REVIEWS` (the effective setting) cross-reviews per PR, Codex and
+  Claude combined; `review-count: <count>/<max>` prints it.
 - Extra review beyond the limit: only when the user approved one more review
   for this PR, add `--extra-review` to the review script. It runs exactly one
   review and is rejected while the PR is still below the limit. Each further
-  extra review needs a new approval. Never edit `config.conf` to raise the
-  limit.
+  extra review needs a new approval. Never edit `config.conf` or
+  `config.local.conf` to get past the limit on a pull request; those files
+  are the user's standing settings.
 - A reviewer cannot launch another review (nested runs are rejected).
 - The reviewer must post through `scripts/post_pr_comment.sh`, which adds the
   footer the scripts use to count reviews. Do not post review comments by hand
@@ -91,7 +95,7 @@ need to read the review comment.
 - The reviewer writes the comment body to `<REVIEW_BODY_DIR>/pr-<number>-review-<agent>.md`
   (default `tmp/`, from the repository root). The run stops if git would not
   ignore that file, and `post_pr_comment.sh` rejects any other body file
-  (both configurable in config.conf).
+  (both configurable).
 
 The run can take several minutes (Codex has a 30 minute hard timeout by
 default), so run it in the background if your tooling supports that.

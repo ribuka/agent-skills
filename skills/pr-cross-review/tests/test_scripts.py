@@ -10,6 +10,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -21,6 +22,21 @@ EXPLORATION_SCOPE = (
     "Read code outside the diff only as far as needed to verify a finding "
     "(such as callers and dependencies of the changed code); do not explore the rest of the repository."
 )
+
+
+@pytest.fixture(autouse=True)
+def isolated_skill(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Run a copy of the skill, so a user's config.local.conf cannot affect the tests."""
+    skill_dir = tmp_path_factory.mktemp("skill")
+    shutil.copytree(Path(__file__).resolve().parents[1] / "scripts", skill_dir / "scripts")
+    shutil.copy2(Path(__file__).resolve().parents[1] / "config.conf", skill_dir / "config.conf")
+    monkeypatch.setattr(sys.modules[__name__], "SCRIPTS_DIR", skill_dir / "scripts")
+    return skill_dir
+
+
+def write_local_config(skill_dir: Path, text: str, newline: str = "\n") -> None:
+    """Write the personal settings file of the isolated skill copy."""
+    (skill_dir / "config.local.conf").write_text(text, encoding="utf-8", newline=newline)
 
 
 def find_bash() -> str:
@@ -41,6 +57,7 @@ gh() {
     case "$1 $2" in
         "repo view") printf '%s\n' 'owner/repo' ;;
         "pr view") printf '%s\n' "$REVIEW_HEAD_COMMIT" ;;
+        "pr comment") printf 'posted-body: %s\n' "$(head -n 1 "${@: -1}")" ;;
         "api --paginate")
             printf 'call\n' >>"$REVIEW_API_FILE"
             if [ "$REVIEW_API_FAILURE_AFTER" = "true" ] && [ -f "$REVIEW_STATE_FILE" ]; then
@@ -73,6 +90,12 @@ fake_reviewer() {
     fi
     if [ "$REVIEW_POST_COMMENT" = "true" ]; then
         printf 'review body\n' >"$PR_CROSS_REVIEW_BODY_FILE"
+        if [ "$REVIEW_RUN_POST" = "true" ]; then
+            printf 'review-findings: must=1 optional=2\n' >>"$PR_CROSS_REVIEW_BODY_FILE"
+            # Run the exact post command the prompt hands to the reviewer.
+            post_command=$(printf '%s\n' "${!#}" | sed -n 's/^Then post it with exactly this command (do not use `gh pr comment` directly): //p')
+            eval "$post_command" >>"$REVIEW_CAPTURE_FILE" 2>&1 || return 3
+        fi
         : >"$REVIEW_STATE_FILE"
     fi
     return "$REVIEW_EXIT_CODE"
@@ -106,6 +129,7 @@ def run_review_script(
     reviewer_output: str | None = None,
     reviewer_exit_code: int = 0,
     existing_findings: str = "unknown",
+    run_post: bool = False,
 ) -> subprocess.CompletedProcess[str]:
     """Run a review script with deterministic fake CLI and GitHub commands."""
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
@@ -130,6 +154,7 @@ def run_review_script(
         "REVIEW_API_FAILURE_AFTER": str(api_failure_after_review).lower(),
         "REVIEW_AGENT_LABEL": "Claude" if script_name == "run_claude_review.sh" else "Codex",
         "REVIEW_EXISTING_FINDINGS": existing_findings,
+        "REVIEW_RUN_POST": str(run_post).lower(),
     }
     environment.pop("PR_CROSS_REVIEW_IN_PROGRESS", None)
     return subprocess.run(
@@ -844,3 +869,258 @@ def test_review_status_reports_extra_reviews(tmp_path: Path) -> None:
         "review-latest: https://github.com/owner/repo/pull/123#issuecomment-905\n"
         f"review-latest-commit: {HEAD_COMMIT}\n"
     )
+
+
+def test_local_config_is_ignored_by_git() -> None:
+    """The personal settings file never shows up as a change."""
+    repo_root = Path(__file__).resolve().parents[3]
+    result = subprocess.run(
+        ["git", "-C", str(repo_root), "check-ignore", "-q", "skills/pr-cross-review/config.local.conf"],
+        check=False,
+    )
+    assert result.returncode == 0
+
+
+@pytest.mark.parametrize("text", [None, "", "\n  \n", "# comment\n   # indented comment\n"])
+@pytest.mark.parametrize("script_name", SCRIPT_NAMES)
+def test_empty_local_config_keeps_defaults(
+    tmp_path: Path, isolated_skill: Path, script_name: str, text: str | None
+) -> None:
+    """No file, an empty file, or comments only leave the shared defaults in effect."""
+    if text is not None:
+        write_local_config(isolated_skill, text)
+    result = run_review_script(tmp_path, script_name, post_comment=True)
+
+    assert result.returncode == 0, result.stderr
+    assert "review-count: 1/3\n" in result.stdout
+    assert "Write the review comment in Japanese." in result.stdout
+    assert "--effort medium" in result.stdout or "model_reasoning_effort=medium" in result.stdout
+
+
+LOCAL_CLAUDE_CONFIG = """\
+REVIEW_LANGUAGE = English
+MAX_REVIEWS=5
+REVIEW_BODY_DIR=drafts
+REVIEW_BODY_NOT_IGNORED=warn
+REVIEW_BODY_PATH_ENFORCED=false
+CLAUDE_MODEL=local-model
+CLAUDE_EFFORT=high
+CLAUDE_PERMISSION_MODE=plan
+"""
+
+LOCAL_CODEX_CONFIG = """\
+CODEX_MODEL=local-codex
+CODEX_EFFORT=low
+CODEX_SANDBOX=workspace-write
+CODEX_NETWORK_ACCESS=false
+CODEX_TIMEOUT_SECONDS=900
+CODEX_HEARTBEAT_TIMEOUT_SECONDS=300
+"""
+
+
+def test_local_config_overrides_claude_and_common_keys(tmp_path: Path, isolated_skill: Path) -> None:
+    """Every common and Claude key can be overridden, with CRLF line endings."""
+    write_local_config(isolated_skill, LOCAL_CLAUDE_CONFIG, newline="\r\n")
+    result = run_review_script(tmp_path, "run_claude_review.sh", post_comment=True, ignore_body_dir=False)
+
+    assert result.returncode == 0, result.stderr
+    assert "--model local-model --effort high --permission-mode plan" in result.stdout
+    assert "Write the review comment in English." in result.stdout
+    assert "review-count: 1/5\n" in result.stdout
+    assert "drafts/pr-123-review-claude.md" in result.stdout
+    assert "warning: review body file is not ignored by git" in result.stderr
+
+
+def test_local_config_overrides_codex_keys(tmp_path: Path, isolated_skill: Path) -> None:
+    """Every Codex key can be overridden, and unset keys keep their defaults."""
+    write_local_config(isolated_skill, LOCAL_CODEX_CONFIG)
+    result = run_review_script(tmp_path, "run_codex_review.sh", post_comment=True)
+
+    assert result.returncode == 0, result.stderr
+    assert (
+        "--model local-codex -c model_reasoning_effort=low --sandbox workspace-write "
+        "-c sandbox_workspace_write.network_access=false"
+    ) in result.stdout
+    assert "hard timeout: 900s, heartbeat (no-progress) timeout: 300s" in result.stderr
+    assert "review-count: 1/3\n" in result.stdout
+    assert "Write the review comment in Japanese." in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("script_name", "expected"),
+    [
+        ("run_claude_review.sh", "--model cli-model --effort low --permission-mode plan"),
+        ("run_codex_review.sh", "--model cli-model -c model_reasoning_effort=low --sandbox read-only"),
+    ],
+)
+def test_cli_options_override_local_config(
+    tmp_path: Path, isolated_skill: Path, script_name: str, expected: str
+) -> None:
+    """A command-line option wins over the same key in config.local.conf."""
+    codex_config = LOCAL_CODEX_CONFIG.replace("CODEX_SANDBOX=workspace-write", "CODEX_SANDBOX=read-only")
+    write_local_config(isolated_skill, LOCAL_CLAUDE_CONFIG + codex_config)
+    result = run_review_script(
+        tmp_path, script_name, post_comment=True, ignore_body_dir=False,
+        extra_args=("--model", "cli-model", "--effort", "low"),
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert expected in result.stdout
+
+
+@pytest.mark.parametrize("script_name", SCRIPT_NAMES)
+def test_local_max_reviews_sets_normal_limit(
+    tmp_path: Path, isolated_skill: Path, script_name: str
+) -> None:
+    """With MAX_REVIEWS=5, a normal review runs after 4 reviews and is rejected after 5."""
+    write_local_config(isolated_skill, "MAX_REVIEWS=5\n")
+    four = tuple(str(n) * 40 for n in range(1, 5))
+    result = run_review_script(tmp_path / "four", script_name, post_comment=True, existing_review_commits=four)
+    assert result.returncode == 0, result.stderr
+    assert "review-count: 5/5\n" in result.stdout
+
+    five = (*four, PREVIOUS_COMMIT)
+    result = run_review_script(tmp_path / "five", script_name, post_comment=True, existing_review_commits=five)
+    assert result.returncode == 1
+    assert "the maximum is 5" in result.stderr
+    assert "prompt:" not in result.stdout
+
+
+@pytest.mark.parametrize("script_name", SCRIPT_NAMES)
+def test_local_max_reviews_sets_extra_review_threshold(
+    tmp_path: Path, isolated_skill: Path, script_name: str
+) -> None:
+    """With MAX_REVIEWS=5, --extra-review is rejected after 4 reviews and runs after 5 as 6/5."""
+    write_local_config(isolated_skill, "MAX_REVIEWS=5\n")
+    four = tuple(str(n) * 40 for n in range(1, 5))
+    result = run_review_script(
+        tmp_path / "four", script_name, post_comment=True,
+        existing_review_commits=four, extra_args=("--extra-review",),
+    )
+    assert result.returncode == 1
+    assert "has 4 of 5 cross-reviews" in result.stderr
+
+    result = run_review_script(
+        tmp_path / "five", script_name, post_comment=True,
+        existing_review_commits=(*four, PREVIOUS_COMMIT), extra_args=("--extra-review",),
+    )
+    assert result.returncode == 0, result.stderr
+    assert "review-count: 6/5\n" in result.stdout
+
+
+def test_review_status_uses_local_max_reviews(tmp_path: Path, isolated_skill: Path) -> None:
+    """review_status.sh shows the same effective limit as the run scripts."""
+    write_local_config(isolated_skill, "MAX_REVIEWS=5\n")
+    result = run_review_script(
+        tmp_path, "review_status.sh", post_comment=False,
+        existing_review_commits=tuple(str(n) * 40 for n in range(1, 6)),
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.startswith("review-count: 5/5\nreview-extra: 0\n")
+
+
+@pytest.mark.parametrize("script_name", SCRIPT_NAMES)
+def test_body_dir_with_spaces_can_be_posted(
+    tmp_path: Path, isolated_skill: Path, script_name: str
+) -> None:
+    """The reviewer can post the generated body from a directory whose name has spaces."""
+    write_local_config(isolated_skill, "REVIEW_BODY_DIR=tmp/review drafts\n")
+    result = run_review_script(tmp_path, script_name, post_comment=True, run_post=True)
+
+    assert result.returncode == 0, result.stderr
+    assert "tmp/review drafts/pr-123-review-" in result.stdout
+    assert "posted-body: review body\n" in result.stdout
+
+
+def test_post_comment_uses_local_path_enforcement(tmp_path: Path, isolated_skill: Path) -> None:
+    """REVIEW_BODY_PATH_ENFORCED from config.local.conf applies to post_pr_comment.sh."""
+    (tmp_path / "other.md").write_text("other body\nreview-findings: must=0 optional=0\n", encoding="utf-8")
+    result = run_post_comment_script(tmp_path, HEAD_COMMIT, body_arg="other.md")
+    assert result.returncode == 1
+    assert "the body file must be" in result.stderr
+
+    write_local_config(isolated_skill, "REVIEW_BODY_PATH_ENFORCED=false\n")
+    result = run_post_comment_script(tmp_path, HEAD_COMMIT, body_arg="other.md")
+    assert result.returncode == 0, result.stderr
+    assert "other body" in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("text", "reason"),
+    [
+        ("UNKNOWN_KEY=1\n", "line 1: unknown key: UNKNOWN_KEY"),
+        ("# ok\nMAX_REVIEWS=4\nMAX_REVIEWS=5\n", "line 3: duplicate key: MAX_REVIEWS"),
+        ("CLAUDE_MODEL=  \n", "line 1: empty value for CLAUDE_MODEL"),
+        ("CLAUDE_MODEL\n", "line 1: expected KEY=value"),
+        ("=opus\n", "line 1: missing key"),
+        ("export CLAUDE_MODEL=opus\n", "line 1: unknown key: export CLAUDE_MODEL"),
+    ],
+)
+@pytest.mark.parametrize("script_name", [*SCRIPT_NAMES, "review_status.sh", "post_pr_comment.sh"])
+def test_invalid_local_config_is_rejected_first(
+    tmp_path: Path, isolated_skill: Path, script_name: str, text: str, reason: str
+) -> None:
+    """Syntax and key errors stop every script with exit 1 before GitHub or a reviewer is used."""
+    write_local_config(isolated_skill, text)
+    if script_name == "post_pr_comment.sh":
+        result = run_post_comment_script(tmp_path, HEAD_COMMIT)
+    else:
+        result = run_review_script(tmp_path, script_name, post_comment=True)
+        assert "api-calls: 0" in result.stdout
+
+    assert result.returncode == 1
+    assert result.stderr.strip() == f"error: config.local.conf: {reason}"
+    assert "prompt:" not in result.stdout
+    assert "review body" not in result.stdout
+
+
+@pytest.mark.parametrize("value", ["0", "05", "-1", "2147483648", "1.5", "five", "+3"])
+@pytest.mark.parametrize("script_name", [*SCRIPT_NAMES, "review_status.sh"])
+def test_invalid_max_reviews_is_rejected(
+    tmp_path: Path, isolated_skill: Path, script_name: str, value: str
+) -> None:
+    """MAX_REVIEWS must be a decimal integer from 1 to 2147483647 without leading zeros."""
+    write_local_config(isolated_skill, f"MAX_REVIEWS={value}\n")
+    result = run_review_script(tmp_path, script_name, post_comment=True)
+
+    assert result.returncode == 1
+    assert (
+        f"MAX_REVIEWS must be an integer from 1 to 2147483647 without leading zeros, got: {value}"
+        in result.stderr
+    )
+    assert "api-calls: 0" in result.stdout
+
+
+def test_max_reviews_accepts_upper_bound(tmp_path: Path, isolated_skill: Path) -> None:
+    """The largest allowed limit is accepted."""
+    write_local_config(isolated_skill, "MAX_REVIEWS=2147483647\n")
+    result = run_review_script(tmp_path, "review_status.sh", post_comment=False)
+
+    assert result.returncode == 0, result.stderr
+    assert "review-count: 0/2147483647\n" in result.stdout
+
+
+@pytest.mark.parametrize("script_name", SCRIPT_NAMES)
+def test_local_config_values_are_literal(
+    tmp_path: Path, isolated_skill: Path, script_name: str
+) -> None:
+    """Shell syntax, quotes, `=` and `#` in a value are kept and never executed."""
+    marker = tmp_path / "executed"
+    value = f'"x" $(touch {marker.as_posix()}) `touch {marker.as_posix()}` a=b # c'
+    write_local_config(isolated_skill, f"REVIEW_LANGUAGE= {value} \n")
+    result = run_review_script(tmp_path, script_name, post_comment=True)
+
+    assert result.returncode == 0, result.stderr
+    assert f"Write the review comment in {value}." in result.stdout
+    assert not marker.exists()
+
+
+def test_unreadable_local_config_is_rejected(tmp_path: Path, isolated_skill: Path) -> None:
+    """A config.local.conf that is not a readable file stops the script."""
+    (isolated_skill / "config.local.conf").mkdir()
+    result = run_review_script(tmp_path, "review_status.sh", post_comment=False)
+
+    assert result.returncode == 1
+    assert result.stderr.startswith("error: config.local.conf: cannot read ")
+    assert "api-calls: 0" in result.stdout
