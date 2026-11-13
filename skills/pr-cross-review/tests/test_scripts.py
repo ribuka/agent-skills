@@ -1131,12 +1131,43 @@ def test_body_dir_shell_syntax_is_not_run_when_posting(
     assert not (tmp_path / "marker2").exists()
 
 
+POWERSHELL_PARSE = (
+    "$errors = $null; "
+    "$ast = [System.Management.Automation.Language.Parser]::ParseInput($env:POST_COMMAND, [ref]$null, [ref]$errors); "
+    "$statements = $ast.EndBlock.Statements; "
+    "Write-Output \"errors=$($errors.Count) statements=$($statements.Count) "
+    "elements=$($statements[0].PipelineElements[0].CommandElements.Count)\""
+)
+
+
+def test_post_command_is_one_powershell_command(tmp_path: Path, isolated_skill: Path) -> None:
+    """PowerShell parses the post command as one command of five literal words."""
+    powershell = shutil.which("pwsh") or shutil.which("powershell")
+    if powershell is None:
+        pytest.skip("PowerShell is required to parse the post command")
+    write_local_config(
+        isolated_skill, "REVIEW_BODY_DIR=tmp/a; Write-Output INJECTED; # $(x) `y` “e”\n"
+    )
+    result = run_review_script(tmp_path, "run_codex_review.sh", post_comment=True)
+    assert result.returncode == 0, result.stderr
+    post_command = re.search(r"^Then post it with exactly this command [^:]*: (.*)$", result.stdout, re.M)
+    assert post_command is not None
+
+    parsed = subprocess.run(
+        [powershell, "-NoProfile", "-NonInteractive", "-Command", POWERSHELL_PARSE],
+        env={**os.environ, "POST_COMMAND": post_command.group(1)},
+        check=True, capture_output=True, text=True, encoding="utf-8",
+    )
+    assert parsed.stdout.strip() == "errors=0 statements=1 elements=5"
+
+
+@pytest.mark.parametrize("quote", ["'", "‘", "’", "‚", "‛"])
 @pytest.mark.parametrize("script_name", SCRIPT_NAMES)
 def test_body_dir_with_single_quote_is_rejected(
-    tmp_path: Path, isolated_skill: Path, script_name: str
+    tmp_path: Path, isolated_skill: Path, script_name: str, quote: str
 ) -> None:
-    """A body path that cannot be single-quoted for both shells stops the run before GitHub."""
-    write_local_config(isolated_skill, "REVIEW_BODY_DIR=tmp/it's\n")
+    """A quote that bash or PowerShell would close the quoted path with stops the run before GitHub."""
+    write_local_config(isolated_skill, f"REVIEW_BODY_DIR=tmp/a{quote}; Write-Output INJECTED; #\n")
     result = run_review_script(tmp_path, script_name, post_comment=True)
 
     assert result.returncode == 1

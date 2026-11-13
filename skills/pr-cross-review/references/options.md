@@ -48,7 +48,7 @@ Common to both scripts:
 |-----|---------|
 | `REVIEW_LANGUAGE` | Language of the review comment, as an English name (`Japanese`, `English`, ...) |
 | `MAX_REVIEWS`     | Maximum cross-reviews per PR (Codex + Claude combined) |
-| `REVIEW_BODY_DIR` | Directory for the comment body file `pr-<number>-review-<agent>.md`; relative paths start at the repository root. The script creates it and passes the exact file path in the prompt, single-quoted in the post command, so the path must not contain `'` (exit 1 before any GitHub lookup) |
+| `REVIEW_BODY_DIR` | Directory for the comment body file `pr-<number>-review-<agent>.md`; relative paths start at the repository root. The script creates it and passes the exact file path in the prompt, single-quoted in the post command, so the path must not contain `'` or the quotes PowerShell treats alike, U+2018 to U+201B (exit 1 before any GitHub lookup) |
 | `REVIEW_BODY_NOT_IGNORED` | `error` / `warn`: what to do when that file is not ignored by git |
 | `REVIEW_BODY_PATH_ENFORCED` | `true` / `false`: `post_pr_comment.sh` rejects any other body file (and stdin) |
 

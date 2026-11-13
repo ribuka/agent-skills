@@ -119,12 +119,17 @@ reject_nested_review() {
 
 # quoted_native_path <path> -- print the path single-quoted, in a form both
 # bash and PowerShell run literally (C:/... on Windows). Their single quotes
-# escape an embedded `'` differently, so such a path is rejected.
+# escape an embedded quote differently, so a path holding any character either
+# shell takes as a single quote (PowerShell also takes U+2018-U+201B) is
+# rejected.
 quoted_native_path() {
     local path
     path=$(native_path "$1")
     case "$path" in
-        *"'"*) die "a path the reviewer runs must not contain a single quote: ${path}" ;;
+        # UTF-8 bytes of U+2018-U+201B, so the match does not depend on the locale.
+        *"'"* | *$'\xe2\x80\x98'* | *$'\xe2\x80\x99'* | *$'\xe2\x80\x9a'* | *$'\xe2\x80\x9b'*)
+            die "a path the reviewer runs must not contain a single quote (' or U+2018-U+201B): ${path}"
+            ;;
     esac
     printf "'%s'\n" "$path"
 }
