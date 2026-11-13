@@ -272,7 +272,7 @@ def test_review_script_reports_new_comment_url(tmp_path: Path, script_name: str)
     assert f"reviewed-commit: {HEAD_COMMIT}" in result.stdout
     assert "Examine the whole diff" in result.stdout
     assert EXPLORATION_SCOPE in result.stdout
-    assert "post_pr_comment.sh\" 123 \"" in result.stdout
+    assert "post_pr_comment.sh' 123 '" in result.stdout
     assert "api-calls: 2" in result.stdout
 
 
@@ -1055,6 +1055,7 @@ def test_post_comment_uses_local_path_enforcement(tmp_path: Path, isolated_skill
         ("CLAUDE_MODEL\n", "line 1: expected KEY=value"),
         ("=opus\n", "line 1: missing key"),
         ("export CLAUDE_MODEL=opus\n", "line 1: unknown key: export CLAUDE_MODEL"),
+        ("REVIEW_LANGUAGE MAX_REVIEWS=5\n", "line 1: unknown key: REVIEW_LANGUAGE MAX_REVIEWS"),
     ],
 )
 @pytest.mark.parametrize("script_name", [*SCRIPT_NAMES, "review_status.sh", "post_pr_comment.sh"])
@@ -1114,6 +1115,33 @@ def test_local_config_values_are_literal(
     assert result.returncode == 0, result.stderr
     assert f"Write the review comment in {value}." in result.stdout
     assert not marker.exists()
+
+
+@pytest.mark.parametrize("script_name", SCRIPT_NAMES)
+def test_body_dir_shell_syntax_is_not_run_when_posting(
+    tmp_path: Path, isolated_skill: Path, script_name: str
+) -> None:
+    """Shell syntax in REVIEW_BODY_DIR stays literal in the post command the reviewer runs."""
+    write_local_config(isolated_skill, "REVIEW_BODY_DIR=tmp/$(touch marker) `touch marker2` $HOME\n")
+    result = run_review_script(tmp_path, script_name, post_comment=True, run_post=True)
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "posted-body: review body\n" in result.stdout
+    assert not (tmp_path / "marker").exists()
+    assert not (tmp_path / "marker2").exists()
+
+
+@pytest.mark.parametrize("script_name", SCRIPT_NAMES)
+def test_body_dir_with_single_quote_is_rejected(
+    tmp_path: Path, isolated_skill: Path, script_name: str
+) -> None:
+    """A body path that cannot be single-quoted for both shells stops the run before GitHub."""
+    write_local_config(isolated_skill, "REVIEW_BODY_DIR=tmp/it's\n")
+    result = run_review_script(tmp_path, script_name, post_comment=True)
+
+    assert result.returncode == 1
+    assert "must not contain a single quote" in result.stderr
+    assert "api-calls: 0" in result.stdout
 
 
 def test_unreadable_local_config_is_rejected(tmp_path: Path, isolated_skill: Path) -> None:

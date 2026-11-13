@@ -58,14 +58,19 @@ read_config_file() {
         else
             die "${name}: line ${line_number}: empty value for ${key}"
         fi
-        case " ${config_keys[*]} " in
-            *" ${key} "*) ;;
-            *) die "${name}: line ${line_number}: unknown key: ${key}" ;;
-        esac
+        is_config_key "$key" || die "${name}: line ${line_number}: unknown key: ${key}"
         [ -z "${seen[$key]:-}" ] || die "${name}: line ${line_number}: duplicate key: ${key}"
         seen[$key]=1
         config_values[$key]=$value
     done <"$file"
+}
+
+is_config_key() {
+    local known
+    for known in "${config_keys[@]}"; do
+        [ "$1" = "$known" ] && return 0
+    done
+    return 1
 }
 
 # load_config KEY... -- read config.conf, then config.local.conf when present
@@ -110,6 +115,18 @@ reject_nested_review() {
     if [ -n "${!in_progress_variable:-}" ]; then
         die "nested review launch is not allowed while ${in_progress_variable} is set"
     fi
+}
+
+# quoted_native_path <path> -- print the path single-quoted, in a form both
+# bash and PowerShell run literally (C:/... on Windows). Their single quotes
+# escape an embedded `'` differently, so such a path is rejected.
+quoted_native_path() {
+    local path
+    path=$(native_path "$1")
+    case "$path" in
+        *"'"*) die "a path the reviewer runs must not contain a single quote: ${path}" ;;
+    esac
+    printf "'%s'\n" "$path"
 }
 
 # Print a path in a form both bash and PowerShell can run (C:/... on Windows).
@@ -278,6 +295,9 @@ prepare_body_file() {
         *) body_dir="${repo_root}/${REVIEW_BODY_DIR}" ;;
     esac
     REVIEW_BODY_FILE="${body_dir%/}/pr-${pr_number}-review-${agent}.md"
+    # Reject an unquotable path here, before any GitHub lookup.
+    quoted_native_path "$REVIEW_BODY_FILE" >/dev/null
+    quoted_native_path "$post_script" >/dev/null
 
     # Exit status 0: ignored, 1: not ignored, 128: e.g. outside the repository,
     # where git cannot commit it anyway.
@@ -316,7 +336,7 @@ build_review_prompt() {
     REVIEW_PROMPT+=" Classify every finding as [must] or [optional], placed at the start of its heading. [must] means it must be fixed before merging: bugs or incorrect behavior, unmet Issue specifications or acceptance criteria, missing required tests, security or data-loss risks, and misleading instructions or documentation errors. [optional] means merging is acceptable without the change: wording, naming, organization, reducing duplication, extra tests beyond requirements, and improvements for future changes. Do not use P0-P3 or other severity labels. End the body with exactly one count line as its last non-empty line: review-findings: must=<n> optional=<n> (non-negative integers; both 0 when there are no findings). On re-review, count only unresolved must findings from the previous review and new findings in this diff; do not repeat previous optional suggestions that were not adopted."
 
     body_file=$(native_path "$REVIEW_BODY_FILE")
-    post_command="bash \"$(native_path "$post_script")\" ${pr_number} \"${body_file}\" ${agent}"
+    post_command="bash $(quoted_native_path "$post_script") ${pr_number} $(quoted_native_path "$REVIEW_BODY_FILE") ${agent}"
     REVIEW_PROMPT+=$'\n'"When the review is done, write the comment body to exactly this file (its directory already exists; do not write it anywhere else): ${body_file}"
     REVIEW_PROMPT+=$'\n'"Then post it with exactly this command (do not use \`gh pr comment\` directly): ${post_command}"
 
