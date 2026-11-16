@@ -186,3 +186,26 @@ def test_bug_fixes_are_verified_under_reproduction_conditions() -> None:
                    "is context, not a criterion",
                    "A Coordinator's brief does not lower the Issue's requirements"):
         assert phrase in ref
+
+
+def test_implementation_confirms_ci_before_worker_done() -> None:
+    modes = " ".join(_section(SKILL_MD.read_text(encoding="utf-8"), "Execution modes").split())
+    impl = modes.split("**Implementation:**", 1)[1].split("**Merge preparation:**", 1)[0]
+    for phrase in ("wait for CI on the PR's final head with step 9's CI procedure",
+                   "`wait_ci_registration.py`", "`gh pr checks --watch`",
+                   "do not sync with `main`",
+                   "Confirm CI completion (success or failure) on the final head before "
+                   "`worker_done`",
+                   "never hand off with `CI pending`",
+                   "**Related to the diff:** fix it yourself",
+                   "cross-reviewed (steps 6–7) within `MAX_REVIEWS`",
+                   "report the unreviewed fix commits as a blocker",
+                   "**Unrelated to the diff**", "do not fix or rerun it",
+                   "the Coordinator decides on a rerun",
+                   "failed test names and why you judged them unrelated",
+                   "CI-verified head (full SHA) with its CI result"):
+        assert phrase in impl
+    assert impl.index("Confirm CI completion") < impl.index("Then report the PR URL")
+    waiting = " ".join((SKILL_DIR / "references/ci-waiting.md").read_text(encoding="utf-8").split())
+    assert ("In Orchestration worker / Implementation, confirm CI completion (success or "
+            "failure) on the PR's final head before `worker_done`") in waiting

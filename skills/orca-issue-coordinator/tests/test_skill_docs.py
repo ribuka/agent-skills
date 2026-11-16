@@ -844,3 +844,27 @@ def test_issue_additions_require_explicit_instruction_and_no_provenance_guess() 
         assert rule in rules, rule
     report = " ".join(skill.split("17. Mark", 1)[1].split("\n## ", 1)[0].split())
     assert "outside this Run's scope, with their numbers and titles" in report
+
+
+def test_implementation_worker_confirms_ci_and_coordinator_skips_ci_wait() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    brief = " ".join(skill.split("\n7. Instruct each worker", 1)[1].split("\n8. ", 1)[0].split())
+    for phrase in ("confirm CI completion (success or failure) on the PR's final head before "
+                   "`worker_done`",
+                   "never handing off with `CI pending`",
+                   "report that head (full SHA) and the CI result",
+                   "A failure related to the PR's diff is fixed by the worker",
+                   "cross-reviewed within `MAX_REVIEWS`",
+                   "An unrelated failure", "not fixed or rerun",
+                   "failed test names and why it judged them unrelated",
+                   "step 14's **If a CI check fails**"):
+        assert phrase in brief
+    track = " ".join(skill.split("\n10. Track", 1)[1].split("\n11. ", 1)[0].split())
+    for phrase in ("CI-verified head and CI result",
+                   "without the CI-verified head and CI result is incomplete",
+                   "go on to step 12 without reserving a CI wake-up",
+                   "When the head changed after the report",
+                   "**Pending CI** in [Waiting](references/waiting.md)"):
+        assert phrase in track
+    assert "**Pending CI** in [Waiting](references/waiting.md) in both Claude Code and Codex" \
+        in " ".join(skill.split())

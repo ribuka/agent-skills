@@ -16,8 +16,11 @@ In worker mode report the blocker to the Coordinator. Only this script may
 poll registration; never build an agent-side polling loop.
 Apply the same procedure in Standalone mode. In Orchestration worker /
 Merge preparation, confirm CI completion (success or failure) on the synced
-head before `worker_done`; never hand off with `CI pending`. A monitor-error
-is a blocker.
+head before `worker_done`; never hand off with `CI pending`. In
+Orchestration worker / Implementation, confirm CI completion (success or
+failure) on the PR's final head before `worker_done`, without syncing with
+`main`, and report that head (full SHA) with its CI result. A monitor-error
+is a blocker in both phases.
 
 After registration, use GitHub CLI's built-in watcher:
 
