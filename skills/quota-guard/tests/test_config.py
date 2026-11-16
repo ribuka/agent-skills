@@ -1,4 +1,5 @@
-"""Tests that the pause threshold comes from config.conf and --threshold overrides it.
+"""Tests that the pause threshold comes from config.conf, config.local.conf overrides it,
+and --threshold overrides both.
 
 Run with: uv run --no-project --with pytest -m pytest <skill-dir>/tests
 """
@@ -74,29 +75,60 @@ def test_crlf_config_is_accepted(tmp_path, config, monkeypatch, capsys) -> None:
     assert (code, result["threshold"]) == (10, 90)
 
 
-@pytest.mark.parametrize("content,reason_prefix", [
-    (None, "config.conf unreadable"),
-    ("", "THRESHOLD missing from config.conf"),
-    ("# THRESHOLD=95\n", "THRESHOLD missing from config.conf"),
-    ("OTHER=1\n", "THRESHOLD missing from config.conf"),
-    ("THRESHOLD=\n", "THRESHOLD in config.conf must be a number in (0,100]"),
-    ("THRESHOLD=abc\n", "THRESHOLD in config.conf must be a number in (0,100]"),
-    ("THRESHOLD=0\n", "THRESHOLD in config.conf must be a number in (0,100]"),
-    ("THRESHOLD=-5\n", "THRESHOLD in config.conf must be a number in (0,100]"),
-    ("THRESHOLD=100.1\n", "THRESHOLD in config.conf must be a number in (0,100]"),
-    ("THRESHOLD=nan\n", "THRESHOLD in config.conf must be a number in (0,100]"),
-    ("THRESHOLD=inf\n", "THRESHOLD in config.conf must be a number in (0,100]")])
+@pytest.mark.parametrize("content,reason", [
+    (None, "{path}: cannot read"),
+    ("", "{path}: missing key: THRESHOLD"),
+    ("# THRESHOLD=95\n", "{path}: missing key: THRESHOLD"),
+    ("OTHER=1\n", "{path}: line 1: unknown key: OTHER"),
+    ("THRESHOLD=90\nTHRESHOLD=91\n", "{path}: line 2: duplicate key: THRESHOLD"),
+    ("\nTHRESHOLD=\n", "{path}: line 2: empty value for THRESHOLD"),
+    ("THRESHOLD\n", "{path}: line 1: expected KEY=value"),
+    ("THRESHOLD=abc\n", "{path}: line 1: THRESHOLD must be a number in (0,100]"),
+    ("THRESHOLD=0\n", "{path}: line 1: THRESHOLD must be a number in (0,100]"),
+    ("THRESHOLD=-5\n", "{path}: line 1: THRESHOLD must be a number in (0,100]"),
+    ("THRESHOLD=100.1\n", "{path}: line 1: THRESHOLD must be a number in (0,100]"),
+    ("THRESHOLD=nan\n", "{path}: line 1: THRESHOLD must be a number in (0,100]"),
+    ("# c\nTHRESHOLD=inf\n", "{path}: line 2: THRESHOLD must be a number in (0,100]")])
 def test_missing_or_invalid_config_is_unknown(tmp_path, config, monkeypatch, capsys,
-                                              content, reason_prefix) -> None:
+                                              content, reason) -> None:
     if content is not None:
         config.write_text(content, encoding="utf-8")
     code, result = run_check(monkeypatch, capsys, tmp_path / "state")
     assert code == 20
     assert result == {
-        "state": "UNKNOWN", "reason": f"{reason_prefix}: {config}",
+        "state": "UNKNOWN", "reason": reason.format(path=config),
         "checkpoint_dir": str(tmp_path / "state" / "checkpoints"),
         "local_retry_seconds": guard.LOCAL_RETRY_SECONDS,
         **guard.wakeup(NOW + 900)}
+
+
+def test_local_config_overrides_threshold(tmp_path, config, monkeypatch, capsys) -> None:
+    config.write_text("THRESHOLD=95\n", encoding="utf-8")
+    config.with_name("config.local.conf").write_text("# personal\n  THRESHOLD = 90 \n",
+                                                      encoding="utf-8")
+    code, result = run_check(monkeypatch, capsys, tmp_path / "state")
+    assert (code, result["state"], result["threshold"]) == (10, "PAUSED_QUOTA", 90)
+
+
+def test_option_overrides_local_config(tmp_path, config, monkeypatch, capsys) -> None:
+    config.write_text("THRESHOLD=95\n", encoding="utf-8")
+    config.with_name("config.local.conf").write_text("THRESHOLD=80\n", encoding="utf-8")
+    code, result = run_check(monkeypatch, capsys, tmp_path / "state", "--threshold", "91")
+    assert (code, result["threshold"]) == (0, 91)
+
+
+@pytest.mark.parametrize("content,reason", [
+    ("OTHER=1\n", "line 1: unknown key: OTHER"),
+    ("THRESHOLD=90\nTHRESHOLD=91\n", "line 2: duplicate key: THRESHOLD"),
+    ("THRESHOLD= \n", "line 1: empty value for THRESHOLD"),
+    ("THRESHOLD=101\n", "line 1: THRESHOLD must be a number in (0,100]")])
+def test_invalid_local_config_is_unknown(tmp_path, config, monkeypatch, capsys,
+                                         content, reason) -> None:
+    config.write_text("THRESHOLD=95\n", encoding="utf-8")
+    local = config.with_name("config.local.conf")
+    local.write_text(content, encoding="utf-8")
+    code, result = run_check(monkeypatch, capsys, tmp_path / "state")
+    assert (code, result["state"], result["reason"]) == (20, "UNKNOWN", f"{local}: {reason}")
 
 
 def test_missing_config_fails_codex_without_reading_limits(tmp_path, config, monkeypatch,
@@ -109,7 +141,7 @@ def test_missing_config_fails_codex_without_reading_limits(tmp_path, config, mon
     assert guard.main() == 20
     result = json.loads(capsys.readouterr().out)
     assert result == {
-        "state": "UNKNOWN", "reason": f"config.conf unreadable: {config}", "provider": "codex",
+        "state": "UNKNOWN", "reason": f"{config}: cannot read", "provider": "codex",
         "checkpoint_dir": str(tmp_path / "checkpoints"),
         "local_retry_seconds": guard.LOCAL_RETRY_SECONDS,
         **guard.wakeup(NOW + 900)}

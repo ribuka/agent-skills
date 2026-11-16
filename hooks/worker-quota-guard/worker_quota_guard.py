@@ -16,8 +16,10 @@ hook lets each worker stop itself:
    Coordinator and Standalone terminals are not workers and are allowed.
 
 The threshold and the allowed commands live in quota-guard and `config.conf`,
-never in this script. A missing or unreadable `config.conf` allows every call
-and warns on stderr. The hook keeps no state, so running it twice for one tool
+never in this script. `config.local.conf` beside it (git-ignored, optional)
+overrides single keys: a key it sets replaces every line of that key from
+`config.conf`. A missing or invalid `config.conf`, or an invalid
+`config.local.conf`, allows every call and warns on stderr. The hook keeps no state, so running it twice for one tool
 call gives the same result.
 
 Usage (registered as a PreToolUse command): worker_quota_guard.py --provider claude|codex
@@ -36,7 +38,10 @@ import sys
 from pathlib import Path
 
 CONFIG = Path(__file__).resolve().parent / "config.conf"
-CONFIG_KEYS = {"QUOTA_GUARD", "SHELL_TOOL", "ALLOW_COMMAND"}
+LOCAL_CONFIG_NAME = "config.local.conf"
+CONFIG_KEYS = ("QUOTA_GUARD", "SHELL_TOOL", "ALLOW_COMMAND")
+# Keys whose repeated lines accumulate into a list; any other key may appear once.
+LIST_KEYS = {"SHELL_TOOL", "ALLOW_COMMAND"}
 QUOTA_TIMEOUT_SECONDS = 30
 ORCA_TIMEOUT_SECONDS = 15
 MAX_WORKER_PAGES = 5
@@ -44,32 +49,49 @@ SEPARATORS = ";&|()\n\r`"
 
 
 class ConfigError(Exception):
-    """config.conf is missing or invalid."""
+    """config.conf or config.local.conf is missing or invalid."""
 
 
-def load_config(path: Path) -> dict[str, list[str]]:
-    """Parse KEY=VALUE lines; repeated keys accumulate in order."""
+def read_config_file(path: Path) -> dict[str, list[str]]:
+    """Parse one file's KEY=value lines; repeated list keys accumulate in order."""
     try:
-        text = path.read_text(encoding="utf-8")
-    except OSError as error:
-        raise ConfigError(f"cannot read {path}: {error}") from None
-    values: dict[str, list[str]] = {key: [] for key in CONFIG_KEYS}
+        text = path.read_text(encoding="utf-8-sig")
+    except (OSError, UnicodeDecodeError) as error:
+        raise ConfigError(f"{path}: cannot read: {error}") from None
+    values: dict[str, list[str]] = {}
     for number, raw in enumerate(text.splitlines(), 1):
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
         key, sep, value = line.partition("=")
         key, value = key.strip(), value.strip()
-        if not sep or key not in CONFIG_KEYS or not value:
-            raise ConfigError(f"{path}:{number}: invalid line: {raw}")
+        where = f"{path}: line {number}"
+        if not sep:
+            raise ConfigError(f"{where}: expected KEY=value")
+        if key not in CONFIG_KEYS:
+            raise ConfigError(f"{where}: unknown key: {key}")
+        if key in values and key not in LIST_KEYS:
+            raise ConfigError(f"{where}: duplicate key: {key}")
+        if not value:
+            raise ConfigError(f"{where}: empty value for {key}")
         if key == "ALLOW_COMMAND":
             try:
                 re.compile(value)
             except re.error as error:
-                raise ConfigError(f"{path}:{number}: invalid regex: {error}") from None
-        values[key].append(value)
-    if len(values["QUOTA_GUARD"]) != 1:
-        raise ConfigError(f"{path}: QUOTA_GUARD must be set exactly once")
+                raise ConfigError(f"{where}: invalid regex: {error}") from None
+        values.setdefault(key, []).append(value)
+    return values
+
+
+def load_config(path: Path) -> dict[str, list[str]]:
+    """Read config.conf, then config.local.conf beside it; a local key replaces the shared one."""
+    values = read_config_file(path)
+    local = path.with_name(LOCAL_CONFIG_NAME)
+    if local.exists() or local.is_symlink():
+        values.update(read_config_file(local))
+    missing = [key for key in CONFIG_KEYS if key not in values]
+    if missing:
+        raise ConfigError(f"{path}: missing keys: {', '.join(missing)}")
     return values
 
 
@@ -192,7 +214,8 @@ def main(argv: list[str] | None = None) -> int:
          "stop. Stop at a safe boundary (commit and push finished changes, or let a "
          "running review finish; leave uncommitted changes in the worktree) and report "
          "with worker_done. Until the quota resets, only the commands allowed in "
-         f"{CONFIG} run. quota: {json.dumps(quota, ensure_ascii=True)}")
+         f"{CONFIG} (or {LOCAL_CONFIG_NAME} beside it) run. "
+         f"quota: {json.dumps(quota, ensure_ascii=True)}")
     return 0
 
 

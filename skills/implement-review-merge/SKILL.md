@@ -230,8 +230,8 @@ Keep test and CI output small (see **Token budget**); never read full logs:
 - After every push, before starting the watcher, run:
   `uv run --no-project ~/.agents/skills/implement-review-merge/scripts/wait_ci_registration.py --pr <pr-number> --head <full-sha>`.
   It checks the expected head and a nonempty check set every 30 seconds.
-  `CI_REGISTRATION_TIMEOUT_SECONDS` in this skill's `config.conf` is a
-  positive integer, default `300` when the file or key is absent.
+  `CI_REGISTRATION_TIMEOUT_SECONDS` (see **Settings**) is a positive
+  integer.
   Exit `0` prints `ci-registration: registered <sha>`: start the watcher.
   Exit `2` prints `ci-registration: timeout after <seconds>s (head <sha>)`:
   report `monitor-error: no checks reported on <sha> after <seconds>s`.
@@ -274,9 +274,8 @@ uv run --no-project ~/.agents/skills/implement-review-merge/scripts/post_merge.p
 ```
 
 Do not run this completion in any worker phase, or when the merge failed or
-is unconfirmed. The script defaults `SYNC_LOCAL_MAIN_AFTER_MERGE` to `true`
-when `config.conf` or the key is absent. Copy `config.conf.example` to the
-ignored personal `config.conf` in this skill to set `true` or `false`.
+is unconfirmed. `SYNC_LOCAL_MAIN_AFTER_MERGE` (see **Settings**) is `true`
+or `false`.
 `false` skips synchronization without a fetch or a common-script call;
 invalid settings report an error without synchronization.
 When enabled, it calls
@@ -286,6 +285,15 @@ Exit 0 means success or skip; exit 1 means a configuration or synchronization
 error. Report the merge result and local synchronization result separately,
 including the reason for a skip or the failed operation for an error.
 Never retry the merge because synchronization failed.
+
+## Settings
+
+This skill's `config.conf` holds every setting's default and is the only
+place defaults are defined; a missing key is an error. The user's git-ignored
+`config.local.conf` beside it overrides single keys. Both files use `KEY=value`
+lines (blank lines and `#` lines skipped, key and value trimmed, the value
+taken literally); an unknown key, a duplicate key, or an empty value is an
+error naming the file and line.
 
 ## Token budget
 

@@ -23,7 +23,7 @@ def main(argv: list[str] | None = None) -> int:
         print("local-main-sync: skipped (requires standalone and confirmed MERGED)")
         return 0
     try:
-        if not read_config(SKILL_DIR / "config.conf")["SYNC_LOCAL_MAIN_AFTER_MERGE"]:
+        if not read_config(SKILL_DIR)["SYNC_LOCAL_MAIN_AFTER_MERGE"]:
             print("local-main-sync: skipped (disabled)")
             return 0
         script = Path.home() / ".agents/skills/fast-forward-local-branch/scripts/fast_forward.py"

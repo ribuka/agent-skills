@@ -1,4 +1,0 @@
-# Copy to config.conf to customize this skill.
-SYNC_LOCAL_MAIN_AFTER_MERGE=true
-# Maximum seconds to wait for checks on the pushed head (positive integer).
-CI_REGISTRATION_TIMEOUT_SECONDS=300

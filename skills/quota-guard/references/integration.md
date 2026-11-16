@@ -77,7 +77,8 @@ compatibility from a successful synthetic shell test.
   1 when deletion failed, 2 on an invalid ID; `--state-dir` applies as for `check`.
 - `check --threshold <percent> --max-age 180 --state-dir "<path>"`: override policy
   for one call. To change the threshold for every caller (including the
-  statusLine), edit `THRESHOLD` in `config.conf` instead.
+  statusLine), set `THRESHOLD` in `config.local.conf` (git-ignored, beside
+  `config.conf`) instead.
   If changing the display policy, also edit the statusLine command's corresponding
   flags; the check command's policy controls the caller's decisions.
 

@@ -7,12 +7,14 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import shutil
 import sys
 from pathlib import Path
 
 import pytest
 
-SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "resolve_config.py"
+SKILL_DIR = Path(__file__).resolve().parents[1]
+SCRIPT = SKILL_DIR / "scripts" / "resolve_config.py"
 
 
 @pytest.fixture
@@ -21,11 +23,13 @@ def run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureF
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     monkeypatch.setattr(module, "SKILL_DIR", tmp_path)
+    shutil.copy2(SKILL_DIR / "config.conf", tmp_path / "config.conf")
 
     def _run(*args: str, config: str | None = None,
              agent: str | None = "claude") -> tuple[int, str, str]:
+        """Run with `config` written to config.local.conf (the shipped config.conf stays)."""
         if config is not None:
-            (tmp_path / "config.conf").write_text(config, encoding="utf-8")
+            (tmp_path / "config.local.conf").write_text(config, encoding="utf-8")
         argv = list(args)
         if "--agent" not in argv and agent is not None:
             argv = ["--agent", agent, *argv]
@@ -37,23 +41,23 @@ def run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureF
     return _run
 
 
-def test_max_workers_defaults_to_three(run) -> None:
+def test_max_workers_defaults_to_three(run, tmp_path: Path) -> None:
     code, out, _ = run("--json")
     assert code == 0
-    assert json.loads(out)["MAX_WORKERS"] == {"value": "3", "source": "default"}
+    assert json.loads(out)["MAX_WORKERS"] == {"value": "3", "source": str(tmp_path / "config.conf")}
 
 
-def test_text_output_shows_max_workers_and_source(run) -> None:
+def test_text_output_shows_max_workers_and_source(run, tmp_path: Path) -> None:
     code, out, _ = run()
     assert code == 0
-    assert "max-workers: 3  (from default)" in out.splitlines()
+    assert f"max-workers: 3  (from {tmp_path / 'config.conf'})" in out.splitlines()
 
 
 def test_max_workers_from_config(run, tmp_path: Path) -> None:
     code, out, _ = run("--json", config="MAX_WORKERS=2\n")
     assert code == 0
     assert json.loads(out)["MAX_WORKERS"] == {
-        "value": "2", "source": str(tmp_path / "config.conf")}
+        "value": "2", "source": str(tmp_path / "config.local.conf")}
 
 
 def test_max_workers_argument_overrides_config(run) -> None:
@@ -70,10 +74,10 @@ def test_invalid_max_workers_fails(run, value: str) -> None:
     assert "MAX_WORKERS" in err
 
 
-def test_invalid_max_workers_in_config_fails(run) -> None:
+def test_invalid_max_workers_in_config_fails(run, tmp_path: Path) -> None:
     code, _, err = run(config="MAX_WORKERS=0\n")
     assert code == 1
-    assert "config.conf" in err
+    assert str(tmp_path / "config.local.conf") in err
 
 
 @pytest.mark.parametrize("config", [None, "MAX_WORKERS=2\n"])
@@ -88,14 +92,14 @@ def test_empty_max_workers_argument_fails(run, config: str | None) -> None:
     ("claude", "opus", "sonnet"),
     ("codex", "gpt-6.1-sol", "gpt-6.1-sol"),
 ])
-def test_agent_defaults(run, agent: str, impl: str, merge: str) -> None:
+def test_agent_defaults(run, tmp_path: Path, agent: str, impl: str, merge: str) -> None:
     code, out, _ = run("--agent", agent, "--json")
     assert code == 0
     data = json.loads(out)
     assert data["AGENT"] == {"value": agent, "source": "argument"}
     for key, expected in (("IMPL_MODEL", impl), ("MERGE_MODEL", merge),
                           ("IMPL_EFFORT", "medium"), ("MERGE_EFFORT", "medium")):
-        assert data[key] == {"value": expected, "source": "default"}
+        assert data[key] == {"value": expected, "source": str(tmp_path / "config.conf")}
 
 
 @pytest.mark.parametrize("agent", ["claude", "codex"])
@@ -135,15 +139,13 @@ def test_codex_rejects_max_effort(run, flag: str) -> None:
 def test_codex_rejects_invalid_effort_from_config(run) -> None:
     code, _, err = run("--agent", "codex", config="CODEX_IMPL_EFFORT=max\n")
     assert code == 1
-    assert "config.conf" in err
+    assert "config.local.conf" in err
 
 
-def test_old_unprefixed_keys_are_not_applied(run) -> None:
-    code, out, err = run("--json", config="IMPL_MODEL=old\nMERGE_EFFORT=low\n")
-    assert code == 0
-    assert "ignored line" in err
-    assert json.loads(out)["IMPL_MODEL"]["value"] == "opus"
-    assert json.loads(out)["MERGE_EFFORT"]["value"] == "medium"
+def test_old_unprefixed_keys_are_errors(run, tmp_path: Path) -> None:
+    code, out, err = run("--json", config="IMPL_MODEL=old\n")
+    assert (code, out) == (1, "")
+    assert err == f"error: {tmp_path / 'config.local.conf'}: line 1: unknown key: IMPL_MODEL\n"
 
 
 def test_text_output_includes_agent(run) -> None:
@@ -159,13 +161,14 @@ def test_agent_is_required(run) -> None:
     assert exc.value.code == 2
 
 
-def test_fresh_worker_context_tokens_defaults_to_200000(run) -> None:
+def test_fresh_worker_context_tokens_defaults_to_200000(run, tmp_path: Path) -> None:
     code, out, _ = run("--json", agent="codex")
     assert code == 0
     assert json.loads(out)["FRESH_WORKER_CONTEXT_TOKENS"] == {
-        "value": "200000", "source": "default"}
+        "value": "200000", "source": str(tmp_path / "config.conf")}
     code, out, _ = run()
-    assert "fresh-worker-context-tokens: 200000  (from default)" in out.splitlines()
+    assert (f"fresh-worker-context-tokens: 200000  (from {tmp_path / 'config.conf'})"
+            in out.splitlines())
 
 
 def test_fresh_worker_context_tokens_precedence(run, tmp_path: Path) -> None:
@@ -173,7 +176,7 @@ def test_fresh_worker_context_tokens_precedence(run, tmp_path: Path) -> None:
     code, out, err = run("--json", config=config)
     assert code == 0 and "warning" not in err
     assert json.loads(out)["FRESH_WORKER_CONTEXT_TOKENS"] == {
-        "value": "150000", "source": str(tmp_path / "config.conf")}
+        "value": "150000", "source": str(tmp_path / "config.local.conf")}
     code, out, _ = run("--json", "--fresh-worker-context-tokens", "90000", config=config)
     assert json.loads(out)["FRESH_WORKER_CONTEXT_TOKENS"] == {
         "value": "90000", "source": "argument"}
@@ -186,7 +189,53 @@ def test_fresh_worker_context_tokens_rejects_invalid(run, value: str) -> None:
     assert "FRESH_WORKER_CONTEXT_TOKENS" in err
 
 
-def test_prefixed_fresh_worker_context_tokens_is_ignored(run) -> None:
-    code, out, err = run("--json", config="CLAUDE_FRESH_WORKER_CONTEXT_TOKENS=5\n")
-    assert code == 0 and "ignored line" in err
-    assert json.loads(out)["FRESH_WORKER_CONTEXT_TOKENS"]["source"] == "default"
+def test_prefixed_fresh_worker_context_tokens_is_an_error(run) -> None:
+    code, _, err = run("--json", config="CLAUDE_FRESH_WORKER_CONTEXT_TOKENS=5\n")
+    assert code == 1 and "unknown key: CLAUDE_FRESH_WORKER_CONTEXT_TOKENS" in err
+
+
+@pytest.mark.parametrize("agent", ["claude", "codex"])
+def test_local_config_overrides_one_key_only(run, tmp_path: Path, agent: str) -> None:
+    code, shipped, _ = run("--agent", agent, "--json")
+    assert code == 0
+    code, out, err = run("--agent", agent, "--json",
+                         config="# personal\n\n  MAX_WORKERS = 1 \n")
+    assert (code, err) == (0, "")
+    expected = json.loads(shipped)
+    expected["MAX_WORKERS"] = {"value": "1", "source": str(tmp_path / "config.local.conf")}
+    assert json.loads(out) == expected
+
+
+def test_text_output_names_local_config_as_source(run, tmp_path: Path) -> None:
+    code, out, _ = run(config="CLAUDE_IMPL_EFFORT=high\n")
+    assert code == 0
+    assert (f"impl: --model opus --effort high  (model: {tmp_path / 'config.conf'}; "
+            f"effort: {tmp_path / 'config.local.conf'})") in out.splitlines()
+
+
+@pytest.mark.parametrize("name", ["config.conf", "config.local.conf"])
+@pytest.mark.parametrize("content,line,problem", [
+    ("BOGUS=1\n", 1, "unknown key: BOGUS"),
+    ("MAX_WORKERS=2\n# c\nMAX_WORKERS=3\n", 3, "duplicate key: MAX_WORKERS"),
+    ("\nCLAUDE_IMPL_MODEL=  \n", 2, "empty value for CLAUDE_IMPL_MODEL"),
+    ("MAX_WORKERS\n", 1, "expected KEY=value"),
+])
+def test_invalid_config_names_file_and_line(run, tmp_path: Path, name: str, content: str,
+                                            line: int, problem: str) -> None:
+    (tmp_path / name).write_text(content, encoding="utf-8")
+    code, out, err = run("--json")
+    assert (code, out) == (1, "")
+    assert err == f"error: {tmp_path / name}: line {line}: {problem}\n"
+
+
+def test_missing_key_in_config_conf_is_an_error(run, tmp_path: Path) -> None:
+    (tmp_path / "config.conf").write_text("MAX_WORKERS=3\n", encoding="utf-8")
+    code, out, err = run("--json", config="FRESH_WORKER_CONTEXT_TOKENS=5\n")
+    assert (code, out) == (1, "")
+    assert "missing keys: CLAUDE_IMPL_MODEL" in err
+
+
+def test_script_holds_no_defaults() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    for value in ('"opus"', '"sonnet"', '"gpt-', '"200000"', '"3"'):
+        assert value not in source

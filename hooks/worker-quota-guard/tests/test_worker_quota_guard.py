@@ -9,6 +9,7 @@ import importlib.util
 import io
 import json
 import re
+import shutil
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -26,8 +27,10 @@ PAUSED = {"state": "PAUSED_QUOTA", "used_percentage": 96, "threshold": 95}
 
 @pytest.fixture
 def env(monkeypatch, tmp_path: Path):
-    """A worker terminal with the real config and fake quota / Orca results."""
+    """A worker terminal with a copy of the shipped config and fake quota / Orca results."""
     monkeypatch.setenv("ORCA_TERMINAL_HANDLE", TERMINAL)
+    shutil.copy2(HOOK_DIR / "config.conf", tmp_path / "config.conf")
+    monkeypatch.setattr(hook, "CONFIG", tmp_path / "config.conf")
     state = SimpleNamespace(quota=(10, json.dumps(PAUSED)), workers=[
         {"terminal": TERMINAL, "outcome": "in_progress"}], calls=[])
 
@@ -155,20 +158,57 @@ def test_outside_orca_allows_without_checking(env, monkeypatch, capsys):
     assert env.calls == []
 
 
+def run_with_config(monkeypatch, capsys, tool_name: str, tool_input: dict):
+    data = json.dumps({"tool_name": tool_name, "tool_input": tool_input})
+    monkeypatch.setattr(hook.sys, "stdin", SimpleNamespace(buffer=io.BytesIO(data.encode())))
+    assert hook.main(["--provider", "codex"]) == 0
+    return capsys.readouterr()
+
+
 @pytest.mark.parametrize("content", [None, "QUOTA_GUARD=a\nBOGUS=1\n", "ALLOW_COMMAND=(\n",
                                      "SHELL_TOOL=Bash\n"])
 def test_missing_or_invalid_config_allows_with_warning(env, monkeypatch, capsys, tmp_path,
                                                        content):
     config = tmp_path / "config.conf"
+    config.unlink()
     if content is not None:
         config.write_text(content, encoding="utf-8")
-    monkeypatch.setattr(hook, "CONFIG", config)
-    data = json.dumps({"tool_name": "Bash", "tool_input": {"command": "pytest"}})
-    monkeypatch.setattr(hook.sys, "stdin", SimpleNamespace(buffer=io.BytesIO(data.encode())))
-    assert hook.main(["--provider", "codex"]) == 0
-    captured = capsys.readouterr()
+    captured = run_with_config(monkeypatch, capsys, "Bash", {"command": "pytest"})
     assert captured.out == "" and "worker-quota-guard:" in captured.err
     assert env.calls == []
+
+
+@pytest.mark.parametrize("name", ["config.conf", "config.local.conf"])
+@pytest.mark.parametrize("content,line,problem", [
+    ("BOGUS=1\n", 1, "unknown key: BOGUS"),
+    ("QUOTA_GUARD=a\n# c\nQUOTA_GUARD=b\n", 3, "duplicate key: QUOTA_GUARD"),
+    ("\nSHELL_TOOL= \n", 2, "empty value for SHELL_TOOL"),
+    ("QUOTA_GUARD\n", 1, "expected KEY=value"),
+])
+def test_invalid_line_warns_with_file_and_line(env, monkeypatch, capsys, tmp_path, name,
+                                               content, line, problem):
+    path = tmp_path / name
+    path.write_text(content, encoding="utf-8")
+    captured = run_with_config(monkeypatch, capsys, "Bash", {"command": "pytest"})
+    assert captured.out == ""
+    assert f"worker-quota-guard: {path}: line {line}: {problem}" in captured.err
+    assert env.calls == []
+
+
+def test_without_local_config_uses_config_conf(tmp_path):
+    shutil.copy2(HOOK_DIR / "config.conf", tmp_path / "config.conf")
+    assert hook.load_config(tmp_path / "config.conf") == hook.read_config_file(
+        HOOK_DIR / "config.conf")
+
+
+def test_local_config_overrides_one_key(env, monkeypatch, capsys, tmp_path):
+    shipped = hook.load_config(tmp_path / "config.conf")
+    (tmp_path / "config.local.conf").write_text(
+        "# personal\n\n  ALLOW_COMMAND = pytest\\b \nALLOW_COMMAND=ruff\\b\n", encoding="utf-8")
+    config = hook.load_config(tmp_path / "config.conf")
+    assert config == {**shipped, "ALLOW_COMMAND": [r"pytest\b", r"ruff\b"]}
+    assert run_hook(monkeypatch, capsys, "Bash", {"command": "pytest -q"}) == ""
+    assert denied(run_hook(monkeypatch, capsys, "Bash", {"command": "git status"}))
 
 
 def test_running_twice_gives_the_same_result(env, monkeypatch, capsys):

@@ -7,7 +7,7 @@ uv run --no-project ~/.agents/skills/implement-review-merge/scripts/wait_ci_regi
 ```
 
 The script checks every 30 seconds, bounded by this skill's
-`CI_REGISTRATION_TIMEOUT_SECONDS` setting (default 300 seconds).
+`CI_REGISTRATION_TIMEOUT_SECONDS` setting.
 Exit `0` (`ci-registration: registered <sha>`) allows the watcher below.
 Exit `2` (`ci-registration: timeout after <seconds>s (head <sha>)`) means
 report `monitor-error: no checks reported on <sha> after <seconds>s`.

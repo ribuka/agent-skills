@@ -26,35 +26,59 @@ RESET_TOLERANCE = 120.0
 LOCAL_RETRY_SECONDS = 2
 # A caller checkpoint is `<checkpoint_dir>/<operation-id>.md`.
 OPERATION_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*")
-# The single source of the pause threshold; `--threshold` overrides it.
+# The single source of the pause threshold; `config.local.conf` beside it
+# (git-ignored, optional) overrides it, and `--threshold` overrides both.
 CONFIG_FILE = Path(__file__).resolve().parents[1] / "config.conf"
+LOCAL_CONFIG_NAME = "config.local.conf"
+CONFIG_KEYS = ("THRESHOLD",)
 
 
 def valid_threshold(value: float) -> bool:
     return math.isfinite(value) and 0 < value <= 100
 
 
-def load_threshold() -> float:
-    """Read THRESHOLD from config.conf; raise ValueError when missing or invalid."""
-    path = CONFIG_FILE
-    values = {}
+def read_config_file(path: Path) -> dict[str, tuple[str, int]]:
+    """Validate the whole file; return {key: (value, line)}; raise ValueError."""
     try:
         lines = path.read_text(encoding="utf-8-sig").splitlines()
-    except OSError as error:
-        raise ValueError(f"config.conf unreadable: {path}") from error
-    for line in lines:
-        line = line.strip()
-        if line and not line.startswith("#") and "=" in line:
-            key, _, value = line.partition("=")
-            values[key.strip()] = value.strip()
+    except (OSError, UnicodeDecodeError) as error:
+        raise ValueError(f"{path}: cannot read") from error
+    values: dict[str, tuple[str, int]] = {}
+    for number, raw in enumerate(lines, 1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        key, sep, value = line.partition("=")
+        key, value = key.strip(), value.strip()
+        if not sep:
+            raise ValueError(f"{path}: line {number}: expected KEY=value")
+        if key not in CONFIG_KEYS:
+            raise ValueError(f"{path}: line {number}: unknown key: {key}")
+        if key in values:
+            raise ValueError(f"{path}: line {number}: duplicate key: {key}")
+        if not value:
+            raise ValueError(f"{path}: line {number}: empty value for {key}")
+        values[key] = (value, number)
+    return values
+
+
+def load_threshold() -> float:
+    """Read THRESHOLD from config.conf, then config.local.conf; raise ValueError."""
+    values = {key: (value, CONFIG_FILE, line)
+              for key, (value, line) in read_config_file(CONFIG_FILE).items()}
+    local = CONFIG_FILE.with_name(LOCAL_CONFIG_NAME)
+    if local.exists() or local.is_symlink():
+        values.update({key: (value, local, line)
+                       for key, (value, line) in read_config_file(local).items()})
     if "THRESHOLD" not in values:
-        raise ValueError(f"THRESHOLD missing from config.conf: {path}")
+        raise ValueError(f"{CONFIG_FILE}: missing key: THRESHOLD")
+    value, path, line = values["THRESHOLD"]
     try:
-        threshold = float(values["THRESHOLD"])
+        threshold = float(value)
     except ValueError:
         threshold = math.nan
     if not valid_threshold(threshold):
-        raise ValueError(f"THRESHOLD in config.conf must be a number in (0,100]: {path}")
+        raise ValueError(f"{path}: line {line}: THRESHOLD must be a number in (0,100]")
     return threshold
 
 
@@ -268,7 +292,7 @@ def read_codex_limits(timeout: float = 20.0) -> dict:
 
 
 def config_unknown(root: Path, now: float, reason: str, provider: str) -> dict:
-    """UNKNOWN for an unusable config.conf, with the usual pause/resume fields."""
+    """UNKNOWN for an unusable config file, with the usual pause/resume fields."""
     result = unknown_result(root, now, reason)
     if provider == "codex":
         result["provider"] = "codex"

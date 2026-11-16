@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -18,6 +19,7 @@ def module(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     monkeypatch.setattr(mod, "SKILL_DIR", tmp_path)
+    shutil.copy2(SCRIPT.parents[1] / "config.conf", tmp_path / "config.conf")
     return mod
 
 
@@ -25,7 +27,7 @@ def module(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                                    "CI_REGISTRATION_TIMEOUT_SECONDS=60"])
 def test_enabled_defaults_invoke_public_cli(module, tmp_path, monkeypatch, config) -> None:
     if config is not None:
-        (tmp_path / "config.conf").write_text(config)
+        (tmp_path / "config.local.conf").write_text(config)
     calls = []
 
     def run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess:
@@ -45,13 +47,14 @@ def test_enabled_defaults_invoke_public_cli(module, tmp_path, monkeypatch, confi
     ("standalone", "MERGED", "SYNC_LOCAL_MAIN_AFTER_MERGE=invalid", 1),
     ("standalone", "MERGED", "SYNC_LOCAL_MAIN_AFTER_MERGE=", 1),
     ("standalone", "MERGED", "bad setting", 1),
+    ("standalone", "MERGED", "SYNC_LOCAL_MAIN_AFTER_MERGE=true\nSYNC_LOCAL_MAIN_AFTER_MERGE=true", 1),
     *( (mode, state, "invalid", 0) for mode in ("standalone", "worker")
        for state in ("OPEN", "CLOSED", "UNKNOWN", "MERGED")
        if (mode, state) != ("standalone", "MERGED") ),
 ])
 def test_disabled_errors_and_ineligible_modes_never_invoke(
         module, tmp_path, monkeypatch, mode, state, config, result) -> None:
-    (tmp_path / "config.conf").write_text(config)
+    (tmp_path / "config.local.conf").write_text(config)
 
     def forbidden(*args: object, **kwargs: object) -> None:
         pytest.fail("must not invoke synchronization or fetch")

@@ -62,7 +62,7 @@ def main(argv: list[str] | None = None) -> int:
         print("error: --pr must be positive and --head must be a full SHA")
         return 1
     try:
-        config = read_config(SKILL_DIR / "config.conf")
+        config = read_config(SKILL_DIR)
         return wait_for_registration(args.pr, args.head, config["CI_REGISTRATION_TIMEOUT_SECONDS"])
     except (OSError, ValueError) as exc:
         print(f"error: {exc}")

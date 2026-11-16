@@ -115,7 +115,11 @@ still allows two readings, go back to step 5.
 
 ### 7. Confirm (optional)
 
-Read `CONFIRM_BEFORE_PUBLISH` from `~/.agents/skills/refine-issue/config.conf`.
+Read `CONFIRM_BEFORE_PUBLISH` from `~/.agents/skills/refine-issue/config.conf`
+(the shared defaults). If `config.local.conf` (the user's git-ignored
+settings) exists beside it, read it too: a key it sets overrides the value
+from `config.conf`. Both files use `KEY=value` lines; skip blank lines and
+lines starting with `#`, and trim the key and value.
 If `true`, show the title and body and ask for approval with the
 multiple-choice tool (approve / request changes). Apply requested changes and
 ask again. If `false`, go straight to step 8.

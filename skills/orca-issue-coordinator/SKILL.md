@@ -96,14 +96,14 @@ It prints the agent, the `--model` / `--effort` pair for each phase, the
 `max-workers: <n>` concurrency limit (`MAX_WORKERS`), the
 `fresh-worker-context-tokens: <n>` resume threshold
 (`FRESH_WORKER_CONTEXT_TOKENS`, see **Quota control**), and each value's source
-(argument > `<skill-dir>/config.conf` > defaults). Configuration keys are
+(argument > `<skill-dir>/config.local.conf` > `<skill-dir>/config.conf`).
+The tracked `config.conf` holds every default; the user's git-ignored
+`config.local.conf` beside it overrides single keys. Both use `KEY=value`
+lines; an unknown key, a duplicate key, or an empty value stops the script
+with the file and line. Configuration keys are
 `CLAUDE_IMPL_MODEL`, `CLAUDE_IMPL_EFFORT`, `CLAUDE_MERGE_MODEL`,
 `CLAUDE_MERGE_EFFORT`, their `CODEX_` equivalents, and shared `MAX_WORKERS`
-and `FRESH_WORKER_CONTEXT_TOKENS`.
-Unprefixed model/effort keys are not supported. Claude defaults remain
-`opus`/`medium` for implementation and `sonnet`/`medium` for merge preparation;
-Codex defaults are `gpt-6.1-sol`/`medium` for both phases.
-Concurrency defaults to 3; the resume threshold to 200000 tokens. Always pass `--agent <agent>` and the resolved
+and `FRESH_WORKER_CONTEXT_TOKENS`. Always pass `--agent <agent>` and the resolved
 model/effort on every `worker-start`, and never exceed `MAX_WORKERS`.
 Claude effort values: `low`, `medium`, `high`, `xhigh`, `max`;
 Codex: `minimal`, `low`, `medium`, `high`, `xhigh` (no `max`).

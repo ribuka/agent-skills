@@ -67,9 +67,13 @@ The following initialization steps apply only to Claude Code.
   command as `1`, so never rely on the specific non-zero code.
 
 - Threshold: `THRESHOLD` in this skill's `config.conf` (shipped as 95);
-  `--threshold` overrides it. The script has no built-in threshold: when
-  `config.conf` is missing or its `THRESHOLD` is missing or not a number in
-  (0, 100], `check` returns UNKNOWN with a `config.conf` reason and the
+  the user's git-ignored `config.local.conf` beside it overrides it, and
+  `--threshold` overrides both. Both files use `KEY=value` lines (blank lines
+  and `#` lines skipped, key and value trimmed). The script has no built-in
+  threshold: when `config.conf` is missing, either file has an unknown key, a
+  duplicate key, or an empty value, or `THRESHOLD` is missing or not a number
+  in (0, 100], `check` returns UNKNOWN with a reason naming the file (and the
+  line) and the
   usual UNKNOWN fields (`checkpoint_dir`, `wake_at`, ...) but no `threshold`.
   Otherwise the result's `threshold` is the value applied; callers that need
   it read it there.

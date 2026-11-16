@@ -5,12 +5,14 @@ The required --agent claude|codex selects both the Coordinator and worker agent.
 Precedence (highest first):
   1. command-line flags (--impl-model, --impl-effort, --merge-model, --merge-effort,
      --max-workers, --fresh-worker-context-tokens)
-  2. <skill-dir>/config.conf
-  3. built-in defaults
+  2. <skill-dir>/config.local.conf (git-ignored, optional; overrides single keys)
+  3. <skill-dir>/config.conf (tracked; the only source of the defaults)
 
-The config file uses plain KEY=VALUE lines; `#` starts a comment. Model and
-effort keys use CLAUDE_ or CODEX_ prefixes; MAX_WORKERS and
-FRESH_WORKER_CONTEXT_TOKENS are shared.
+Both files hold `KEY=value` lines; blank lines and lines starting with `#` are
+skipped, key and value are trimmed, and the value is taken literally. An unknown
+key, a duplicate key, an empty value, or a line without `=` is an error naming
+the file and line. Model and effort keys use CLAUDE_ or CODEX_ prefixes;
+MAX_WORKERS and FRESH_WORKER_CONTEXT_TOKENS are shared.
 """
 
 from __future__ import annotations
@@ -20,23 +22,12 @@ import json
 import sys
 from pathlib import Path
 
-CLAUDE_DEFAULTS = {
-    "IMPL_MODEL": "opus",
-    "IMPL_EFFORT": "medium",
-    "MERGE_MODEL": "sonnet",
-    "MERGE_EFFORT": "medium",
-    "MAX_WORKERS": "3",
-    "FRESH_WORKER_CONTEXT_TOKENS": "200000",
-}
-SHARED_KEYS = {"MAX_WORKERS", "FRESH_WORKER_CONTEXT_TOKENS"}
-CODEX_DEFAULTS = {
-    **CLAUDE_DEFAULTS,
-    "IMPL_MODEL": "gpt-6.1-sol",
-    "MERGE_MODEL": "gpt-6.1-sol",
-}
-DEFAULTS = {"claude": CLAUDE_DEFAULTS, "codex": CODEX_DEFAULTS}
-CONFIG_KEYS = {f"{agent.upper()}_{key}" for agent in DEFAULTS
-               for key in CLAUDE_DEFAULTS if key not in SHARED_KEYS} | SHARED_KEYS
+PHASE_KEYS = ("IMPL_MODEL", "IMPL_EFFORT", "MERGE_MODEL", "MERGE_EFFORT")
+SHARED_KEYS = ("MAX_WORKERS", "FRESH_WORKER_CONTEXT_TOKENS")
+SETTINGS = (*PHASE_KEYS, *SHARED_KEYS)
+AGENTS = ("claude", "codex")
+CONFIG_KEYS = {f"{agent.upper()}_{key}" for agent in AGENTS for key in PHASE_KEYS} | set(SHARED_KEYS)
+CONFIG_FILES = ("config.conf", "config.local.conf")
 EFFORTS = {
     "claude": {"low", "medium", "high", "xhigh", "max"},
     "codex": {"minimal", "low", "medium", "high", "xhigh"},
@@ -44,41 +35,69 @@ EFFORTS = {
 SKILL_DIR = Path(__file__).resolve().parent.parent
 
 
-def parse_env(path: Path) -> dict[str, str]:
+class ConfigError(Exception):
+    """A config file is unreadable or invalid."""
+
+
+def read_config_file(path: Path) -> dict[str, str]:
+    """Validate the whole file and return its KEY=value pairs."""
+    try:
+        text = path.read_text(encoding="utf-8-sig")
+    except (OSError, UnicodeDecodeError) as error:
+        raise ConfigError(f"{path}: cannot read: {error}") from None
     values: dict[str, str] = {}
-    for n, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+    for n, raw in enumerate(text.splitlines(), 1):
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
-        if line.startswith("export "):
-            line = line[len("export "):].strip()
         key, sep, value = line.partition("=")
-        key, value = key.strip(), value.split(" #", 1)[0].strip().strip("'\"")
-        if not sep or key not in CONFIG_KEYS:
-            print(f"warning: {path}:{n}: ignored line: {raw}", file=sys.stderr)
-            continue
+        key, value = key.strip(), value.strip()
+        if not sep:
+            raise ConfigError(f"{path}: line {n}: expected KEY=value")
+        if key not in CONFIG_KEYS:
+            raise ConfigError(f"{path}: line {n}: unknown key: {key}")
+        if key in values:
+            raise ConfigError(f"{path}: line {n}: duplicate key: {key}")
+        if not value:
+            raise ConfigError(f"{path}: line {n}: empty value for {key}")
         values[key] = value
     return values
+
+
+def load_config(agent: str) -> dict[str, tuple[str, str]]:
+    """Return {setting: (value, source path)} from config.conf, then config.local.conf."""
+    resolved: dict[str, tuple[str, str]] = {}
+    for name in CONFIG_FILES:
+        path = SKILL_DIR / name
+        if name != CONFIG_FILES[0] and not (path.exists() or path.is_symlink()):
+            continue
+        values = read_config_file(path)
+        for key in SETTINGS:
+            config_key = key if key in SHARED_KEYS else f"{agent.upper()}_{key}"
+            if config_key in values:
+                resolved[key] = (values[config_key], str(path))
+    missing = [key if key in SHARED_KEYS else f"{agent.upper()}_{key}"
+               for key in SETTINGS if key not in resolved]
+    if missing:
+        raise ConfigError(f"{SKILL_DIR / CONFIG_FILES[0]}: missing keys: {', '.join(missing)}")
+    return {key: resolved[key] for key in SETTINGS}
 
 
 def main() -> int:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--agent", required=True, choices=DEFAULTS,
+    ap.add_argument("--agent", required=True, choices=AGENTS,
                     help="Coordinator agent; workers always use the same agent")
-    for key in CLAUDE_DEFAULTS:
+    for key in SETTINGS:
         ap.add_argument("--" + key.lower().replace("_", "-"), dest=key)
     ap.add_argument("--json", action="store_true", help="emit JSON")
     opts = ap.parse_args()
 
-    resolved = {k: (v, "default") for k, v in DEFAULTS[opts.agent].items()}
-    config = SKILL_DIR / "config.conf"
-    if config.is_file():
-        values = parse_env(config)
-        for k in resolved:
-            config_key = k if k in SHARED_KEYS else f"{opts.agent.upper()}_{k}"
-            if config_key in values:
-                resolved[k] = (values[config_key], str(config))
+    try:
+        resolved = load_config(opts.agent)
+    except ConfigError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
     for k in resolved:
         if getattr(opts, k) is not None:
             resolved[k] = (getattr(opts, k), "argument")
