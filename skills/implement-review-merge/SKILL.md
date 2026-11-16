@@ -18,13 +18,29 @@ whenever a step below says so; never merge on a guess.
   Execute steps 1–10, including merge.
 - **Orchestration worker:** Only when explicitly instructed by an ORCA
   Coordinator, execute the assigned phase:
-  - **Implementation:** Execute steps 1–7, then report the PR URL,
-    branch, review status, review count (the latest
+  - **Implementation:** Execute steps 1–7, then wait for CI on the PR's
+    final head with step 9's CI procedure (`wait_ci_registration.py`, then
+    `gh pr checks --watch`; do not sync with `main`). Confirm CI completion
+    (success or failure) on the final head before `worker_done`; never hand
+    off with `CI pending`. Report monitor-error as a blocker. On a failed
+    check, read only the failed part (`gh run view <run-id> --log-failed`,
+    tail) and judge whether it relates to the PR's diff:
+    - **Related to the diff:** fix it yourself (steps 2–4), get the fix
+      cross-reviewed (steps 6–7) within `MAX_REVIEWS`, and wait for CI again
+      on the new head. If the review limit is reached, push the fix, wait
+      for its CI, and report the unreviewed fix commits as a blocker.
+    - **Unrelated to the diff** (e.g. a timeout or network error in a test
+      the PR does not touch): do not fix or rerun it; the Coordinator decides
+      on a rerun. Report the failed test names and why you judged them
+      unrelated.
+
+    Then report the PR URL, branch, review status, review count (the latest
     `review-count: <count>/<max>` from `pr-cross-review`), latest reviewed
-    SHA, findings counts, unresolved must findings, blockers, and
-    `follow-up candidates:` (valuable unadopted optional suggestions with
-    their summaries and review comment URLs; `none` if empty), so a fresh
-    worker can take over. Do not merge.
+    SHA, findings counts, unresolved must findings, blockers, the
+    CI-verified head (full SHA) with its CI result (`success` or `failure`,
+    naming failed checks), and `follow-up candidates:` (valuable unadopted
+    optional suggestions with their summaries and review comment URLs;
+    `none` if empty), so a fresh worker can take over. Do not merge.
   - **Merge preparation:** Execute steps 8–9 only after the Coordinator
     requests it. This usually starts in a new conversation: rebuild the
     state from the Coordinator's handoff, `gh pr view <pr-number>` (without
@@ -168,7 +184,8 @@ Use `review-findings` to decide whether to go back to step 2:
   optional suggestions is not required.
 - **must = 0:** do not change code and do not request a re-review. Reply
   as step 5 requires, explaining why each optional suggestion is not
-  adopted, then proceed to the next step (or hand off in Implementation).
+  adopted, then proceed to the next step (in Implementation, wait for CI
+  on the final head and hand off).
 - Collect valuable unadopted optional suggestions as follow-up candidates,
   with a summary and review comment URL for each. In Standalone mode,
   include them as **起票候補** in the final report; do not create Issues.

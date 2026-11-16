@@ -281,10 +281,19 @@ only after the user confirms.
    - Require the handoff fields in its `worker_done` report (see the
      implement-review-merge skill). The report may also state whether the
      PR conflicts with `main`.
+   - Require the worker to confirm CI completion (success or failure) on
+     the PR's final head before `worker_done`, never handing off with
+     `CI pending`, and to report that head (full SHA) and the CI result.
+     A failure related to the PR's diff is fixed by the worker, with the fix
+     cross-reviewed within `MAX_REVIEWS` (a blocker once the limit is
+     reached). An unrelated failure (e.g. a timeout or network error) is
+     not fixed or rerun: the worker reports the failed test names and why it
+     judged them unrelated, and you decide on a rerun (step 14's
+     **If a CI check fails**).
    - Tell the worker not to rebase onto or merge `origin/main` even if
      `main` moves during implementation. Syncing with `main`, resolving
-     conflicts, and re-checking CI happen once, in merge preparation
-     (step 13).
+     conflicts, and re-checking CI on the synced head
+     happen once, in merge preparation (step 13).
    - Workers must not merge or schedule resumption wake-ups; the
      Coordinator alone owns the Run's checkpoint and wake-up.
    - If `pr-cross-review` fails because the reviewer's quota is exhausted,
@@ -305,10 +314,19 @@ only after the user confirms.
 9. Then save the checkpoint and end the turn; Orca wakes you (see
    **Waiting**). Never run a watcher, a waiter, or a `check` loop.
 10. Track each Task's worktree, branch, PR URL, review status, review count,
-    blockers, and `unmet/unverified acceptance criteria:`. Apply **Unmet or
-    unverified acceptance criteria** below to each handoff. Verify reports
+    blockers, CI-verified head and CI result, and `unmet/unverified
+    acceptance criteria:`. Apply **Unmet or unverified acceptance
+    criteria** below to each handoff. Verify reports
     rather than treating `worker_done` as proof of completion; a failed
     `worker_done` is never a completed Task.
+    An Implementation handoff without the CI-verified head and CI result is
+    incomplete: ask the worker for them. When the reported head equals the
+    PR's current `headRefOid`, CI has already finished on it: go on to
+    step 12 without reserving a CI wake-up (a reported failure goes to
+    step 14's **If a CI check fails**). When the head changed after the
+    report, or CI is pending or empty on the current head, follow
+    **Pending CI** in [Waiting](references/waiting.md) as steps 12 and 14
+    say.
     Run the quota `check` after processing each `worker_done`. To inspect
     workers, list every worker of the Run, across all pages:
 
