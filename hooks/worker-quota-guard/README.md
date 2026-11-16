@@ -10,13 +10,13 @@ of `worker_quota_guard.py` for the full decision order.
 | --- | --- |
 | Not in Orca (`ORCA_TERMINAL_HANDLE` unset) | allow, no output |
 | `quota_guard.py check` is READY or UNKNOWN | allow, no output |
-| PAUSED_QUOTA, shell command allowed by `config.conf` | allow, no output |
+| PAUSED_QUOTA, shell command allowed by the settings | allow, no output |
 | PAUSED_QUOTA, terminal is not an open Orca worker Dispatch (Coordinator, Standalone) | allow, no output |
 | PAUSED_QUOTA, open Orca worker Dispatch, anything else | deny with a reason |
-| `config.conf` missing or invalid | allow, warning on stderr |
+| `config.conf` missing or invalid, or `config.local.conf` invalid | allow, warning on stderr |
 
 - The threshold comes from quota-guard (`check` runs without `--threshold`);
-  the allowed commands come from `config.conf`. The script holds neither.
+  the allowed commands come from the settings. The script holds neither.
 - UNKNOWN is allowed because quota telemetry is often stale right after a wait.
 - The Coordinator and Standalone sessions are never blocked: the Coordinator
   still needs every tool to save its checkpoint and schedule the resume, and
@@ -24,6 +24,15 @@ of `worker_quota_guard.py` for the full decision order.
   schedules wake-ups; the hook schedules nothing.
 - The hook is stateless: Codex may run it twice for one tool call.
 - One `check` takes about 0.2 seconds; Orca is queried only when PAUSED_QUOTA.
+
+## Settings
+
+`config.conf` (tracked) holds every default. To change a setting for yourself,
+create the git-ignored `config.local.conf` beside it with only the keys to
+change; a key it sets replaces every line of that key in `config.conf` (so a
+local `ALLOW_COMMAND` list replaces the shared list). Both files use the same
+`KEY=VALUE` format; an unknown key, a repeated `QUOTA_GUARD`, or an empty value
+is an error naming the file and line.
 
 ## Install
 

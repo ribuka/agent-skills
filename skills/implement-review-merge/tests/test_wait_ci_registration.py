@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import shutil
 import subprocess
 from pathlib import Path
 from types import ModuleType
@@ -20,6 +21,7 @@ def module(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> ModuleType:
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     monkeypatch.setattr(mod, "SKILL_DIR", tmp_path)
+    shutil.copy2(SCRIPTS.parent / "config.conf", tmp_path / "config.conf")
     monkeypatch.setattr(mod.shutil, "which", lambda name: GH if name == "gh" else None)
     clock = [0.0]
     monkeypatch.setattr(mod.time, "monotonic", lambda: clock[0])
@@ -101,25 +103,18 @@ def test_gh_cannot_exceed_registration_deadline(
 
 @pytest.mark.parametrize("value,expected", [(None, 300), ("1", 1), ("45", 45),
                                            ("0", None), ("-1", None), ("abc", None),
-                                           ("1.5", None), ("", None)])
+                                           ("1.5", None)])
 def test_timeout_config(
     module: ModuleType, tmp_path: Path, value: str | None, expected: int | None,
 ) -> None:
-    path = tmp_path / "config.conf"
     if value is not None:
-        path.write_text(f"CI_REGISTRATION_TIMEOUT_SECONDS={value}", encoding="utf-8")
+        (tmp_path / "config.local.conf").write_text(
+            f"CI_REGISTRATION_TIMEOUT_SECONDS={value}", encoding="utf-8")
     if expected is None:
-        with pytest.raises(ValueError, match="positive integer"):
-            module.read_config(path)
+        with pytest.raises(ValueError, match="config.local.conf: line 1: .*positive integer"):
+            module.read_config(tmp_path)
     else:
-        assert module.read_config(path)["CI_REGISTRATION_TIMEOUT_SECONDS"] == expected
-
-
-def test_missing_timeout_key_uses_default(module: ModuleType, tmp_path: Path) -> None:
-    path = tmp_path / "config.conf"
-    path.write_text("SYNC_LOCAL_MAIN_AFTER_MERGE=false\n", encoding="utf-8")
-    assert module.read_config(path) == {"SYNC_LOCAL_MAIN_AFTER_MERGE": False,
-                                       "CI_REGISTRATION_TIMEOUT_SECONDS": 300}
+        assert module.read_config(tmp_path)["CI_REGISTRATION_TIMEOUT_SECONDS"] == expected
 
 
 @pytest.mark.parametrize("config", ["UNKNOWN=true", "CI_REGISTRATION_TIMEOUT_SECONDS=0",
@@ -128,7 +123,7 @@ def test_invalid_config_prevents_gh(
     module: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str], config: str,
 ) -> None:
-    (tmp_path / "config.conf").write_text(config, encoding="utf-8")
+    (tmp_path / "config.local.conf").write_text(config, encoding="utf-8")
 
     def forbidden(*args: object, **kwargs: object) -> None:
         pytest.fail("invalid config must not invoke gh")

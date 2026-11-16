@@ -1,8 +1,7 @@
-skills/orca-issue-coordinator/config.conf
-skills/implement-review-merge/config.conf
 __pycache__/
 *.pyc
 .pytest_cache/
 tmp/
 *.env
-skills/pr-cross-review/config.local.conf
+skills/*/config.local.conf
+hooks/*/config.local.conf
