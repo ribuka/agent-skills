@@ -152,6 +152,12 @@ Push the branch to `origin`.
 ### 5. Open or update the pull request
 
 - First pass: create the pull request.
+  - Never include session URLs (e.g. `https://claude.ai/code/session_...`)
+    in the description; omit a trailing session link. A "Generated with
+    Claude Code" line is fine.
+  - Optionally add `Implementation agent: <agent>`,
+    `Implementation model: <exact model>`, and
+    `Reasoning effort: <effort>` lines to the description.
 - After a review: reply to the review comment, stating how each finding was
   addressed (or why it was not). For each optional suggestion not adopted,
   explain why in the PR reply; do not create Issues automatically.
