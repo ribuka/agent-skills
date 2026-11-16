@@ -211,6 +211,29 @@ def test_implementation_workers_do_not_sync_with_main() -> None:
     assert "never tells\n  a worker still implementing to rebase" in rules
 
 
+def test_main_moves_without_messaging_workers() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    rules = " ".join(skill.split("## Rules", 1)[1].split())
+    assert (
+        "When `main` moves (e.g. after merging another PR), send no message asking for a "
+        "rebase or re-sync to any worker, whether in Implementation or Merge preparation"
+    ) in rules
+    assert "Its PR is judged after its `worker_done`, in step 14." in rules
+    assert "start a new merge preparation (step 13) for it" in rules
+
+
+def test_no_send_to_finished_dispatch() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    messaging = " ".join(
+        skill.split("## Messaging workers", 1)[1].split("### Answering worker questions", 1)[0].split()
+    )
+    assert "Never `send` to a Dispatch that already sent `worker_done`." in messaging
+    assert "Orca treats such a message as a follow-up" in messaging
+    assert "bypasses `start_worker.py`, the quota check, and `MAX_WORKERS`" in messaging
+    assert "Use `send` only for a worker still working its Dispatch" in messaging
+    assert "follow-ups" not in messaging
+
+
 def test_functional_dependencies_and_orderings_are_separate() -> None:
     skill = " ".join(SKILL_MD.read_text(encoding="utf-8").split())
     step3 = skill.split("3. Identify dependencies", 1)[1].split("4. Create one", 1)[0]

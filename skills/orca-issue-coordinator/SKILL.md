@@ -623,7 +623,7 @@ new work near the 5-hour limit. `<quota-check>` below means
 
 ## Messaging workers
 
-Send every message to a worker (follow-ups, stop requests, resume requests)
+Send every message to a worker (answers, stop requests, resume requests)
 to its Dispatch: `<orca> orchestration send --to dispatch:<dispatch_id> ...`.
 Take the dispatch ID (`ctx_…`) from the `start_worker.py` output and record it
 with the Task; no terminal handle is needed.
@@ -632,6 +632,15 @@ with the Task; no terminal handle is needed.
   `terminal_not_found`.
 - `--to dispatch:<dispatch_id>` addresses that exact attempt. After a
   re-dispatch, send to the new dispatch ID.
+- Never `send` to a Dispatch that already sent `worker_done`. Orca treats
+  such a message as a follow-up: it creates a new Dispatch and Task in the
+  same worktree and starts a worker that bypasses `start_worker.py`, the
+  quota check, and `MAX_WORKERS`, and leaves the original Dispatch in an
+  unknown state in `list_workers.py`. Start the next phase with
+  `start_worker.py` instead.
+- Use `send` only for a worker still working its Dispatch: answering its
+  question, asking it to stop, and asking it to resume after a quota stop
+  as the quota pause reference (**Quota control**) defines.
 
 ### Answering worker questions
 
@@ -769,6 +778,13 @@ Follow [Waiting](references/waiting.md) in both Claude Code and Codex
   workers never rebase while implementing, and the Coordinator never tells
   a worker still implementing to rebase, even after merging another PR. If
   a worker asks, tell it to send `worker_done` without rebasing.
+  - When `main` moves (e.g. after merging another PR), send no message
+    asking for a rebase or re-sync to any worker, whether in
+    Implementation or Merge preparation, running or finished. Its PR is
+    judged after its `worker_done`, in step 14.
+  - If step 14 then finds the PR behind `origin/main` (**Common
+    verification conditions**), start a new merge preparation (step 13)
+    for it.
 - Never exceed the `pr-cross-review` per-PR review limit (`MAX_REVIEWS`),
   counting all phases and dispatches, except for extra reviews the user
   approved (below). Track this across worker restarts and pass it in every
