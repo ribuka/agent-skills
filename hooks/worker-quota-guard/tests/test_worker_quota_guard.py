@@ -201,6 +201,20 @@ def test_without_local_config_uses_config_conf(tmp_path):
         HOOK_DIR / "config.conf")
 
 
+@pytest.mark.parametrize("key", ["SHELL_TOOL", "ALLOW_COMMAND"])
+def test_list_keys_may_repeat_in_both_files(tmp_path, key):
+    """User-approved exception (Issue #162): list keys repeat; a local key replaces the list."""
+    (tmp_path / "config.conf").write_text(
+        "QUOTA_GUARD=q\nSHELL_TOOL=Bash\nSHELL_TOOL=PowerShell\n"
+        "ALLOW_COMMAND=git\\b\nALLOW_COMMAND=gh\\b\n", encoding="utf-8")
+    shared = hook.load_config(tmp_path / "config.conf")
+    assert shared["SHELL_TOOL"] == ["Bash", "PowerShell"]
+    assert shared["ALLOW_COMMAND"] == [r"git\b", r"gh\b"]
+    (tmp_path / "config.local.conf").write_text(f"{key}=a\n{key}=b\n{key}=c\n",
+                                                encoding="utf-8")
+    assert hook.load_config(tmp_path / "config.conf") == {**shared, key: ["a", "b", "c"]}
+
+
 def test_local_config_overrides_one_key(env, monkeypatch, capsys, tmp_path):
     shipped = hook.load_config(tmp_path / "config.conf")
     (tmp_path / "config.local.conf").write_text(
