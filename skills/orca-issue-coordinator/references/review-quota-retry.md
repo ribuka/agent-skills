@@ -43,7 +43,8 @@ always "retry after the reset", so do not ask the user.
    until the Run resumes.
 2. Run `review_status.sh <pr-number>` again and reconcile it with the
    checkpoint.
-3. After a READY `<quota-check>`, and within `MAX_WORKERS`, start one fresh
+3. After a READY `<quota-check>`, and within the interrupted phase's limit
+   (`MAX_IMPL_WORKERS` or `MAX_MERGE_WORKERS`), start one fresh
    worker for the interrupted phase in the PR's worktree, with the model and
    effort of that phase, through `start_worker.py` (`SKILL.md` **Starting
    workers**) with these arguments:

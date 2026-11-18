@@ -41,51 +41,112 @@ def run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureF
     return _run
 
 
-def test_max_workers_defaults_to_three(run, tmp_path: Path) -> None:
+# The removed key and flag, split so `git grep` finds no trace of them.
+OLD_KEY = "MAX_" + "WORKERS"
+OLD_FLAG = "--max-" + "workers"
+LIMITS = [("MAX_IMPL_WORKERS", "--max-impl-workers", "max-impl-workers"),
+          ("MAX_MERGE_WORKERS", "--max-merge-workers", "max-merge-workers")]
+
+
+@pytest.mark.parametrize("key,flag,label", LIMITS)
+def test_worker_limit_defaults_to_one(run, tmp_path: Path, key: str, flag: str, label: str) -> None:
     code, out, _ = run("--json")
     assert code == 0
-    assert json.loads(out)["MAX_WORKERS"] == {"value": "3", "source": str(tmp_path / "config.conf")}
+    assert json.loads(out)[key] == {"value": "1", "source": str(tmp_path / "config.conf")}
 
 
-def test_text_output_shows_max_workers_and_source(run, tmp_path: Path) -> None:
+@pytest.mark.parametrize("key,flag,label", LIMITS)
+def test_text_output_shows_worker_limit_and_source(run, tmp_path: Path, key: str, flag: str,
+                                                   label: str) -> None:
     code, out, _ = run()
     assert code == 0
-    assert f"max-workers: 3  (from {tmp_path / 'config.conf'})" in out.splitlines()
+    assert f"{label}: 1  (from {tmp_path / 'config.conf'})" in out.splitlines()
+    assert not any(line.startswith(OLD_FLAG[2:] + ":") for line in out.splitlines())
 
 
-def test_max_workers_from_config(run, tmp_path: Path) -> None:
-    code, out, _ = run("--json", config="MAX_WORKERS=2\n")
+@pytest.mark.parametrize("key,flag,label", LIMITS)
+def test_worker_limit_from_config(run, tmp_path: Path, key: str, flag: str, label: str) -> None:
+    code, out, _ = run("--json", config=f"{key}=2\n")
     assert code == 0
-    assert json.loads(out)["MAX_WORKERS"] == {
-        "value": "2", "source": str(tmp_path / "config.local.conf")}
+    assert json.loads(out)[key] == {"value": "2", "source": str(tmp_path / "config.local.conf")}
 
 
-def test_max_workers_argument_overrides_config(run) -> None:
-    code, out, _ = run("--json", "--max-workers", "1", config="MAX_WORKERS=2\n")
+@pytest.mark.parametrize("key,flag,label", LIMITS)
+def test_worker_limit_argument_overrides_config(run, key: str, flag: str, label: str) -> None:
+    code, out, _ = run("--json", flag, "3", config=f"{key}=2\n")
     assert code == 0
-    assert json.loads(out)["MAX_WORKERS"] == {"value": "1", "source": "argument"}
+    assert json.loads(out)[key] == {"value": "3", "source": "argument"}
 
 
-@pytest.mark.parametrize("value", ["0", "-1", "2.5", "two", "٣"])
-def test_invalid_max_workers_fails(run, value: str) -> None:
-    code, out, err = run("--max-workers", value)
+def test_worker_limits_are_independent(run, tmp_path: Path) -> None:
+    code, out, _ = run("--json", "--max-merge-workers", "4", config="MAX_IMPL_WORKERS=2\n")
+    assert code == 0
+    data = json.loads(out)
+    assert data["MAX_IMPL_WORKERS"] == {"value": "2", "source": str(tmp_path / "config.local.conf")}
+    assert data["MAX_MERGE_WORKERS"] == {"value": "4", "source": "argument"}
+
+
+@pytest.mark.parametrize("key,flag,label", LIMITS)
+@pytest.mark.parametrize("value", ["0", "-1", "2.5", "two", "\u0663"])
+def test_invalid_worker_limit_fails(run, key: str, flag: str, label: str, value: str) -> None:
+    code, out, err = run(flag, value)
     assert code == 1
     assert out == ""
-    assert "MAX_WORKERS" in err
+    assert key in err
 
 
-def test_invalid_max_workers_in_config_fails(run, tmp_path: Path) -> None:
-    code, _, err = run(config="MAX_WORKERS=0\n")
+@pytest.mark.parametrize("key,flag,label", LIMITS)
+def test_invalid_worker_limit_in_config_fails(run, tmp_path: Path, key: str, flag: str,
+                                              label: str) -> None:
+    code, _, err = run(config=f"{key}=0\n")
     assert code == 1
+    assert key in err
     assert str(tmp_path / "config.local.conf") in err
 
 
-@pytest.mark.parametrize("config", [None, "MAX_WORKERS=2\n"])
-def test_empty_max_workers_argument_fails(run, config: str | None) -> None:
-    code, out, err = run("--max-workers=", config=config)
+@pytest.mark.parametrize("key,flag,label", LIMITS)
+@pytest.mark.parametrize("with_config", [False, True])
+def test_empty_worker_limit_argument_fails(run, key: str, flag: str, label: str,
+                                           with_config: bool) -> None:
+    code, out, err = run(f"{flag}=", config=f"{key}=2\n" if with_config else None)
     assert code == 1
     assert out == ""
-    assert "MAX_WORKERS is empty (from argument)" in err
+    assert f"{key} is empty (from argument)" in err
+
+
+def test_max_workers_is_an_unknown_key(run, tmp_path: Path) -> None:
+    code, out, err = run("--json", config=f"{OLD_KEY}=3\n")
+    assert (code, out) == (1, "")
+    assert err == f"error: {tmp_path / 'config.local.conf'}: line 1: unknown key: {OLD_KEY}\n"
+
+
+def test_max_workers_flag_is_gone(run) -> None:
+    with pytest.raises(SystemExit) as exc:
+        run(OLD_FLAG, "2")
+    assert exc.value.code == 2
+
+
+def test_serial_defaults_to_false(run) -> None:
+    code, out, _ = run()
+    assert code == 0
+    assert "serial: false  (default)" in out.splitlines()
+    code, out, _ = run("--json")
+    assert json.loads(out)["SERIAL"] == {"value": False, "source": "default"}
+
+
+def test_serial_flag_turns_serial_mode_on(run, tmp_path: Path) -> None:
+    code, out, _ = run("--serial")
+    assert code == 0
+    assert "serial: true  (from argument)" in out.splitlines()
+    assert f"max-impl-workers: 1  (from {tmp_path / 'config.conf'})" in out.splitlines()
+    code, out, _ = run("--serial", "--json")
+    assert json.loads(out)["SERIAL"] == {"value": True, "source": "argument"}
+
+
+def test_serial_is_not_a_config_key(run) -> None:
+    code, _, err = run(config="SERIAL=true\n")
+    assert code == 1
+    assert "unknown key: SERIAL" in err
 
 
 @pytest.mark.parametrize("agent,impl,merge", [
@@ -199,10 +260,10 @@ def test_local_config_overrides_one_key_only(run, tmp_path: Path, agent: str) ->
     code, shipped, _ = run("--agent", agent, "--json")
     assert code == 0
     code, out, err = run("--agent", agent, "--json",
-                         config="# personal\n\n  MAX_WORKERS = 1 \n")
+                         config="# personal\n\n  MAX_MERGE_WORKERS = 2 \n")
     assert (code, err) == (0, "")
     expected = json.loads(shipped)
-    expected["MAX_WORKERS"] = {"value": "1", "source": str(tmp_path / "config.local.conf")}
+    expected["MAX_MERGE_WORKERS"] = {"value": "2", "source": str(tmp_path / "config.local.conf")}
     assert json.loads(out) == expected
 
 
@@ -216,9 +277,9 @@ def test_text_output_names_local_config_as_source(run, tmp_path: Path) -> None:
 @pytest.mark.parametrize("name", ["config.conf", "config.local.conf"])
 @pytest.mark.parametrize("content,line,problem", [
     ("BOGUS=1\n", 1, "unknown key: BOGUS"),
-    ("MAX_WORKERS=2\n# c\nMAX_WORKERS=3\n", 3, "duplicate key: MAX_WORKERS"),
+    ("MAX_IMPL_WORKERS=2\n# c\nMAX_IMPL_WORKERS=3\n", 3, "duplicate key: MAX_IMPL_WORKERS"),
     ("\nCLAUDE_IMPL_MODEL=  \n", 2, "empty value for CLAUDE_IMPL_MODEL"),
-    ("MAX_WORKERS\n", 1, "expected KEY=value"),
+    ("MAX_IMPL_WORKERS\n", 1, "expected KEY=value"),
 ])
 def test_invalid_config_names_file_and_line(run, tmp_path: Path, name: str, content: str,
                                             line: int, problem: str) -> None:
@@ -229,7 +290,7 @@ def test_invalid_config_names_file_and_line(run, tmp_path: Path, name: str, cont
 
 
 def test_missing_key_in_config_conf_is_an_error(run, tmp_path: Path) -> None:
-    (tmp_path / "config.conf").write_text("MAX_WORKERS=3\n", encoding="utf-8")
+    (tmp_path / "config.conf").write_text("MAX_IMPL_WORKERS=3\n", encoding="utf-8")
     code, out, err = run("--json", config="FRESH_WORKER_CONTEXT_TOKENS=5\n")
     assert (code, out) == (1, "")
     assert "missing keys: CLAUDE_IMPL_MODEL" in err

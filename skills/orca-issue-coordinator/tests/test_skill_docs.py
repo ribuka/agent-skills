@@ -38,7 +38,7 @@ def test_wake_up_carries_reference_path() -> None:
 
 def test_merge_prep_worker_starts_from_spec_in_pr_worktree() -> None:
     skill = SKILL_MD.read_text(encoding="utf-8")
-    merge_prep_step = skill.split("13. When a worker slot is free", 1)[1].split("14. ", 1)[0]
+    merge_prep_step = skill.split("13. When a merge-preparation worker slot is free", 1)[1].split("14. ", 1)[0]
     assert "`start_worker.py`" in merge_prep_step
     assert ('`--spec "<handoff>" --task-title "#<issue> PR #<pr> merge prep" '
             "--worktree branch:<branch> --agent <agent> --model <merge-model> "
@@ -189,15 +189,27 @@ def test_each_task_is_created_and_started_in_one_way() -> None:
     assert "one Task per Issue by default. Then," not in skill
 
 
-def test_concurrency_limit_comes_from_max_workers() -> None:
+def test_concurrency_limits_are_per_phase() -> None:
     skill = SKILL_MD.read_text(encoding="utf-8")
-    dispatch_section = skill.split("## 1. Plan and dispatch", 1)[1].split("## 2.", 1)[0]
-    assert "effort, and `MAX_WORKERS` from step 0" in dispatch_section
-    assert "**`MAX_WORKERS` workers running concurrently**" in dispatch_section
-    assert "Merge-preparation workers\n   count toward this limit" in dispatch_section
-    assert "With `MAX_WORKERS=1`, run fully serially" in dispatch_section
-    assert "3 workers running concurrently" not in skill
-    assert "pass\n`--max-workers 1`" in skill
+    flat = " ".join(skill.split())
+    dispatch_section = " ".join(
+        skill.split("## 1. Plan and dispatch", 1)[1].split("## 2.", 1)[0].split())
+    assert ("`MAX_IMPL_WORKERS`, `MAX_MERGE_WORKERS`, and whether the serial mode is on"
+            " from step 0") in dispatch_section
+    assert ("**`MAX_IMPL_WORKERS` implementation workers running concurrently**"
+            in dispatch_section)
+    assert "Merge-preparation workers do not count toward this limit" in dispatch_section
+    assert "With `serial: true`, run fully serially" in dispatch_section
+    assert "The two limits are independent" in flat
+    assert "the other phase's workers do not count" in flat
+    assert ("If the user explicitly asks to run the Issues serially (one at a time),"
+            " pass `--serial`") in flat
+    assert ("When a merge-preparation worker slot is free (within `MAX_MERGE_WORKERS`;"
+            " implementation workers do not count)") in flat
+    for path in [SKILL_MD, *SKILL_MD.parent.joinpath("references").glob("*.md")]:
+        text = path.read_text(encoding="utf-8")
+        assert "MAX_" + "WORKERS" not in text, path
+        assert "--max-" + "workers" not in text, path
 
 
 def test_implementation_workers_do_not_sync_with_main() -> None:
@@ -229,7 +241,7 @@ def test_no_send_to_finished_dispatch() -> None:
     )
     assert "Never `send` to a Dispatch that already sent `worker_done`." in messaging
     assert "Orca treats such a message as a follow-up" in messaging
-    assert "bypasses `start_worker.py`, the quota check, and `MAX_WORKERS`" in messaging
+    assert "bypasses `start_worker.py`, the quota check, and the worker limits" in messaging
     assert "Use `send` only for a worker still working its Dispatch" in messaging
     assert "follow-ups" not in messaging
 
@@ -334,7 +346,7 @@ def test_unmet_criteria_leave_a_draft_comment_before_merge_without_asking() -> N
     assert "`unmet/unverified acceptance criteria:` is `none`, or the draft comment" in common
     assert "missing field is not `none`" in common
     assert "user explicitly approved" not in common
-    handoff = skill.split("13. When a worker slot is free", 1)[1].split("14. Independently", 1)[0]
+    handoff = skill.split("13. When a merge-preparation worker slot is free", 1)[1].split("14. Independently", 1)[0]
     assert "`unmet/unverified acceptance criteria:` from the Implementation handoff." in handoff
     assert "user decision" not in handoff
     step15 = skill.split("15. Merge the PR yourself", 1)[1].split("16. ", 1)[0]
@@ -377,7 +389,7 @@ def test_waiting_for_the_user_keeps_independent_tasks_going() -> None:
     skill = " ".join(SKILL_MD.read_text(encoding="utf-8").split())
     section = skill.split("## Asking the user", 1)[1].split("## Waiting", 1)[0]
     for phrase in ("**Keep other work going while waiting.**", "While any question is unanswered",
-                   "do not functionally depend on the affected PR", "within `MAX_WORKERS`",
+                   "do not functionally depend on the affected PR", "within `MAX_IMPL_WORKERS` / `MAX_MERGE_WORKERS`",
                    "not while it is PAUSED_QUOTA or UNKNOWN", "an ordered Task may start"):
         assert phrase in section
 
@@ -724,7 +736,7 @@ def test_merge_requires_latest_review_to_cover_head() -> None:
     assert "start merge preparation\n      (step 13)" in verify_step
     for step in (shortcut_step, verify_step):
         assert "**Limit reached with unreviewed fix commits**" in step
-    merge_prep_step = skill.split("13. When a worker slot is free", 1)[1].split("14. ", 1)[0]
+    merge_prep_step = skill.split("13. When a merge-preparation worker slot is free", 1)[1].split("14. ", 1)[0]
     assert "run cross-review on the unreviewed commits" in merge_prep_step
     assert "head before the rebase and after it" in merge_prep_step
 
@@ -742,7 +754,7 @@ def test_merge_as_is_approval_covers_only_the_approved_head() -> None:
                                  ("14. Independently verify", "15. Merge")):
         step = skill.split(step_start, 1)[1].split(step_end, 1)[0]
         assert "**Common verification conditions** above" in step
-    handoff = skill.split("13. When a worker slot is free", 1)[1].split("14. Independently", 1)[0]
+    handoff = skill.split("13. When a merge-preparation worker slot is free", 1)[1].split("14. Independently", 1)[0]
     assert "**Merge as is**" in handoff
     assert "that head, and that the user approved merging it" in handoff
 
@@ -814,7 +826,7 @@ def test_execution_order_rules_live_in_plan_and_dispatch() -> None:
     assert "**Explicit order**" in dispatch_section
     assert "ask the user for the order\n     before the first dispatch" in dispatch_section
     assert "unless step 3 requires asking for the order" in dispatch_section
-    assert "only then dispatch the\n   next Issue" in dispatch_section
+    assert "only then\n   dispatch the next Issue" in dispatch_section
 
 
 def test_merge_command_pins_verified_head_and_handles_failures() -> None:

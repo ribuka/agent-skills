@@ -6,7 +6,8 @@ Use this for both Claude Code and Codex Coordinators. `<orca>`, `<handle>`,
 
 ## Wait by ending the turn
 
-After starting every worker the Run can start within `MAX_WORKERS`, save the
+After starting every worker the Run can start within `MAX_IMPL_WORKERS` and
+`MAX_MERGE_WORKERS`, save the
 checkpoint (below) and **end the turn**. Orca wakes this terminal when a worker
 reports. Never wait in a tool call:
 
@@ -143,7 +144,7 @@ way. If one arrives during an active turn, finish the current operation first.
    wake for the same event is not a new event.
 6. Handle due `wake-at:` times (pending CI, a reviewer retry per
    **On wake-up** in `review-quota-retry.md`), then start ready work within
-   quota and `MAX_WORKERS`.
+   quota, `MAX_IMPL_WORKERS`, and `MAX_MERGE_WORKERS`.
 7. Set the reservation to the earliest remaining `wake-at:` time (none if
    nothing remains), save the checkpoint, and end the turn. If a question to
    the user is pending, end with the reminder line from `SKILL.md`

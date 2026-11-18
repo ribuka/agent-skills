@@ -83,17 +83,20 @@ form.
 Then resolve the worker settings for `<agent>`.
 
 Run once at the start, passing through any `--impl-model`, `--impl-effort`,
-`--merge-model`, `--merge-effort`, `--max-workers`, or
-`--fresh-worker-context-tokens` flags the user gave.
+`--merge-model`, `--merge-effort`, `--max-impl-workers`,
+`--max-merge-workers`, or `--fresh-worker-context-tokens` flags the user gave.
 If the user explicitly asks to run the Issues serially (one at a time), pass
-`--max-workers 1`:
+`--serial`:
 
 ```bash
 uv run <skill-dir>/scripts/resolve_config.py --agent <agent> [user flags]
 ```
 
 It prints the agent, the `--model` / `--effort` pair for each phase, the
-`max-workers: <n>` concurrency limit (`MAX_WORKERS`), the
+`max-impl-workers: <n>` limit of implementation workers running at once
+(`MAX_IMPL_WORKERS`), the `max-merge-workers: <n>` limit of merge-preparation
+workers running at once (`MAX_MERGE_WORKERS`), `serial: true|false` (the
+serial mode, set only by `--serial`), the
 `fresh-worker-context-tokens: <n>` resume threshold
 (`FRESH_WORKER_CONTEXT_TOKENS`, see **Quota control**), and each value's source
 (argument > `<skill-dir>/config.local.conf` > `<skill-dir>/config.conf`).
@@ -102,9 +105,15 @@ The tracked `config.conf` holds every default; the user's git-ignored
 lines; an unknown key, a duplicate key, or an empty value stops the script
 with the file and line. Configuration keys are
 `CLAUDE_IMPL_MODEL`, `CLAUDE_IMPL_EFFORT`, `CLAUDE_MERGE_MODEL`,
-`CLAUDE_MERGE_EFFORT`, their `CODEX_` equivalents, and shared `MAX_WORKERS`
-and `FRESH_WORKER_CONTEXT_TOKENS`. Always pass `--agent <agent>` and the resolved
-model/effort on every `worker-start`, and never exceed `MAX_WORKERS`.
+`CLAUDE_MERGE_EFFORT`, their `CODEX_` equivalents, and shared
+`MAX_IMPL_WORKERS`, `MAX_MERGE_WORKERS`, and `FRESH_WORKER_CONTEXT_TOKENS`.
+Always pass `--agent <agent>` and the resolved model/effort on every
+`worker-start`. The two limits are independent: start an implementation worker
+(including a retry or fresh worker of that phase) only while fewer than
+`MAX_IMPL_WORKERS` implementation workers run, and a merge-preparation worker
+(including a retry or fresh worker of that phase) only while fewer than
+`MAX_MERGE_WORKERS` merge-preparation workers run; the other phase's workers
+do not count. With `serial: true`, run at most one worker at a time.
 Claude effort values: `low`, `medium`, `high`, `xhigh`, `max`;
 Codex: `minimal`, `low`, `medium`, `high`, `xhigh` (no `max`).
 
@@ -243,17 +252,19 @@ only after the user confirms.
 6. Before the first dispatch, briefly present the execution plan to the
    user: the fixed Issue set by number, functional dependencies and
    orderings (listed separately), dispatch order,
-   and the resolved worker model, effort, and `MAX_WORKERS` from step 0.
+   and the resolved worker model, effort, `MAX_IMPL_WORKERS`,
+   `MAX_MERGE_WORKERS`, and whether the serial mode is on from step 0.
    For each ordering, state the reason (which part both Tasks edit, or that
    the overlap is unclear). For Tasks that edit the same file
    but run in parallel, state that decision and its reason (e.g. which
    parts each edits). Then start dispatching without waiting for approval,
    unless step 3 requires asking for the order.
    Dispatch independent tasks to separate worktrees, with at most
-   **`MAX_WORKERS` workers running concurrently**. Merge-preparation workers
-   count toward this limit. With `MAX_WORKERS=1`, run fully serially:
-   implement one Issue, prepare and merge its PR, and only then dispatch the
-   next Issue. Start each worker with `start_worker.py` (**Starting
+   **`MAX_IMPL_WORKERS` implementation workers running concurrently**.
+   Merge-preparation workers do not count toward this limit; they have their
+   own limit, `MAX_MERGE_WORKERS` (step 13). With `serial: true`, run fully
+   serially: implement one Issue, prepare and merge its PR, and only then
+   dispatch the next Issue. Start each worker with `start_worker.py` (**Starting
    workers**) as step 4 decided for its Task: `--spec` for an independent
    Task, `--task <task_id>` for a Task created with `task-create`.
    Run the quota `check` before each
@@ -307,7 +318,8 @@ only after the user confirms.
    - Tell the worker to stop only processes it started itself, by PID, and
      never by image name (e.g. `taskkill /IM uv.exe`, `pkill python`): that
      also kills the Coordinator's and other workers' processes.
-8. Fill available worker slots before waiting for completions.
+8. Fill available implementation worker slots (within `MAX_IMPL_WORKERS`)
+   before waiting for completions.
    Dispatch additional tasks as slots become available, holding back
    dependent Tasks until their dependency PRs are merged, and ordered Tasks
    until the earlier PR is merged or waiting for the user (step 5).
@@ -401,7 +413,8 @@ Use these checks in steps 12 and 14, against the current PR head:
       the reviewed commit and the head in its handoff. Once the limit is
       reached, follow **Limit reached with unreviewed fix commits**
       (**Rules**) instead.
-13. When a worker slot is free (within `MAX_WORKERS`) and after a READY
+13. When a merge-preparation worker slot is free (within
+    `MAX_MERGE_WORKERS`; implementation workers do not count) and after a READY
     quota `check`, start a **new** worker for
     **Orchestration worker / Merge preparation** mode in the PR's existing
     worktree, with `start_worker.py` (**Starting workers**) and these
@@ -635,7 +648,8 @@ with the Task; no terminal handle is needed.
 - Never `send` to a Dispatch that already sent `worker_done`. Orca treats
   such a message as a follow-up: it creates a new Dispatch and Task in the
   same worktree and starts a worker that bypasses `start_worker.py`, the
-  quota check, and `MAX_WORKERS`, and leaves the original Dispatch in an
+  quota check, and the worker limits (`MAX_IMPL_WORKERS` /
+  `MAX_MERGE_WORKERS`), and leaves the original Dispatch in an
   unknown state in `list_workers.py`. Start the next phase with
   `start_worker.py` instead.
 - Use `send` only for a worker still working its Dispatch: answering its
@@ -710,7 +724,8 @@ Code Coordinators (blockers, decisions, model choices, or anything else).
   of one at a time.
 - **Keep other work going while waiting.** While any question is
   unanswered, keep dispatching and processing other Tasks that do not
-  functionally depend on the affected PR (step 3), within `MAX_WORKERS` and
+  functionally depend on the affected PR (step 3), within `MAX_IMPL_WORKERS` /
+  `MAX_MERGE_WORKERS` and
   the quota (not while it is PAUSED_QUOTA or UNKNOWN). Only the affected
   PR and its functionally dependent Tasks wait; an ordered Task may start
   (step 5).
