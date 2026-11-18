@@ -1,6 +1,6 @@
 ---
 name: bump-version
-description: Bump the project version - edit only the VERSION file, commit, push, open a pull request, and merge it (no cross-review). Use when asked to bump, raise, or release a new version, or when working on a version-bump branch (e.g. `bump-version-1.4.0`, `release/v2.0.0`).
+description: Bump the project version - edit only the VERSION file, commit, push, open a pull request, merge it (no cross-review), and fast-forward the local `main` to `origin/main`. Use when asked to bump, raise, or release a new version, or when working on a version-bump branch (e.g. `bump-version-1.4.0`, `release/v2.0.0`).
 ---
 
 # Bump version
@@ -50,3 +50,21 @@ Merge the pull request once its required checks pass.
   `git push --force-with-lease` (never `--force`).
 - If checks fail or the merge is blocked, do **not** merge; report what is
   blocking and ask the user.
+
+### 6. Sync local `main`
+
+Run this only after confirming the merge: `gh pr view <pr> --json state --jq .state`
+prints `MERGED`. Skip it when you did not merge, the merge failed, or it is
+unconfirmed.
+
+```bash
+uv run --no-project ~/.agents/skills/fast-forward-local-branch/scripts/fast_forward.py --repo <working-repository-path> --branch main
+```
+
+See the `fast-forward-local-branch` skill for its public results and exit codes.
+
+- Exit 0 means updated, unchanged, or skipped: report the `local-branch: ...`
+  result, including the reason for a skip.
+- Exit 1 means a synchronization error: report the `error: <reason>` line.
+- Report the merge result and the local synchronization result separately.
+  Never retry the merge because synchronization failed.
