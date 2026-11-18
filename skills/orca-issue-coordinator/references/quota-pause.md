@@ -185,10 +185,11 @@ phases or duplicating dispatches:
   confirmed `worker-stop`), and prepare the handoff as **Handoff to a
   retried worker** says.
   - **Merge preparation:** start a new merge-preparation worker as
-    `SKILL.md` step 13 says, with that handoff as its `--spec`. No Task
+    `SKILL.md` step 13 says (within `MAX_MERGE_WORKERS`), with that handoff
+    as its `--spec`. No Task
     depends on a merge-preparation Task, so its failed Task blocks nothing.
   - **Implementation:** retry the same failed Task with one fresh worker in
-    the existing worktree, with `start_worker.py` and
+    the existing worktree (within `MAX_IMPL_WORKERS`), with `start_worker.py` and
     `--task <task_id> --retry-of <dispatch_id> --worktree branch:<branch> --agent <agent> --model <model> --effort <effort>`
     (the phase's model and effort from `SKILL.md` step 0). Do not create a
     new Task with `--spec`: the failed Task would stay failed and block the
