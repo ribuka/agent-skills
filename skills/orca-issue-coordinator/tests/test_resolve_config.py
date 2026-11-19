@@ -300,3 +300,76 @@ def test_script_holds_no_defaults() -> None:
     source = SCRIPT.read_text(encoding="utf-8")
     for value in ('"opus"', '"sonnet"', '"gpt-', '"200000"', '"3"'):
         assert value not in source
+
+
+@pytest.mark.parametrize("agent,model,effort", [("claude", "sonnet", "high"),
+                                                ("codex", "gpt-6.1-sol", "medium")])
+def test_pre_dispatch_check_defaults_to_enabled(run, tmp_path: Path, agent: str, model: str,
+                                                effort: str) -> None:
+    conf = tmp_path / "config.conf"
+    code, out, _ = run(agent=agent)
+    assert code == 0
+    assert (f"pre-dispatch-check: true --model {model} --effort {effort}  "
+            f"(enabled: {conf}; model: {conf}; effort: {conf})") in out.splitlines()
+    code, out, _ = run("--json", agent=agent)
+    data = json.loads(out)
+    assert data["PRE_DISPATCH_CHECK"] == {"value": True, "source": str(conf)}
+    assert data["PRE_DISPATCH_CHECK_MODEL"] == {"value": model, "source": str(conf)}
+    assert data["PRE_DISPATCH_CHECK_EFFORT"] == {"value": effort, "source": str(conf)}
+
+
+def test_pre_dispatch_check_precedence(run, tmp_path: Path) -> None:
+    config = "PRE_DISPATCH_CHECK=false\n"
+    code, out, err = run(config=config)
+    assert (code, err) == (0, "")
+    assert any(line.startswith("pre-dispatch-check: false --model sonnet")
+               and f"(enabled: {tmp_path / 'config.local.conf'};" in line
+               for line in out.splitlines())
+    code, out, _ = run("--json", config=config)
+    assert json.loads(out)["PRE_DISPATCH_CHECK"] == {
+        "value": False, "source": str(tmp_path / "config.local.conf")}
+    code, out, _ = run("--json", "--pre-dispatch-check", "true", config=config)
+    assert json.loads(out)["PRE_DISPATCH_CHECK"] == {"value": True, "source": "argument"}
+
+
+@pytest.mark.parametrize("value", ["yes", "1", "True"])
+def test_pre_dispatch_check_rejects_non_boolean_in_config(run, tmp_path: Path, value: str) -> None:
+    code, out, err = run("--json", config=f"# c\nPRE_DISPATCH_CHECK={value}\n")
+    assert (code, out) == (1, "")
+    assert err == (f"error: {tmp_path / 'config.local.conf'}: line 2: "
+                   f"PRE_DISPATCH_CHECK={value} is not true or false\n")
+
+
+def test_pre_dispatch_check_rejects_empty_value_in_config(run, tmp_path: Path) -> None:
+    code, _, err = run("--json", config="PRE_DISPATCH_CHECK=\n")
+    assert code == 1
+    assert err == f"error: {tmp_path / 'config.local.conf'}: line 1: empty value for PRE_DISPATCH_CHECK\n"
+
+
+@pytest.mark.parametrize("value", ["yes", "1", ""])
+def test_pre_dispatch_check_rejects_non_boolean_argument(run, value: str) -> None:
+    code, out, err = run("--pre-dispatch-check", value)
+    assert (code, out) == (1, "")
+    assert "PRE_DISPATCH_CHECK" in err and "(from argument)" in err
+
+
+@pytest.mark.parametrize("agent", ["claude", "codex"])
+def test_pre_dispatch_check_model_and_effort_precedence(run, tmp_path: Path, agent: str) -> None:
+    prefix = agent.upper()
+    config = f"{prefix}_PRE_DISPATCH_CHECK_MODEL=m-local\n{prefix}_PRE_DISPATCH_CHECK_EFFORT=low\n"
+    code, out, _ = run("--json", agent=agent, config=config)
+    data = json.loads(out)
+    local = str(tmp_path / "config.local.conf")
+    assert data["PRE_DISPATCH_CHECK_MODEL"] == {"value": "m-local", "source": local}
+    assert data["PRE_DISPATCH_CHECK_EFFORT"] == {"value": "low", "source": local}
+    assert data["IMPL_EFFORT"]["source"] == str(tmp_path / "config.conf")
+    code, out, _ = run("--json", "--pre-dispatch-check-model", "m-arg",
+                       "--pre-dispatch-check-effort", "xhigh", agent=agent, config=config)
+    data = json.loads(out)
+    assert data["PRE_DISPATCH_CHECK_MODEL"] == {"value": "m-arg", "source": "argument"}
+    assert data["PRE_DISPATCH_CHECK_EFFORT"] == {"value": "xhigh", "source": "argument"}
+
+
+def test_codex_rejects_max_pre_dispatch_check_effort(run) -> None:
+    code, _, err = run("--pre-dispatch-check-effort", "max", agent="codex")
+    assert code == 1 and "PRE_DISPATCH_CHECK_EFFORT=max" in err

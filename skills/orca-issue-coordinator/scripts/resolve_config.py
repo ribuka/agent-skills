@@ -4,15 +4,18 @@
 The required --agent claude|codex selects both the Coordinator and worker agent.
 Precedence (highest first):
   1. command-line flags (--impl-model, --impl-effort, --merge-model, --merge-effort,
-     --max-impl-workers, --max-merge-workers, --fresh-worker-context-tokens)
+     --pre-dispatch-check-model, --pre-dispatch-check-effort, --max-impl-workers,
+     --max-merge-workers, --fresh-worker-context-tokens, --pre-dispatch-check)
   2. <skill-dir>/config.local.conf (git-ignored, optional; overrides single keys)
   3. <skill-dir>/config.conf (tracked; the only source of the defaults)
 
 Both files hold `KEY=value` lines; blank lines and lines starting with `#` are
 skipped, key and value are trimmed, and the value is taken literally. An unknown
 key, a duplicate key, an empty value, or a line without `=` is an error naming
-the file and line. Model and effort keys use CLAUDE_ or CODEX_ prefixes;
-MAX_IMPL_WORKERS, MAX_MERGE_WORKERS, and FRESH_WORKER_CONTEXT_TOKENS are shared.
+the file and line. Model and effort keys (implementation, merge preparation, and
+the pre-dispatch check) use CLAUDE_ or CODEX_ prefixes; MAX_IMPL_WORKERS,
+MAX_MERGE_WORKERS, FRESH_WORKER_CONTEXT_TOKENS, and PRE_DISPATCH_CHECK (`true` or
+`false`) are shared.
 --serial (a flag only, never a config key) selects the serial mode: one worker
 at a time, each Issue merged before the next is dispatched.
 """
@@ -24,8 +27,12 @@ import json
 import sys
 from pathlib import Path
 
-PHASE_KEYS = ("IMPL_MODEL", "IMPL_EFFORT", "MERGE_MODEL", "MERGE_EFFORT")
-SHARED_KEYS = ("MAX_IMPL_WORKERS", "MAX_MERGE_WORKERS", "FRESH_WORKER_CONTEXT_TOKENS")
+PHASE_KEYS = ("IMPL_MODEL", "IMPL_EFFORT", "MERGE_MODEL", "MERGE_EFFORT",
+              "PRE_DISPATCH_CHECK_MODEL", "PRE_DISPATCH_CHECK_EFFORT")
+INTEGER_KEYS = ("MAX_IMPL_WORKERS", "MAX_MERGE_WORKERS", "FRESH_WORKER_CONTEXT_TOKENS")
+BOOLEAN_KEYS = ("PRE_DISPATCH_CHECK",)
+BOOLEANS = ("true", "false")
+SHARED_KEYS = (*INTEGER_KEYS, *BOOLEAN_KEYS)
 SETTINGS = (*PHASE_KEYS, *SHARED_KEYS)
 AGENTS = ("claude", "codex")
 CONFIG_KEYS = {f"{agent.upper()}_{key}" for agent in AGENTS for key in PHASE_KEYS} | set(SHARED_KEYS)
@@ -62,6 +69,8 @@ def read_config_file(path: Path) -> dict[str, str]:
             raise ConfigError(f"{path}: line {n}: duplicate key: {key}")
         if not value:
             raise ConfigError(f"{path}: line {n}: empty value for {key}")
+        if key in BOOLEAN_KEYS and value not in BOOLEANS:
+            raise ConfigError(f"{path}: line {n}: {key}={value} is not true or false")
         values[key] = value
     return values
 
@@ -113,14 +122,18 @@ def main() -> int:
         if k.endswith("_EFFORT") and v not in EFFORTS[opts.agent]:
             print(f"error: {k}={v} (from {src}) is not one of {sorted(EFFORTS[opts.agent])}", file=sys.stderr)
             return 1
-        if k in SHARED_KEYS and not (v.isascii() and v.isdigit() and int(v) >= 1):
+        if k in INTEGER_KEYS and not (v.isascii() and v.isdigit() and int(v) >= 1):
             print(f"error: {k}={v} (from {src}) is not an integer >= 1", file=sys.stderr)
+            return 1
+        if k in BOOLEAN_KEYS and v not in BOOLEANS:
+            print(f"error: {k}={v} (from {src}) is not true or false", file=sys.stderr)
             return 1
 
     serial_source = "argument" if opts.serial else "default"
     if opts.json:
         print(json.dumps({"AGENT": {"value": opts.agent, "source": "argument"},
-                          **{k: {"value": v, "source": s} for k, (v, s) in resolved.items()},
+                          **{k: {"value": v == "true" if k in BOOLEAN_KEYS else v, "source": s}
+                             for k, (v, s) in resolved.items()},
                           "SERIAL": {"value": opts.serial, "source": serial_source}},
                          ensure_ascii=False, indent=2))
     else:
@@ -129,6 +142,11 @@ def main() -> int:
             m, ms = resolved[f"{phase}_MODEL"]
             e, es = resolved[f"{phase}_EFFORT"]
             print(f"{phase.lower()}: --model {m} --effort {e}  (model: {ms}; effort: {es})")
+        c, cs = resolved["PRE_DISPATCH_CHECK"]
+        m, ms = resolved["PRE_DISPATCH_CHECK_MODEL"]
+        e, es = resolved["PRE_DISPATCH_CHECK_EFFORT"]
+        print(f"pre-dispatch-check: {c} --model {m} --effort {e}  "
+              f"(enabled: {cs}; model: {ms}; effort: {es})")
         for key in ("MAX_IMPL_WORKERS", "MAX_MERGE_WORKERS"):
             w, ws = resolved[key]
             print(f"{key.lower().replace('_', '-')}: {w}  (from {ws})")

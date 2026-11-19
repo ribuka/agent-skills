@@ -248,7 +248,7 @@ def test_no_send_to_finished_dispatch() -> None:
 
 def test_functional_dependencies_and_orderings_are_separate() -> None:
     skill = " ".join(SKILL_MD.read_text(encoding="utf-8").split())
-    step3 = skill.split("3. Identify dependencies", 1)[1].split("4. Create one", 1)[0]
+    step3 = skill.split("3. Create one Orchestration Run", 1)[1].split("4. Before creating any Task", 1)[0]
     for phrase in ("**Functional dependency:**", "\"depends on\"", "\"blocked by\"",
                    "relies on code, an API, a configuration, or data",
                    "only after the earlier PR is **merged**", "**Ordering:**",
@@ -263,7 +263,7 @@ def test_functional_dependencies_and_orderings_are_separate() -> None:
                    "waiting for the user's decision or held by the user's choice"):
         assert phrase in step5
     plan_step = skill.split("6. Before the first dispatch", 1)[1].split("## 2.", 1)[0]
-    assert "functional dependencies and orderings (listed separately)" in plan_step
+    assert "functional dependencies, orderings, and **Last** Issues (listed separately)" in plan_step
     assert "For each ordering, state the reason" in plan_step
     assert "state that decision and its reason" in plan_step
 
@@ -404,13 +404,21 @@ def test_guides_and_references_are_read_once_per_run() -> None:
     assert "Do not\n  read `--help` output" in budget
 
 
-def test_issue_bodies_are_read_only_for_undecidable_overlaps() -> None:
+def test_issue_bodies_are_read_only_when_pre_dispatch_check_is_off() -> None:
     skill = SKILL_MD.read_text(encoding="utf-8")
-    inspect_step = skill.split("2. Inspect only what planning needs", 1)[1].split("3. ", 1)[0]
-    assert "Step 3 gives the only exception" in inspect_step
-    overlap_step = skill.split("3. Identify dependencies", 1)[1].split("4. Create one", 1)[0]
-    assert "only for the Issues involved" in overlap_step
-    assert "`gh issue view <n> --json body`), once each" in overlap_step
+    inspect_step = " ".join(
+        skill.split("2. Inspect only what planning needs", 1)[1].split("3. ", 1)[0].split())
+    assert "Do not read full Issue bodies or investigate code" in inspect_step
+    assert "Only with `PRE_DISPATCH_CHECK: false` does step 3 give an exception" in inspect_step
+    overlap_step = skill.split("3. Create one Orchestration Run", 1)[1].split("4. Before creating any Task", 1)[0]
+    on = " ".join(overlap_step.split("**`PRE_DISPATCH_CHECK: true`:**", 1)[1]
+                  .split("**`PRE_DISPATCH_CHECK: false`:**", 1)[0].split())
+    assert "do not open Issue bodies or investigate code yourself" in on
+    assert "gh issue view" not in on
+    off = " ".join(overlap_step.split("**`PRE_DISPATCH_CHECK: false`:**", 1)[1]
+                   .split("Classify each relation", 1)[0].split())
+    assert "only for the Issues involved" in off
+    assert "`gh issue view <n> --json body`), once each" in off
 
 
 def test_run_end_cleanup_uses_scripts_only() -> None:
@@ -687,7 +695,12 @@ def test_checkpoint_holds_resume_state() -> None:
                  "IDs of the messages already processed",
                  "head SHA, and absolute deadline",
                  "`wake-at: <ISO-8601 time with offset> <reason>`",
-                 "`reservation: <id> <time>` or `reservation: none`"):
+                 "`reservation: <id> <time>` or `reservation: none`",
+                 "`pre-dispatch-check: running <dispatch-id> | done | skipped (<reason>) | disabled`",
+                 "do not run the check again",
+                 "find that dispatch with `list_workers.py` instead of starting a second worker",
+                 "`awaiting-issue-fix: #<n> ...`",
+                 "for removals the user chose for a `spec-gap` (step 6)"):
         assert item in section, item
 
 
@@ -849,10 +862,10 @@ def test_merge_command_pins_verified_head_and_handles_failures() -> None:
 
 def test_issue_set_is_fixed_planned_and_restored_from_checkpoint() -> None:
     skill = SKILL_MD.read_text(encoding="utf-8")
-    inspect = " ".join(skill.split("2. Inspect", 1)[1].split("3. Identify", 1)[0].split())
+    inspect = " ".join(skill.split("2. Inspect", 1)[1].split("3. Create one", 1)[0].split())
     assert "Fix the Run's Issue set at this step" in inspect
     assert 'resolve even "all open Issues" to the Issues open now' in inspect
-    assert "when saving the Run checkpoint in step 4" in inspect
+    assert "when saving the Run checkpoint in step 3" in inspect
     plan = " ".join(skill.split("6. Before", 1)[1].split("## 2.", 1)[0].split())
     assert "the fixed Issue set by number" in plan
     waiting = WAITING.read_text(encoding="utf-8")
@@ -871,7 +884,9 @@ def test_issue_additions_require_explicit_instruction_and_no_provenance_guess() 
                  "regardless of who created them",
                  "do not ask whether to add them",
                  "an explicit instruction from the user in chat naming Issue numbers",
-                 "step 3's dependency/overlap assessment and step 5's DAG rules",
+                 "step 3's dependency/overlap assessment (with",
+                 "a new pre-dispatch check worker for the added Issues and every Issue of the "
+                 "Run not yet merged) and step 5's DAG rules",
                  "update the checkpoint's `issues:` line before dispatch",
                  "Never treat silence as consent",
                  "only as verified facts: author account and creation time",
@@ -921,3 +936,156 @@ def test_restated_checks_and_auto_decisions_do_not_go_to_the_user() -> None:
     assert "except restating a check that keeps the criterion's `Intent:`" in flat
     assert "add one line per restated criterion" in flat
     assert "`restated acceptance criteria:`" in " ".join(WAITING.read_text(encoding="utf-8").split())
+
+
+PRE_DISPATCH_CHECK = SKILL_DIR / "references" / "pre-dispatch-check.md"
+PRE_DISPATCH_CHECK_INSTALLED = "~/.agents/skills/orca-issue-coordinator/references/pre-dispatch-check.md"
+REPORT_KINDS = ("functional-dependency", "ordering", "last", "distant-same-file", "spec-gap")
+
+
+def _flat_step(skill: str, start: str, end: str) -> str:
+    return " ".join(skill.split(start, 1)[1].split(end, 1)[0].split())
+
+
+def test_run_is_created_before_relations_are_identified() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    step3 = _flat_step(skill, "3. Create one Orchestration Run", "4. Before creating any Task")
+    first = step3.split("Then identify dependencies", 1)[0]
+    for phrase in ("set up the quota guard with this Run ID", "save the Run checkpoint"):
+        assert phrase in first
+    step4 = _flat_step(skill, "4. Before creating any Task", "5. Represent")
+    assert "Orchestration Run" not in step4
+    assert "quota guard" not in step4
+
+
+def test_pre_dispatch_check_runs_as_an_orca_worker() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    step3 = _flat_step(skill, "3. Create one Orchestration Run", "4. Before creating any Task")
+    for phrase in ("**`PRE_DISPATCH_CHECK: true`:**", "start one pre-dispatch check worker",
+                   "`start_worker.py` (**Starting workers**)",
+                   "`<quota-check> && uv run --no-project <skill-dir>/scripts/start_worker.py",
+                   '--task-title "pre-dispatch check" --worktree current --agent <agent> '
+                   "--model <pre-dispatch-check-model> --effort <pre-dispatch-check-effort>",
+                   PRE_DISPATCH_CHECK_INSTALLED,
+                   "does not count toward `MAX_IMPL_WORKERS` or `MAX_MERGE_WORKERS`",
+                   "`pre-dispatch-check: running <dispatch-id>`",
+                   "is not an Implementation or Merge preparation handoff",
+                   "`restated acceptance criteria:`", "do not release it",
+                   "Classify from its report alone",
+                   "Treat a relation the report does not settle as an **Ordering**"):
+        assert phrase in step3, phrase
+    for kind in REPORT_KINDS:
+        assert f"`{kind}`" in step3, kind
+    assert "spawn_agent" not in skill
+    assert "general-purpose" not in skill
+
+
+def test_failed_pre_dispatch_check_retries_once_then_asks() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    step3 = _flat_step(skill, "3. Create one Orchestration Run", "4. Before creating any Task")
+    failure = step3.split("**If it fails:**", 1)[1].split("**`PRE_DISPATCH_CHECK: false`:**", 1)[0]
+    for phrase in ("follows the exit codes in **Starting workers**", "`worker-quota-paused:`",
+                   "breaks the line format or the 60-line limit",
+                   "start one new pre-dispatch check worker (a new Task with `--spec`",
+                   "and the same arguments) once", "exit `1`, `2`, or `4`",
+                   "ask the user before the first dispatch",
+                   "proceed without the pre-dispatch check",
+                   "`pre-dispatch-check: skipped (<reason>)`", "stop the Run",
+                   "Dispatch nothing until the user replies"):
+        assert phrase in failure, phrase
+
+
+def test_last_issues_wait_for_every_other_merge() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    step3 = _flat_step(skill, "3. Create one Orchestration Run", "4. Before creating any Task")
+    last = step3.split("**Last:** the Issue", 1)[1]
+    for phrase in ("acceptance criterion over the whole repository",
+                   "functional dependency on every other Task of the Run",
+                   "only after every other PR is **merged**"):
+        assert phrase in last, phrase
+    step5 = _flat_step(skill, "5. Represent only functional dependencies", "6. Before")
+    for phrase in ("A **Last** Task (step 3) is a Dependent Task whose `--deps` lists every "
+                   "other Task of the Run",
+                   "only after every other PR of the Run has been **merged**"):
+        assert phrase in step5, phrase
+    step6 = _flat_step(skill, "6. Before the first dispatch", "## 2.")
+    assert "orderings, and **Last** Issues (listed separately)" in step6
+    assert "the pre-dispatch check state" in step6
+
+
+def test_spec_gaps_stop_the_whole_run_and_offer_three_choices() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    step6 = _flat_step(skill, "6. Before the first dispatch", "## 2.")
+    gaps = step6.split("**Specification gaps:**", 1)[1]
+    for phrase in ("stop the whole Run", "dispatch nothing until the user replies",
+                   "**Fix the Issue first:**", "the Issue stays in the Run",
+                   "Never edit the Issue yourself", "`awaiting-issue-fix: #<n> ...`",
+                   "start a new pre-dispatch check worker (step 3)",
+                   "**Dispatch as is:**", "**Remove from the Run:**",
+                   "update the checkpoint's `issues:` line"):
+        assert phrase in gaps, phrase
+    asking = " ".join(skill.split("## Asking the user", 1)[1].split("\n## ", 1)[0].split())
+    assert "it holds every dispatch until the user replies" in asking
+
+
+def test_pre_dispatch_check_reference_defines_report_and_read_only_rules() -> None:
+    ref = " ".join(PRE_DISPATCH_CHECK.read_text(encoding="utf-8").split())
+    for line in ("functional-dependency: #<earlier> -> #<later> | evidence:",
+                 "ordering: #<earlier> -> #<later> | evidence:",
+                 "last: #<n> | evidence:",
+                 "distant-same-file: #<a> #<b> | evidence:",
+                 "spec-gap: #<n> | evidence: <path:line ...> | gap:"):
+        assert line in ref, line
+    for phrase in ("`worker_done`", "at most **60 lines**", "the single line `none`",
+                   "`unclear:`", "## Read only", "Change nothing",
+                   "`git grep <pattern> origin/HEAD`", "do not read the working tree's files"):
+        assert phrase in ref, phrase
+
+
+def test_coordinator_never_reads_pre_dispatch_check_reference() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    budget = " ".join(skill.split("## Token budget", 1)[1].split("\n## ", 1)[0].split())
+    assert "Never read `references/pre-dispatch-check.md`" in budget
+
+
+def test_resolve_config_output_names_pre_dispatch_check() -> None:
+    skill = " ".join(SKILL_MD.read_text(encoding="utf-8").split())
+    for phrase in ("`--pre-dispatch-check`", "`--pre-dispatch-check-model`",
+                   "`--pre-dispatch-check-effort`",
+                   "`pre-dispatch-check: <true|false> --model <m> --effort <e>`",
+                   "`CLAUDE_PRE_DISPATCH_CHECK_MODEL`", "`CLAUDE_PRE_DISPATCH_CHECK_EFFORT`",
+                   "`PRE_DISPATCH_CHECK` (`true` or `false`)"):
+        assert phrase in skill, phrase
+
+
+def test_several_last_issues_are_ordered_by_the_user_before_tasks_exist() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    step3 = _flat_step(skill, "3. Create one Orchestration Run", "4. Before creating any Task")
+    last = step3.split("**Several Last Issues**", 1)[1]
+    for phrase in ("making each depend on the others would leave none startable",
+                   "before creating any Task, ask the user", "which to remove from the Run",
+                   "Each later **Last** Issue then also depends on the earlier ones"):
+        assert phrase in last, phrase
+    step5 = _flat_step(skill, "5. Represent only functional dependencies", "6. Before")
+    assert "except the **Last** Tasks ordered after it" in step5
+    asking = " ".join(skill.split("## Asking the user", 1)[1].split("\n## ", 1)[0].split())
+    assert "several **Last** Issues (step 3)" in asking
+
+
+def test_issue_set_and_dag_are_settled_before_tasks_are_created() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    step4 = _flat_step(skill, "4. Before creating any Task", "5. Represent")
+    for phrase in ("settle every question that changes the Issue set or the DAG",
+                   "a `spec-gap` (step 6) and several **Last** Issues (step 3)",
+                   "create Tasks only from the Issue set and relations left after the user's reply",
+                   "Do not create the Tasks held by **Fix the Issue first** (step 6) until the "
+                   "pre-dispatch check after the fix is settled"):
+        assert phrase in step4, phrase
+    step6 = _flat_step(skill, "6. Before the first dispatch", "## 2.")
+    gaps = step6.split("**Specification gaps:**", 1)[1]
+    for phrase in ("create no Task and dispatch nothing until the user replies (step 4)",
+                   "Do not create or dispatch its Task",
+                   "by holding their dispatch (a created Task keeps its `--deps`)",
+                   "Offer it only while none of those Issues has a Task",
+                   "offer only the other two choices for an Issue that has a Task"):
+        assert phrase in gaps, phrase

@@ -61,7 +61,16 @@ everywhere. Update it before ending every turn and right after every
 - Run ID, Coordinator terminal handle, agent, absolute `<orca>` path, and the
   resolved worker settings.
 - `issues: #<n> #<n> ...`: the Issue set fixed in step 2. Update this line
-  only for additions explicitly instructed by the user, before dispatch.
+  only for additions explicitly instructed by the user, before dispatch, and
+  for removals the user chose for a `spec-gap` (step 6).
+- `pre-dispatch-check: running <dispatch-id> | done | skipped (<reason>) | disabled`
+  (step 3), followed by the pre-dispatch check worker's report lines,
+  unchanged. On resume, use them and do not run the check again; only a
+  user saying an Issue is fixed (step 6) or adding Issues (**Rules**) starts
+  a new one. If it is still `running`, find that dispatch with
+  `list_workers.py` instead of starting a second worker.
+- `awaiting-issue-fix: #<n> ...`: Issues held until the user says they are
+  fixed (step 6).
 - `skill-checkout-frozen: <sha|no>` as `local_main.py freeze` printed it
   (needed by `local_main.py finish` at the end of the Run).
 - Per Task: phase, dispatch ID, worktree, branch, PR URL, review count, open
