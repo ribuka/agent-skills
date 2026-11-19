@@ -66,6 +66,7 @@ everywhere. Update it before ending every turn and right after every
   (needed by `local_main.py finish` at the end of the Run).
 - Per Task: phase, dispatch ID, worktree, branch, PR URL, review count, open
   findings, blockers, `unmet/unverified acceptance criteria:` with reasons,
+  `restated acceptance criteria:`,
   any draft comment for remaining criteria (comment URL, criteria, reasons,
   and merge-target head as a full SHA), any head approved with **Merge as is**, and the IDs
   of the messages already processed.

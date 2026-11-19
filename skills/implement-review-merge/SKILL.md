@@ -68,6 +68,15 @@ whenever a step below says so; never merge on a guess.
     criterion not met or not verified, with the reason for each (for example,
     real hardware is unavailable); write `none` only when all criteria are
     met and verified. Keep this separate from review findings and blockers.
+  - In both phases, also include `restated acceptance criteria:` in
+    `worker_done`: every restatement applied to the PR so far, not only this
+    phase's (carry over those in the handoff and the PR body's
+    `Restated acceptance criteria` section, then add new ones). For each,
+    the original check, the new check, and why its `Intent:` is preserved;
+    `none` only when the PR has none. Restate a check yourself only while it keeps the intent,
+    scale, threshold, and user-visible behavior; never change an `[auto]`
+    decision yourself, ask the Coordinator. See
+    [Verification](references/verification.md).
   - Judge criteria and how to verify them as
     [Verification](references/verification.md) says:
     - Verify with the method the repository's docs (`AGENTS.md`,
@@ -140,6 +149,11 @@ shape and scale, steps, environment), confirm the fix under those
 conditions once at the end; synthesize data the Issue describes, and report
 only an environment you cannot prepare, with the reason, as unverified.
 See [Verification](references/verification.md).
+
+In every mode, when a criterion's `Check:` cannot hold as written but
+another check verifies its `Intent:`, restate it as
+[Verification](references/verification.md) says and record it in the PR
+body's `Restated acceptance criteria` section.
 
 ### 3. Commit
 

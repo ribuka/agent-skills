@@ -375,6 +375,11 @@ Use these checks in steps 12 and 14, against the current PR head:
   `none`, or the draft comment in **Unmet or unverified acceptance
   criteria** is written right before the merge (step 15). A missing field is not
   `none`: ask the worker for it before proceeding.
+- The latest worker handoff has `restated acceptance criteria:`. A missing
+  field is not `none`: ask the worker for it. If any restatement drops or
+  weakens a criterion's `Intent:`, scale, or threshold, or changes
+  user-visible behavior, do not merge; handle it as **Changes the Issue**
+  (**Answering worker questions**).
 - The PR branch includes the latest `origin/main`: after
   `git fetch --prune origin`,
   `git merge-base --is-ancestor origin/main origin/<branch>` exits `0`.
@@ -426,7 +431,8 @@ Use these checks in steps 12 and 14, against the current PR head:
     - Issue number, PR URL, branch, and worktree.
     - Cross-reviews used so far (the latest `review-count: <count>/<max>`)
       and any unresolved must findings or blockers, plus
-      `follow-up candidates:` and `unmet/unverified acceptance criteria:`
+      `follow-up candidates:`, `unmet/unverified acceptance criteria:`, and
+      `restated acceptance criteria:`
       from the Implementation handoff.
     - When the latest cross-review did not see the head (**Unreviewed
       head** in steps 12 and 14): the reviewed commit and the head, and the
@@ -527,8 +533,10 @@ Use these checks in steps 12 and 14, against the current PR head:
     merging, revalidate the affected PR. Dispatch any dependent Task whose
     dependency PRs are now all merged, and any ordered Task now allowed
     (see step 5).
-    Report each merge to the user; for a PR merged with remaining criteria
-    (**Unmet or unverified acceptance criteria**), also list it under
+    Report each merge to the user. When the handoff's
+    `restated acceptance criteria:` is not `none`, add one line per
+    restated criterion (original check → new check). For a PR merged
+    with remaining criteria (**Unmet or unverified acceptance criteria**), also list it under
     **起票候補** with the PR, the original Issue (closed by the merge), the
     summary, the reasons for proposing an Issue, and the draft comment URL.
     Do not ask whether to file it.
@@ -665,6 +673,14 @@ with the Task; no terminal handle is needed.
   decide. Reply to the worker that it must wait for the user's decision, then
   ask the user (see **Asking the user**), naming the affected criterion.
   Answer the worker only after the user replies.
+- **Restating a check:** a question whose answer only restates how a
+  criterion is checked, keeping its `Intent:` (and the scale, threshold, and
+  user-visible behavior), is not **Changes the Issue**. Reply that the
+  worker decides it and reports it in `restated acceptance criteria:`.
+- **`[auto]` decisions:** a Decisions line marked `[auto]` was not chosen by
+  the user. Decide yourself whether to change it, unless the answer drops or
+  weakens a criterion's intent, scope, or threshold; then it is **Changes
+  the Issue**.
 
 ### Unmet or unverified acceptance criteria
 
@@ -850,4 +866,6 @@ Follow [Waiting](references/waiting.md) in both Claude Code and Codex
   in it (e.g. `rm -rf tmp/*`), and never delete workers' files.
 - Resolve routine technical decisions autonomously; ask the user
   only when a safe decision cannot be made. Changing an Issue's scope or
-  acceptance criteria is never routine (see **Answering worker questions**).
+  acceptance criteria is never routine (see **Answering worker questions**),
+  except restating a check that keeps the criterion's `Intent:` and changing
+  an `[auto]` decision without weakening any criterion.

@@ -209,3 +209,27 @@ def test_implementation_confirms_ci_before_worker_done() -> None:
     waiting = " ".join((SKILL_DIR / "references/ci-waiting.md").read_text(encoding="utf-8").split())
     assert ("In Orchestration worker / Implementation, confirm CI completion (success or "
             "failure) on the PR's final head before `worker_done`") in waiting
+
+
+def test_restated_checks_are_decided_by_the_implementer_and_reported() -> None:
+    skill = " ".join(SKILL_MD.read_text(encoding="utf-8").split())
+    verification = " ".join((SKILL_DIR / "references/verification.md").read_text(encoding="utf-8").split())
+    for phrase in ("`restated acceptance criteria:`", "`Restated acceptance criteria`",
+                   "`Intent:`", "`[auto]`"):
+        assert phrase in skill
+        assert phrase in verification
+    for phrase in ("choose that check yourself and continue. Do not ask",
+                   "drops or weakens its intent", "relaxes the scale, conditions, or threshold",
+                   "changes user-visible behavior", "Restate it only when the intent has a single reading",
+                   "the original check, the new check, and why the intent is preserved",
+                   "Do not change one yourself"):
+        assert phrase in verification
+
+
+def test_restated_checks_accumulate_across_phases() -> None:
+    skill = " ".join(SKILL_MD.read_text(encoding="utf-8").split())
+    verification = " ".join((SKILL_DIR / "references/verification.md").read_text(encoding="utf-8").split())
+    for text in (skill, verification):
+        assert "restatement applied to the PR so far, not only" in text
+        assert "`none` only when the PR has none" in text
+        assert "the PR body's `Restated acceptance criteria` section" in text
