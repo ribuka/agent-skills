@@ -83,8 +83,10 @@ form.
 Then resolve the worker settings for `<agent>`.
 
 Run once at the start, passing through any `--impl-model`, `--impl-effort`,
-`--merge-model`, `--merge-effort`, `--max-impl-workers`,
-`--max-merge-workers`, or `--fresh-worker-context-tokens` flags the user gave.
+`--merge-model`, `--merge-effort`, `--pre-dispatch-check`,
+`--pre-dispatch-check-model`, `--pre-dispatch-check-effort`,
+`--max-impl-workers`, `--max-merge-workers`, or
+`--fresh-worker-context-tokens` flags the user gave.
 If the user explicitly asks to run the Issues serially (one at a time), pass
 `--serial`:
 
@@ -93,6 +95,9 @@ uv run <skill-dir>/scripts/resolve_config.py --agent <agent> [user flags]
 ```
 
 It prints the agent, the `--model` / `--effort` pair for each phase, the
+`pre-dispatch-check: <true|false> --model <m> --effort <e>` line (whether the
+pre-dispatch check of step 3 runs, `PRE_DISPATCH_CHECK`, and the
+`<pre-dispatch-check-model>` / `<pre-dispatch-check-effort>` its worker uses), the
 `max-impl-workers: <n>` limit of implementation workers running at once
 (`MAX_IMPL_WORKERS`), the `max-merge-workers: <n>` limit of merge-preparation
 workers running at once (`MAX_MERGE_WORKERS`), `serial: true|false` (the
@@ -105,8 +110,10 @@ The tracked `config.conf` holds every default; the user's git-ignored
 lines; an unknown key, a duplicate key, or an empty value stops the script
 with the file and line. Configuration keys are
 `CLAUDE_IMPL_MODEL`, `CLAUDE_IMPL_EFFORT`, `CLAUDE_MERGE_MODEL`,
-`CLAUDE_MERGE_EFFORT`, their `CODEX_` equivalents, and shared
-`MAX_IMPL_WORKERS`, `MAX_MERGE_WORKERS`, and `FRESH_WORKER_CONTEXT_TOKENS`.
+`CLAUDE_MERGE_EFFORT`, `CLAUDE_PRE_DISPATCH_CHECK_MODEL`,
+`CLAUDE_PRE_DISPATCH_CHECK_EFFORT`, their `CODEX_` equivalents, and shared
+`MAX_IMPL_WORKERS`, `MAX_MERGE_WORKERS`, `FRESH_WORKER_CONTEXT_TOKENS`, and
+`PRE_DISPATCH_CHECK` (`true` or `false`).
 Always pass `--agent <agent>` and the resolved model/effort on every
 `worker-start`. The two limits are independent: start an implementation worker
 (including a retry or fresh worker of that phase) only while fewer than
@@ -177,29 +184,80 @@ only after the user confirms.
    dependencies (e.g. `gh issue list --json number,title,labels` or
    `gh issue view <n> --json number,title,labels`), plus existing PRs and
    branches. Do not read full Issue bodies or investigate code; workers do
-   that. Step 3 gives the only exception. Avoid duplicating or overwriting
-   existing changes.
+   that. Only with `PRE_DISPATCH_CHECK: false` does step 3 give an
+   exception. Avoid duplicating or overwriting existing changes.
    Fix the Run's Issue set at this step: resolve even "all open Issues" to
    the Issues open now. Record it as `issues: #<n> #<n> ...` when saving the
-   Run checkpoint in step 4; do not expand it by listing Issues again after
+   Run checkpoint in step 3; do not expand it by listing Issues again after
    resuming.
-3. Identify dependencies, overlapping areas, and potential conflicts from that
-   summary. Open an Issue body only when a dependency or an overlap involving
-   that Issue cannot be decided otherwise, and only for the Issues involved
-   (`gh issue view <n> --json body`), once each. Classify each relation
-   between two Tasks as one of:
+3. Create one Orchestration Run. Then, before any dispatch, set up the
+   quota guard with this Run ID (see **Quota control**), and save the Run
+   checkpoint described in [Waiting](references/waiting.md). Then identify
+   dependencies, overlapping areas, and potential conflicts:
+   - **`PRE_DISPATCH_CHECK: true`:** before the first dispatch, start one
+     pre-dispatch check worker. It reads every Issue body and the related
+     code and reports only a summary; do not open Issue bodies or
+     investigate code yourself.
+     - Start it with `start_worker.py` (**Starting workers**) right after a
+       READY quota check, chained as
+       `<quota-check> && uv run --no-project <skill-dir>/scripts/start_worker.py --orca <orca> -- <arguments>`,
+       with exactly these arguments:
+       `--spec "<brief>" --task-title "pre-dispatch check" --worktree current --agent <agent> --model <pre-dispatch-check-model> --effort <pre-dispatch-check-effort>`.
+       The `<brief>` holds only the repository, the Issue numbers, and the
+       instruction to read and follow
+       `~/.agents/skills/orca-issue-coordinator/references/pre-dispatch-check.md`.
+     - This worker does not count toward `MAX_IMPL_WORKERS` or
+       `MAX_MERGE_WORKERS`. Record `pre-dispatch-check: running <dispatch-id>`
+       in the checkpoint and end the turn (**Waiting**).
+     - Its `worker_done` is not an Implementation or Merge preparation
+       handoff: it opens no PR, so do not ask it for handoff fields such as
+       `unmet/unverified acceptance criteria:` or
+       `restated acceptance criteria:`. Orca closes a `--worktree current`
+       worker after `worker_done`; do not release it.
+     - Classify from its report alone. Each line maps to a relation below:
+       `functional-dependency` → **Functional dependency**, `ordering` →
+       **Ordering**, `last` → **Last**, `distant-same-file` → **Distant
+       parts of the same file only**, and `spec-gap` → a specification gap
+       (step 6). `none` means no relation and no gap. Treat a relation the
+       report does not settle as an **Ordering**. Record
+       `pre-dispatch-check: done` and the report lines in the checkpoint.
+     - **If it fails:** a failed start follows the exit codes in **Starting
+       workers**, and a worker that reports `worker-quota-paused:` follows
+       the quota pause reference (**Quota control**). When its `worker_done`
+       is `failed` for another reason, or its report breaks the line format
+       or the 60-line limit, start one new pre-dispatch check worker (a new
+       Task with `--spec` and the same arguments) once. If that one fails
+       too, or a start fails with exit `1`, `2`, or `4`, ask the user before
+       the first dispatch (**Asking the user**) with two options: proceed
+       without the pre-dispatch check (the `PRE_DISPATCH_CHECK: false`
+       procedure, recorded as `pre-dispatch-check: skipped (<reason>)`), or
+       stop the Run. Dispatch nothing until the user replies.
+   - **`PRE_DISPATCH_CHECK: false`:** record `pre-dispatch-check: disabled`
+     and work from the step 2 summary. Open an Issue body only when a
+     dependency or an overlap involving that Issue cannot be decided
+     otherwise, and only for the Issues involved
+     (`gh issue view <n> --json body`), once each.
+
+   Classify each relation between two Tasks as one of:
    - **Functional dependency:** the Issue states it (e.g. "after #12",
      "depends on", "blocked by"), or the later Task relies on code, an API,
      a configuration, or data that the earlier PR adds or changes. Record it
      in the task DAG (step 5); dispatch the later Task only after the
      earlier PR is **merged**.
    - **Ordering:** no functional dependency, but the Tasks edit the same
-     part of the same file (the Issue titles or existing PRs and branches
-     show the same step, section, or function), or whether they overlap is
-     still unclear after reading the Issue bodies. Do not record it in the
-     DAG; only the dispatch order matters (step 5).
+     part of the same file (the Issue titles, existing PRs and branches, or
+     the pre-dispatch check show the same step, section, or function), or
+     whether they overlap is still unclear after reading the Issue bodies or
+     the pre-dispatch check's report. Do not record it in the DAG; only the
+     dispatch order matters (step 5).
    - **Distant parts of the same file only:** run the Tasks in parallel and
      expect merge preparation (step 13) to resolve the resulting conflicts.
+   - **Last:** the Issue has an acceptance criterion over the whole
+     repository (e.g. "no reference to the old name remains in docs and
+     tests") that another Issue's change could break. Record it in the task
+     DAG as a functional dependency on every other Task of the Run (step 5);
+     dispatch it only after every other PR is **merged**. If any other Task
+     stops, it waits too.
 
    Then decide the execution order:
    - **Listed Issues** (e.g. "#1,2,3,4 serially"): the list sets which Issues
@@ -211,10 +269,8 @@ only after the user confirms.
      order"): follow it when it fits the dependencies. If it does not, name
      the Issues involved and the reason, and ask the user for the order
      before the first dispatch.
-4. Create one Orchestration Run. Then, before any dispatch, set up the
-   quota guard with this Run ID (see **Quota control**), and save the Run
-   checkpoint described in [Waiting](references/waiting.md). Plan one Task per
-   Issue by default, and create each Task in exactly one way:
+4. Plan one Task per Issue by default,
+   and create each Task in exactly one way:
    - **Independent Task** (no dependencies): do not create it in advance.
      `worker-start --spec "<brief>" --task-title "#<issue> <title>" --agent <agent>`
      creates the Task and starts its worker in one call (step 6).
@@ -249,16 +305,42 @@ only after the user confirms.
    from the latest `origin/main` as soon as the earlier PR is merged, or the
    earlier PR is waiting for the user's decision or held by the user's
    choice. Merge preparation (step 13) resolves the resulting conflicts.
+   A **Last** Task (step 3) is a Dependent Task whose `--deps` lists every
+   other Task of the Run, so every other Task is a Dependent Task too.
+   Dispatch it only after every other PR of the Run has been **merged**.
 6. Before the first dispatch, briefly present the execution plan to the
-   user: the fixed Issue set by number, functional dependencies and
-   orderings (listed separately), dispatch order,
+   user: the fixed Issue set by number, functional dependencies,
+   orderings, and **Last** Issues (listed separately), dispatch order,
+   the pre-dispatch check state (`done`, `disabled`, or
+   `skipped (<reason>)`) with the model and effort its worker used,
    and the resolved worker model, effort, `MAX_IMPL_WORKERS`,
    `MAX_MERGE_WORKERS`, and whether the serial mode is on from step 0.
    For each ordering, state the reason (which part both Tasks edit, or that
-   the overlap is unclear). For Tasks that edit the same file
+   the overlap is unclear). For each **Last** Issue, state its
+   whole-repository criterion. For Tasks that edit the same file
    but run in parallel, state that decision and its reason (e.g. which
    parts each edits). Then start dispatching without waiting for approval,
-   unless step 3 requires asking for the order.
+   unless step 3 requires asking for the order or the pre-dispatch check
+   reported a `spec-gap`.
+   **Specification gaps:** when the pre-dispatch check reports any
+   `spec-gap` (a change the Issue needs but does not state), stop the
+   whole Run: present every gap with the plan and dispatch nothing until
+   the user replies. For each Issue with a gap, ask (**Asking the user**)
+   for one of:
+   - **Fix the Issue first:** the Issue stays in the Run. Do not dispatch
+     it, the Tasks that functionally depend on it or are ordered after it,
+     or any **Last** Task until the user says it is fixed; dispatch the
+     others after the reply. Never edit the Issue yourself; the user fixes
+     it (e.g. with `refine-issue`). Record it in the checkpoint as
+     `awaiting-issue-fix: #<n> ...`. When the user says it is fixed, start a
+     new pre-dispatch check worker (step 3) for every Issue of the Run not
+     yet merged. Apply new relations only to Tasks not yet dispatched; ask
+     the user the same way about a new `spec-gap` or a relation that would
+     hold a Task already dispatched.
+   - **Dispatch as is:** keep the gap and dispatch by the plan.
+   - **Remove from the Run:** remove the Issue from the Run's Issue set
+     and update the checkpoint's `issues:` line. In this option, name the
+     Issues that functionally depend on it, which are removed with it.
    Dispatch independent tasks to separate worktrees, with at most
    **`MAX_IMPL_WORKERS` implementation workers running concurrently**.
    Merge-preparation workers do not count toward this limit; they have their
@@ -744,7 +826,9 @@ Code Coordinators (blockers, decisions, model choices, or anything else).
   `MAX_MERGE_WORKERS` and
   the quota (not while it is PAUSED_QUOTA or UNKNOWN). Only the affected
   PR and its functionally dependent Tasks wait; an ordered Task may start
-  (step 5).
+  (step 5). The exception is a question before the first dispatch about a
+  failed pre-dispatch check (step 3) or a `spec-gap` (step 6): it holds
+  every dispatch until the user replies.
 - While a question is unanswered, end every later turn (including
   notification-only and wake-up turns) with a one-line reminder that names the
   pending question and the expected reply, instead of an empty or
@@ -789,13 +873,17 @@ Follow [Waiting](references/waiting.md) in both Claude Code and Codex
   already give (e.g. `automations create`, `worker-start`).
 - Do not re-read large outputs (full guides, Issue bodies, full worker
   transcripts, raw JSON) that the summaries already cover.
+- Never read `references/pre-dispatch-check.md`; only the pre-dispatch check
+  worker reads it (step 3).
 
 ## Rules
 
 - Do not add or dispatch Issues that appear during the Run, regardless of
   who created them, and do not ask whether to add them. The only exception
   is an explicit instruction from the user in chat naming Issue numbers:
-  apply step 3's dependency/overlap assessment and step 5's DAG rules to
+  apply step 3's dependency/overlap assessment (with
+  `PRE_DISPATCH_CHECK: true`, a new pre-dispatch check worker for the added
+  Issues and every Issue of the Run not yet merged) and step 5's DAG rules to
   those Issues, then update the checkpoint's `issues:` line before dispatch.
   Never treat silence as consent (e.g. "reply if you want to stop it").
 - Report Issue provenance only as verified facts: author account and
