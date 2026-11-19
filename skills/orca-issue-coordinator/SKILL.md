@@ -257,7 +257,11 @@ only after the user confirms.
      tests") that another Issue's change could break. Record it in the task
      DAG as a functional dependency on every other Task of the Run (step 5);
      dispatch it only after every other PR is **merged**. If any other Task
-     stops, it waits too.
+     stops, it waits too. **Several Last Issues** cannot all be last, and
+     making each depend on the others would leave none startable: before
+     creating any Task, ask the user (**Asking the user**) for the order in
+     which they run, or which to remove from the Run. Each later **Last**
+     Issue then also depends on the earlier ones.
 
    Then decide the execution order:
    - **Listed Issues** (e.g. "#1,2,3,4 serially"): the list sets which Issues
@@ -269,7 +273,13 @@ only after the user confirms.
      order"): follow it when it fits the dependencies. If it does not, name
      the Issues involved and the reason, and ask the user for the order
      before the first dispatch.
-4. Plan one Task per Issue by default,
+4. Before creating any Task, settle every question that changes the Issue
+   set or the DAG: a `spec-gap` (step 6) and several **Last** Issues (step 3).
+   Ask them together with the plan (step 6), and create Tasks only from the
+   Issue set and relations left after the user's reply. Do not create the
+   Tasks held by **Fix the Issue first** (step 6) until the pre-dispatch
+   check after the fix is settled.
+   Plan one Task per Issue by default,
    and create each Task in exactly one way:
    - **Independent Task** (no dependencies): do not create it in advance.
      `worker-start --spec "<brief>" --task-title "#<issue> <title>" --agent <agent>`
@@ -306,8 +316,9 @@ only after the user confirms.
    earlier PR is waiting for the user's decision or held by the user's
    choice. Merge preparation (step 13) resolves the resulting conflicts.
    A **Last** Task (step 3) is a Dependent Task whose `--deps` lists every
-   other Task of the Run, so every other Task is a Dependent Task too.
-   Dispatch it only after every other PR of the Run has been **merged**.
+   other Task of the Run except the **Last** Tasks ordered after it, so every
+   other Task is a Dependent Task too. Dispatch it only after every other PR
+   of the Run has been **merged**, except those of later **Last** Tasks.
 6. Before the first dispatch, briefly present the execution plan to the
    user: the fixed Issue set by number, functional dependencies,
    orderings, and **Last** Issues (listed separately), dispatch order,
@@ -320,27 +331,32 @@ only after the user confirms.
    whole-repository criterion. For Tasks that edit the same file
    but run in parallel, state that decision and its reason (e.g. which
    parts each edits). Then start dispatching without waiting for approval,
-   unless step 3 requires asking for the order or the pre-dispatch check
-   reported a `spec-gap`.
+   unless step 3 requires asking for the order (including several **Last**
+   Issues) or the pre-dispatch check reported a `spec-gap`.
    **Specification gaps:** when the pre-dispatch check reports any
    `spec-gap` (a change the Issue needs but does not state), stop the
-   whole Run: present every gap with the plan and dispatch nothing until
-   the user replies. For each Issue with a gap, ask (**Asking the user**)
-   for one of:
-   - **Fix the Issue first:** the Issue stays in the Run. Do not dispatch
-     it, the Tasks that functionally depend on it or are ordered after it,
-     or any **Last** Task until the user says it is fixed; dispatch the
-     others after the reply. Never edit the Issue yourself; the user fixes
-     it (e.g. with `refine-issue`). Record it in the checkpoint as
-     `awaiting-issue-fix: #<n> ...`. When the user says it is fixed, start a
-     new pre-dispatch check worker (step 3) for every Issue of the Run not
-     yet merged. Apply new relations only to Tasks not yet dispatched; ask
-     the user the same way about a new `spec-gap` or a relation that would
-     hold a Task already dispatched.
+   whole Run: present every gap with the plan, and create no Task and
+   dispatch nothing until the user replies (step 4). For each Issue with a
+   gap, ask (**Asking the user**) for one of:
+   - **Fix the Issue first:** the Issue stays in the Run. Do not create or
+     dispatch its Task, the Tasks that functionally depend on it or are
+     ordered after it, or any **Last** Task until the user says it is fixed
+     and the pre-dispatch check after the fix is settled; create and
+     dispatch the others after the reply. Never edit the Issue yourself;
+     the user fixes it (e.g. with `refine-issue`). Record it in the
+     checkpoint as `awaiting-issue-fix: #<n> ...`. When the user says it is
+     fixed, start a new pre-dispatch check worker (step 3) for every Issue
+     of the Run not yet merged. Apply new relations only to Tasks not yet
+     dispatched, by holding their dispatch (a created Task keeps its
+     `--deps`); ask the user the same way about a new `spec-gap` or a
+     relation that would hold a Task already dispatched.
    - **Dispatch as is:** keep the gap and dispatch by the plan.
    - **Remove from the Run:** remove the Issue from the Run's Issue set
      and update the checkpoint's `issues:` line. In this option, name the
      Issues that functionally depend on it, which are removed with it.
+     Offer it only while none of those Issues has a Task; a created Task
+     would stay unstarted (step 4). For a `spec-gap` found after Tasks
+     exist, offer only the other two choices for an Issue that has a Task.
    Dispatch independent tasks to separate worktrees, with at most
    **`MAX_IMPL_WORKERS` implementation workers running concurrently**.
    Merge-preparation workers do not count toward this limit; they have their
@@ -827,8 +843,8 @@ Code Coordinators (blockers, decisions, model choices, or anything else).
   the quota (not while it is PAUSED_QUOTA or UNKNOWN). Only the affected
   PR and its functionally dependent Tasks wait; an ordered Task may start
   (step 5). The exception is a question before the first dispatch about a
-  failed pre-dispatch check (step 3) or a `spec-gap` (step 6): it holds
-  every dispatch until the user replies.
+  failed pre-dispatch check or several **Last** Issues (step 3), or a
+  `spec-gap` (step 6): it holds every dispatch until the user replies.
 - While a question is unanswered, end every later turn (including
   notification-only and wake-up turns) with a one-line reminder that names the
   pending question and the expected reply, instead of an empty or

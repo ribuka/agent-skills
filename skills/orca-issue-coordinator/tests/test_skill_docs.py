@@ -248,7 +248,7 @@ def test_no_send_to_finished_dispatch() -> None:
 
 def test_functional_dependencies_and_orderings_are_separate() -> None:
     skill = " ".join(SKILL_MD.read_text(encoding="utf-8").split())
-    step3 = skill.split("3. Create one Orchestration Run", 1)[1].split("4. Plan one Task", 1)[0]
+    step3 = skill.split("3. Create one Orchestration Run", 1)[1].split("4. Before creating any Task", 1)[0]
     for phrase in ("**Functional dependency:**", "\"depends on\"", "\"blocked by\"",
                    "relies on code, an API, a configuration, or data",
                    "only after the earlier PR is **merged**", "**Ordering:**",
@@ -410,7 +410,7 @@ def test_issue_bodies_are_read_only_when_pre_dispatch_check_is_off() -> None:
         skill.split("2. Inspect only what planning needs", 1)[1].split("3. ", 1)[0].split())
     assert "Do not read full Issue bodies or investigate code" in inspect_step
     assert "Only with `PRE_DISPATCH_CHECK: false` does step 3 give an exception" in inspect_step
-    overlap_step = skill.split("3. Create one Orchestration Run", 1)[1].split("4. Plan one Task", 1)[0]
+    overlap_step = skill.split("3. Create one Orchestration Run", 1)[1].split("4. Before creating any Task", 1)[0]
     on = " ".join(overlap_step.split("**`PRE_DISPATCH_CHECK: true`:**", 1)[1]
                   .split("**`PRE_DISPATCH_CHECK: false`:**", 1)[0].split())
     assert "do not open Issue bodies or investigate code yourself" in on
@@ -949,18 +949,18 @@ def _flat_step(skill: str, start: str, end: str) -> str:
 
 def test_run_is_created_before_relations_are_identified() -> None:
     skill = SKILL_MD.read_text(encoding="utf-8")
-    step3 = _flat_step(skill, "3. Create one Orchestration Run", "4. Plan one Task")
+    step3 = _flat_step(skill, "3. Create one Orchestration Run", "4. Before creating any Task")
     first = step3.split("Then identify dependencies", 1)[0]
     for phrase in ("set up the quota guard with this Run ID", "save the Run checkpoint"):
         assert phrase in first
-    step4 = _flat_step(skill, "4. Plan one Task", "5. Represent")
+    step4 = _flat_step(skill, "4. Before creating any Task", "5. Represent")
     assert "Orchestration Run" not in step4
     assert "quota guard" not in step4
 
 
 def test_pre_dispatch_check_runs_as_an_orca_worker() -> None:
     skill = SKILL_MD.read_text(encoding="utf-8")
-    step3 = _flat_step(skill, "3. Create one Orchestration Run", "4. Plan one Task")
+    step3 = _flat_step(skill, "3. Create one Orchestration Run", "4. Before creating any Task")
     for phrase in ("**`PRE_DISPATCH_CHECK: true`:**", "start one pre-dispatch check worker",
                    "`start_worker.py` (**Starting workers**)",
                    "`<quota-check> && uv run --no-project <skill-dir>/scripts/start_worker.py",
@@ -982,7 +982,7 @@ def test_pre_dispatch_check_runs_as_an_orca_worker() -> None:
 
 def test_failed_pre_dispatch_check_retries_once_then_asks() -> None:
     skill = SKILL_MD.read_text(encoding="utf-8")
-    step3 = _flat_step(skill, "3. Create one Orchestration Run", "4. Plan one Task")
+    step3 = _flat_step(skill, "3. Create one Orchestration Run", "4. Before creating any Task")
     failure = step3.split("**If it fails:**", 1)[1].split("**`PRE_DISPATCH_CHECK: false`:**", 1)[0]
     for phrase in ("follows the exit codes in **Starting workers**", "`worker-quota-paused:`",
                    "breaks the line format or the 60-line limit",
@@ -997,7 +997,7 @@ def test_failed_pre_dispatch_check_retries_once_then_asks() -> None:
 
 def test_last_issues_wait_for_every_other_merge() -> None:
     skill = SKILL_MD.read_text(encoding="utf-8")
-    step3 = _flat_step(skill, "3. Create one Orchestration Run", "4. Plan one Task")
+    step3 = _flat_step(skill, "3. Create one Orchestration Run", "4. Before creating any Task")
     last = step3.split("**Last:** the Issue", 1)[1]
     for phrase in ("acceptance criterion over the whole repository",
                    "functional dependency on every other Task of the Run",
@@ -1056,3 +1056,36 @@ def test_resolve_config_output_names_pre_dispatch_check() -> None:
                    "`CLAUDE_PRE_DISPATCH_CHECK_MODEL`", "`CLAUDE_PRE_DISPATCH_CHECK_EFFORT`",
                    "`PRE_DISPATCH_CHECK` (`true` or `false`)"):
         assert phrase in skill, phrase
+
+
+def test_several_last_issues_are_ordered_by_the_user_before_tasks_exist() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    step3 = _flat_step(skill, "3. Create one Orchestration Run", "4. Before creating any Task")
+    last = step3.split("**Several Last Issues**", 1)[1]
+    for phrase in ("making each depend on the others would leave none startable",
+                   "before creating any Task, ask the user", "which to remove from the Run",
+                   "Each later **Last** Issue then also depends on the earlier ones"):
+        assert phrase in last, phrase
+    step5 = _flat_step(skill, "5. Represent only functional dependencies", "6. Before")
+    assert "except the **Last** Tasks ordered after it" in step5
+    asking = " ".join(skill.split("## Asking the user", 1)[1].split("\n## ", 1)[0].split())
+    assert "several **Last** Issues (step 3)" in asking
+
+
+def test_issue_set_and_dag_are_settled_before_tasks_are_created() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    step4 = _flat_step(skill, "4. Before creating any Task", "5. Represent")
+    for phrase in ("settle every question that changes the Issue set or the DAG",
+                   "a `spec-gap` (step 6) and several **Last** Issues (step 3)",
+                   "create Tasks only from the Issue set and relations left after the user's reply",
+                   "Do not create the Tasks held by **Fix the Issue first** (step 6) until the "
+                   "pre-dispatch check after the fix is settled"):
+        assert phrase in step4, phrase
+    step6 = _flat_step(skill, "6. Before the first dispatch", "## 2.")
+    gaps = step6.split("**Specification gaps:**", 1)[1]
+    for phrase in ("create no Task and dispatch nothing until the user replies (step 4)",
+                   "Do not create or dispatch its Task",
+                   "by holding their dispatch (a created Task keeps its `--deps`)",
+                   "Offer it only while none of those Issues has a Task",
+                   "offer only the other two choices for an Issue that has a Task"):
+        assert phrase in gaps, phrase
