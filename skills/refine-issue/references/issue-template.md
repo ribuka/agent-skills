@@ -2,6 +2,9 @@
 
 Use these sections in this order. Omit a section only when it truly does not
 apply, and never leave a placeholder ("TBD", "TODO", "?") in the output.
+The labels `Intent:`, `Check:`, `Passing:`, and `[auto]` follow the
+**Output format** in the skill and stay in English whatever the issue's
+language.
 
 ```markdown
 ## Background
@@ -23,6 +26,17 @@ build the same thing:
 - Configuration keys, defaults, and allowed values.
 - UI / CLI / API shape (names, arguments, flags).
 
+## Related issues
+
+Only when an open issue or an unmerged pull request touches the same
+feature, file, or state; otherwise omit this section.
+
+- The state of the default branch this issue assumes (e.g. "assumes main
+  after #274 is merged").
+- For each related issue or pull request: where they overlap.
+- For each point that depends on the other's outcome (which merges first,
+  how its specification ends up): the decision for each case.
+
 ## Out of scope
 
 What this issue deliberately does not do.
@@ -34,20 +48,24 @@ add or change. Each step is small enough to implement and verify on its own.
 
 ## Acceptance criteria
 
-- [ ] Checkable statements, each verifiable by a test or a command the
-      implementing agent can run, with the passing result.
+- [ ] Intent: <the property that must hold, in words independent of how
+      it is checked>
+  - Check: <test, command, or operation; one way to check the property>
+  - Passing: <the result that counts as passing>
 - [ ] Include the tests to add or update.
 
 ## Post-merge checks
 
 - Checks wanted but not runnable by the implementing agent (real device,
-  account, human operation), with who runs them and the passing result.
+  account, human operation, missing tool or permission), with who runs them
+  and the passing result.
 
 ## Decisions
 
 Points settled during refinement, with the chosen option and the reason:
 
 - <question>: <decision> (<reason>)
+- [auto] <question>: <decision> (<reason>)
 ```
 
 ## Title
@@ -63,18 +81,34 @@ plan and split it into ordered steps that each fit one pull request. Ask the
 user (step 5) whether to keep it as one issue or split it into several
 issues; when splitting, create each issue the same way and link them.
 
+## Related issues
+
+Never write "undecided" or "decide before starting" in this section. When a
+decision depends on another issue's outcome, decide it for each case now,
+e.g.:
+
+```markdown
+- #221 adds `plot.image_copy.dpi`.
+  - If #221 is merged first: include it in the editor (display group, 96/300).
+  - If this issue is merged first: #221 adds it to the editor table itself.
+```
+
 ## Acceptance criteria and checks
 
-Write acceptance criteria from step 4 of the skill. Add nothing extra when
-every criterion is checked by the repository's tests or commands.
+Write acceptance criteria from step 4 of the skill. `Intent:` is the
+criterion; `Check:` and `Passing:` are one way to check it. Write the
+intent so that an implementer who finds the check impossible as written can
+pick another check of the same property. Add nothing extra when every
+criterion is checked by the repository's tests or commands.
 
 | Case | Where to write it |
 |------|-------------------|
-| Automated test or command the agent runs | Acceptance criteria, naming the test or command and the passing result. |
-| Simulated check covering only part of the path | Acceptance criteria for the covered part, stating what it does not cover; the rest goes by the rows below. |
+| Automated test or command the agent runs | Acceptance criteria, with `Check:` naming the test or command and `Passing:` the result. |
+| Simulated check covering only part of the path | Acceptance criteria for the covered part, with `Check:` stating what it does not cover; the rest goes by the rows below. |
 | Wanted, but the agent cannot run it | Post-merge checks. Not an acceptance criterion. |
-| The user requires it before merging | Acceptance criteria, followed by indented lines for who runs it, environment and steps, timing, passing result, and what happens if it cannot be run. |
+| The user requires it before merging | Acceptance criteria, with indented lines under `Check:` for who runs it, environment and steps, timing, passing result, and what happens if it cannot be run. |
 | Feasibility unknown and it would decide the merge | A first implementation step (or a separate issue) for a short investigation; the dependent criteria are fixed from its result, and the issue says how. |
+| A measured value with a threshold | `Passing:` states the threshold and how run-to-run variation is handled; the baseline measurement goes in Decisions. |
 
 Omit the Post-merge checks section when there are none.
 
@@ -87,11 +121,22 @@ pass before merging. If not, put it under Post-merge checks. If so, write it
 as an acceptance criterion like:
 
 ```markdown
-- [ ] Dropping a file from Explorer onto the WebView2 view opens it.
-  - Who: the user, on request from the implementing agent.
-  - Environment and steps: Windows 11, a build of the PR head; drag
-    `sample.csv` from Explorer onto the view.
-  - When: after the cross-review has no must findings, before merging.
-  - Passing result: the file opens with no error dialog.
-  - If it cannot be run: do not merge; the PR waits for the check.
+- [ ] Intent: dropping a file from Explorer onto the WebView2 view opens it.
+  - Check: a real drop from Explorer.
+    - Who: the user, on request from the implementing agent.
+    - Environment and steps: Windows 11, a build of the PR head; drag
+      `sample.csv` from Explorer onto the view.
+    - When: after the cross-review has no must findings, before merging.
+    - If it cannot be run: do not merge; the PR waits for the check.
+  - Passing: the file opens with no error dialog.
 ```
+
+## Decisions
+
+- When a decision picks an approach, also write the inputs it handles
+  poorly (the worst case) and whether that is accepted, e.g. "Data whose
+  later rows are much longer can exceed the budget; accepted, left as a
+  follow-up."
+- Mark a decision `[auto]` when the user did not choose it: an open point
+  settled by taking the recommended option without an interview. Do not
+  mark points the code or docs settled; there was no choice to make.

@@ -13,12 +13,37 @@ can pick up without asking a single question.
 
 - The issue is broken down to implementable granularity.
 - No ambiguity remains in the specification or the implementation approach.
-  Every open point was either settled from the codebase or decided by the
-  user through a multiple-choice question.
-- Every acceptance criterion has a check the implementing agent can run in
-  its expected environment and permissions, with a stated passing result,
-  or is a user-required pre-merge check with a plan recorded in the issue
-  (see step 4).
+  Every open point was either settled from the codebase, decided by the
+  user through a multiple-choice question, or (only without an interview,
+  see step 5) settled by the recommended option and marked `[auto]`.
+- Every acceptance criterion states its `Intent:` and has a `Check:` the
+  implementing agent can run in its expected environment and permissions,
+  with a stated `Passing:` result, or is a user-required pre-merge check
+  with a plan recorded in the issue (see step 4).
+
+## Output format
+
+Issues this skill writes keep this format, which other tools may rely on.
+The labels stay in English whatever the issue's language.
+
+- Each acceptance criterion:
+
+  ```markdown
+  - [ ] Intent: <the property that must hold, independent of how it is checked>
+    - Check: <test, command, or operation; one way to check the property>
+    - Passing: <the result that counts as passing>
+  ```
+
+  `Intent:` is the criterion; `Check:` and `Passing:` are one example of
+  checking it.
+- Each line in Decisions is `- <question>: <decision> (<reason>)`. A
+  decision the user did not choose (the recommended option taken without an
+  interview) starts with `- [auto] `. Points the code or docs settled are
+  not marked.
+- A `## Related issues` section appears when an open issue or unmerged pull
+  request touches the same feature, file, or state. It states the assumed
+  state of the default branch and decides every point that depends on the
+  other's outcome for each case; it never says "undecided".
 
 ## Inputs
 
@@ -45,6 +70,10 @@ everything the repository already answers (existing conventions, file
 locations, APIs, naming, test layout) yourself. Never ask the user something
 the code can answer.
 
+Find open issues and unmerged pull requests that touch the same feature,
+files, or state (`gh issue list`, `gh pr list`) and read their bodies. Write
+what you find in Related issues.
+
 ### 3. List the open points
 
 Write down every point that still has more than one reasonable answer:
@@ -66,7 +95,14 @@ expected to have, and the result that counts as passing.
   what it does not (e.g. a synthetic drop event reaches the handler but
   skips the OS drag-and-drop between processes).
 - A check the agent cannot run by itself is not an acceptance criterion by
-  default. If the check is still wanted, record it as a post-merge check.
+  default. This includes a check that needs a tool or permission the agent
+  lacks (e.g. `gh` cannot attach an image to a pull request). If the check
+  is still wanted, record it as a post-merge check.
+- When a criterion uses a measured value as a threshold, measure the
+  default branch at least 3 times and look at the median and the spread
+  (minimum to maximum) before choosing the value. State in `Passing:` how
+  run-to-run variation is handled (e.g. judged on the median, or m of n
+  runs pass), and record the measurements in Decisions.
 - Only when the user explicitly requires such a check before merging, keep
   it as a pre-merge acceptance criterion and decide, before publishing: who
   runs it, the environment and steps, when it runs (e.g. after review, on
@@ -101,6 +137,18 @@ tool's limits:
   points.
 - After each round, go back to step 3. Repeat until no open point remains.
 
+**Without an interview:** when the arguments include `--no-interview`, or
+the user asks to skip the interview (e.g. "インタビュー無しで", "おすすめで進めて"):
+
+- Do not skip steps 2–4 or the checks in step 6.
+- Do not ask; take the recommended option for each open point and record it
+  in Decisions marked `[auto]`.
+- Do not create a pre-merge check run by a person; step 4 keeps one only
+  when the user explicitly requires it. Put such wanted checks under
+  Post-merge checks.
+- Step 7 still follows `CONFIRM_BEFORE_PUBLISH`.
+- In step 9, list the `[auto]` decisions.
+
 ### 6. Write the issue
 
 Follow [the issue template](references/issue-template.md). Write the issue
@@ -110,8 +158,19 @@ in the language of the user's request (Update mode: of the existing issue).
   the edit history). Fold every still-valid intent of the old body and its
   comments into the new one. Update the title too if it no longer fits.
 
-Before publishing, check the draft against "Done when". If any sentence
-still allows two readings, go back to step 5.
+Before publishing, check the draft against "Done when" and these points:
+
+- Each criterion's `Passing:` is consistent with both the Specification and
+  the current code.
+- Every count you wrote matches the items you listed (count them again).
+- Every statement about current behavior ("same as X", "at the time of Y")
+  rests on a file and function you read. For behavior driven by a trigger
+  ("push on commit", "apply on save"), list every path that changes the
+  state and confirm whether each goes through the trigger.
+- Related issues contains no "undecided" or "decide before starting".
+
+If any sentence still allows two readings or a check fails, go back to
+step 5.
 
 ### 7. Confirm (optional)
 
@@ -162,4 +221,4 @@ gh repo view --json nameWithOwner --jq .nameWithOwner
 ### 9. Report
 
 Report the issue URL or the file path, and list the decisions made in the
-interview.
+interview and the decisions marked `[auto]`.

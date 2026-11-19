@@ -25,6 +25,32 @@ How to decide what to verify, how to verify it, and what to report as
   ran locally.
 - State what you verified with in the PR body's test section.
 
+## Restating a criterion's check
+
+Issues written by `refine-issue` give each acceptance criterion an
+`Intent:` (the criterion) and a `Check:` / `Passing:` (one way to check it).
+
+- When a `Check:` or `Passing:` cannot hold as written (it contradicts the
+  Specification or a fact of the current code, a count is wrong, a needed
+  tool is missing) but another check verifies the same `Intent:`, choose
+  that check yourself and continue. Do not ask.
+- Never restate a criterion in a way that drops or weakens its intent,
+  relaxes the scale, conditions, or threshold the Issue requires, or
+  changes user-visible behavior into a form the Issue does not state. For
+  those, ask as before: the Coordinator in worker mode, the user in
+  Standalone mode.
+- For a criterion without `Intent:` (an issue written by hand or before
+  this format), read the intent from the criterion's wording and the Goal.
+  Restate it only when the intent has a single reading; otherwise ask.
+- Record every restatement in a `Restated acceptance criteria` section of
+  the PR body: for each criterion, the original check, the new check, and
+  why the intent is preserved.
+- In worker mode, also report it in `worker_done` as
+  `restated acceptance criteria:` with the same three points per criterion,
+  or `none`. Keep it separate from `unmet/unverified acceptance criteria:`.
+- Decisions marked `[auto]` were not chosen by the user. Do not change one
+  yourself: ask the Coordinator in worker mode, the user in Standalone mode.
+
 ## Bug fixes: reproduction conditions
 
 When the Issue fixes a bug and states its reproduction conditions (data

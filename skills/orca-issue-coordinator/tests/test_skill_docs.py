@@ -347,7 +347,8 @@ def test_unmet_criteria_leave_a_draft_comment_before_merge_without_asking() -> N
     assert "missing field is not `none`" in common
     assert "user explicitly approved" not in common
     handoff = skill.split("13. When a merge-preparation worker slot is free", 1)[1].split("14. Independently", 1)[0]
-    assert "`unmet/unverified acceptance criteria:` from the Implementation handoff." in handoff
+    assert ("`unmet/unverified acceptance criteria:`, and `restated acceptance criteria:` "
+            "from the Implementation handoff.") in handoff
     assert "user decision" not in handoff
     step15 = skill.split("15. Merge the PR yourself", 1)[1].split("16. ", 1)[0]
     assert "first write the draft comment" in step15
@@ -903,3 +904,20 @@ def test_implementation_worker_confirms_ci_and_coordinator_skips_ci_wait() -> No
         assert phrase in track
     assert "**Pending CI** in [Waiting](references/waiting.md) in both Claude Code and Codex" \
         in " ".join(skill.split())
+
+
+def test_restated_checks_and_auto_decisions_do_not_go_to_the_user() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    section = " ".join(skill.split("### Answering worker questions", 1)[1].split("\n## ", 1)[0].split())
+    for phrase in ("**Restating a check:**", "keeping its `Intent:`", "is not **Changes the Issue**",
+                   "`restated acceptance criteria:`", "**`[auto]` decisions:**",
+                   "was not chosen by the user", "Decide yourself"):
+        assert phrase in section
+    flat = " ".join(skill.split())
+    common = flat.split("### Common verification conditions", 1)[1].split("### Merge sequence", 1)[0]
+    for phrase in ("`restated acceptance criteria:`", "A missing field is not `none`",
+                   "do not merge; handle it as **Changes the Issue**"):
+        assert phrase in common
+    assert "except restating a check that keeps the criterion's `Intent:`" in flat
+    assert "add one line per restated criterion" in flat
+    assert "`restated acceptance criteria:`" in " ".join(WAITING.read_text(encoding="utf-8").split())
