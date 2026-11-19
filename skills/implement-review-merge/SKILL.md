@@ -69,9 +69,11 @@ whenever a step below says so; never merge on a guess.
     real hardware is unavailable); write `none` only when all criteria are
     met and verified. Keep this separate from review findings and blockers.
   - In both phases, also include `restated acceptance criteria:` in
-    `worker_done`: for each criterion whose check you restated, the original
-    check, the new check, and why its `Intent:` is preserved; `none` if
-    there are none. Restate a check yourself only while it keeps the intent,
+    `worker_done`: every restatement applied to the PR so far, not only this
+    phase's (carry over those in the handoff and the PR body's
+    `Restated acceptance criteria` section, then add new ones). For each,
+    the original check, the new check, and why its `Intent:` is preserved;
+    `none` only when the PR has none. Restate a check yourself only while it keeps the intent,
     scale, threshold, and user-visible behavior; never change an `[auto]`
     decision yourself, ask the Coordinator. See
     [Verification](references/verification.md).

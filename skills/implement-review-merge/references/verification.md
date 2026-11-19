@@ -46,8 +46,12 @@ Issues written by `refine-issue` give each acceptance criterion an
   the PR body: for each criterion, the original check, the new check, and
   why the intent is preserved.
 - In worker mode, also report it in `worker_done` as
-  `restated acceptance criteria:` with the same three points per criterion,
-  or `none`. Keep it separate from `unmet/unverified acceptance criteria:`.
+  `restated acceptance criteria:` with the same three points per criterion.
+  List every restatement applied to the PR so far, not only the current
+  phase's: a Merge preparation or resumed worker carries over those in the
+  handoff and the PR body's `Restated acceptance criteria` section and adds
+  its own. Write `none` only when the PR has none. Keep it separate from
+  `unmet/unverified acceptance criteria:`.
 - Decisions marked `[auto]` were not chosen by the user. Do not change one
   yourself: ask the Coordinator in worker mode, the user in Standalone mode.
 
