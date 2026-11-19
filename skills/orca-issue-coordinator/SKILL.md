@@ -1,7 +1,7 @@
 ---
 name: orca-issue-coordinator
 description: Coordinate multiple GitHub Issues through ORCA Orchestration. Delegate implementation and cross-review to parallel workers using the implement-review-merge skill, then verify and merge pull requests sequentially. Use when explicitly asked to orchestrate multiple issues or coordinate parallel development.
-disable-model-invocation: true
+disable-model-invocation: false
 ---
 
 # Coordinate GitHub Issues
