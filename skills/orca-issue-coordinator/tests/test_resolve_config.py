@@ -151,7 +151,7 @@ def test_serial_is_not_a_config_key(run) -> None:
 
 @pytest.mark.parametrize("agent,impl,merge", [
     ("claude", "opus", "sonnet"),
-    ("codex", "gpt-6.1-sol", "gpt-6.1-sol"),
+    ("codex", "gpt-6.2-sol", "gpt-6.2-sol"),
 ])
 def test_agent_defaults(run, tmp_path: Path, agent: str, impl: str, merge: str) -> None:
     code, out, _ = run("--agent", agent, "--json")
@@ -213,7 +213,7 @@ def test_text_output_includes_agent(run) -> None:
     code, out, _ = run("--agent", "codex")
     assert code == 0
     assert "agent: codex" in out
-    assert "impl: --model gpt-6.1-sol --effort medium" in out
+    assert "impl: --model gpt-6.2-sol --effort medium" in out
 
 
 def test_agent_is_required(run) -> None:
@@ -303,33 +303,33 @@ def test_script_holds_no_defaults() -> None:
 
 
 @pytest.mark.parametrize("agent,model,effort", [("claude", "sonnet", "high"),
-                                                ("codex", "gpt-6.1-sol", "medium")])
-def test_pre_dispatch_check_defaults_to_enabled(run, tmp_path: Path, agent: str, model: str,
+                                                ("codex", "gpt-6.2-sol", "medium")])
+def test_pre_dispatch_check_defaults_to_disabled(run, tmp_path: Path, agent: str, model: str,
                                                 effort: str) -> None:
     conf = tmp_path / "config.conf"
     code, out, _ = run(agent=agent)
     assert code == 0
-    assert (f"pre-dispatch-check: true --model {model} --effort {effort}  "
+    assert (f"pre-dispatch-check: false --model {model} --effort {effort}  "
             f"(enabled: {conf}; model: {conf}; effort: {conf})") in out.splitlines()
     code, out, _ = run("--json", agent=agent)
     data = json.loads(out)
-    assert data["PRE_DISPATCH_CHECK"] == {"value": True, "source": str(conf)}
+    assert data["PRE_DISPATCH_CHECK"] == {"value": False, "source": str(conf)}
     assert data["PRE_DISPATCH_CHECK_MODEL"] == {"value": model, "source": str(conf)}
     assert data["PRE_DISPATCH_CHECK_EFFORT"] == {"value": effort, "source": str(conf)}
 
 
 def test_pre_dispatch_check_precedence(run, tmp_path: Path) -> None:
-    config = "PRE_DISPATCH_CHECK=false\n"
+    config = "PRE_DISPATCH_CHECK=true\n"
     code, out, err = run(config=config)
     assert (code, err) == (0, "")
-    assert any(line.startswith("pre-dispatch-check: false --model sonnet")
+    assert any(line.startswith("pre-dispatch-check: true --model sonnet")
                and f"(enabled: {tmp_path / 'config.local.conf'};" in line
                for line in out.splitlines())
     code, out, _ = run("--json", config=config)
     assert json.loads(out)["PRE_DISPATCH_CHECK"] == {
-        "value": False, "source": str(tmp_path / "config.local.conf")}
-    code, out, _ = run("--json", "--pre-dispatch-check", "true", config=config)
-    assert json.loads(out)["PRE_DISPATCH_CHECK"] == {"value": True, "source": "argument"}
+        "value": True, "source": str(tmp_path / "config.local.conf")}
+    code, out, _ = run("--json", "--pre-dispatch-check", "false", config=config)
+    assert json.loads(out)["PRE_DISPATCH_CHECK"] == {"value": False, "source": "argument"}
 
 
 @pytest.mark.parametrize("value", ["yes", "1", "True"])
