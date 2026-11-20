@@ -53,10 +53,14 @@ not unset, replace, or switch `gh` credentials (e.g. clearing `GH_TOKEN`). If
 a sandbox denies access (e.g. `runtime_access_denied`), rerun the same command
 outside the sandbox; that is not a failed precondition.
 
-On success it prints `skill-checkout: <path>` and `orca-executable: <path>`;
-keep both. `<orca>` below is that absolute executable path: use it for every
-Orca command, in the checkpoint, and in every reservation, and never select
-the executable again (e.g. with `Get-Command`).
+On success it prints `skill-checkout: <path>`, `orca-executable: <path>`, and
+`coordinator-terminal: <handle>`; keep all three. `<orca>` below is that
+absolute executable path: use it for every Orca command, in the checkpoint,
+and in every reservation, and never select the executable again (e.g. with
+`Get-Command`). `<handle>` below is the Coordinator terminal handle: the
+`coordinator-terminal:` value, and after the Run is re-bound to a new
+terminal (**Re-bind to this terminal** in [Waiting](references/waiting.md)),
+the checkpoint's `coordinator-terminal:` value.
 
 Then, once, from the Coordinator's working repository, pin the skill checkout:
 
@@ -882,9 +886,15 @@ Follow [Waiting](references/waiting.md) in both Claude Code and Codex
 - Reserve a timed wake-up only for a known time (pending CI, a reviewer quota
   retry, the quota resumption), at most one per Run, at the earliest such
   time.
-- Every resume (notification, user message, or timed wake-up) checks quota,
+- Every resume (notification, user message, or timed wake-up) first re-binds
+  the Run to this terminal if its handle changed, then checks quota,
   reconciles the checkpoint with live state once, and never repeats a
   dispatch, phase, or merge already done.
+- Orca's Agent sleep suspends a waiting Coordinator. Worker reports that
+  arrive while it is suspended are not processed until the user resumes the
+  Coordinator. A resumed conversation may run in another terminal: continue
+  with **Re-bind to this terminal** in [Waiting](references/waiting.md)
+  before anything else.
 
 ## Token budget
 

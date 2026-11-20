@@ -3,7 +3,8 @@
 
 Checks:
   1. This process runs inside an Orca terminal (ORCA_TERMINAL_HANDLE is set),
-     so ORCA Orchestration can identify the Coordinator as the sender.
+     so ORCA Orchestration can identify the Coordinator as the sender. Its value
+     is printed as `coordinator-terminal:` on success.
   2. The Orca executable the Coordinator selected (`--orca`, a name or a path)
      resolves to an absolute path, its runtime is reachable
      (`<orca> status --json`), and it advertises
@@ -184,6 +185,7 @@ def main(argv: list[str] | None = None) -> int:
         print("preconditions: ok")
         print(f"skill-checkout: {checkout}")
         print(f"orca-executable: {orca}")
+        print(f"coordinator-terminal: {os.environ['ORCA_TERMINAL_HANDLE'].strip()}")
         return 0
     for msg in failures:
         print(f"STOP: {msg}")
