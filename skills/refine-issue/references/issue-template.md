@@ -2,9 +2,10 @@
 
 Use these sections in this order. Omit a section only when it truly does not
 apply, and never leave a placeholder ("TBD", "TODO", "?") in the output.
-The labels `Intent:`, `Check:`, `Passing:`, and `[auto]` follow the
-**Output format** in the skill and stay in English whatever the issue's
-language.
+The section headings in the block below (`## Background` through
+`## Decisions`) and the labels `Intent:`, `Check:`, `Passing:`, and `[auto]`
+follow the **Output format** in the skill and stay in English whatever the
+issue's language.
 
 ```markdown
 ## Background
