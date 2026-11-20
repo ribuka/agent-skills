@@ -255,9 +255,9 @@ Keep test and CI output small (see **Token budget**); never read full logs:
   Exit `0` prints `ci-registration: registered <sha>`: start the watcher.
   Exit `2` prints `ci-registration: timeout after <seconds>s (head <sha>)`:
   report `monitor-error: no checks reported on <sha> after <seconds>s`.
-  Exit `1` prints `error: <reason>` (invalid settings or gh failure/missing):
-  report `monitor-error: <reason>`. In worker mode report these blockers to
-  the Coordinator. Use this registration script in Standalone mode too.
+  Exit `1` prints `error: <reason>` (invalid arguments or settings, or gh
+  failure/missing): report `monitor-error: <reason>`. In worker mode report
+  these blockers to the Coordinator. Use this registration script in Standalone mode too.
   Registration polling is allowed only inside this script.
 - Wait for CI with `gh pr checks <pr> --watch --interval 30` using only
   GitHub CLI's built-in features; never pipe to an external `jq` or write
