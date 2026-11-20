@@ -131,3 +131,66 @@ def test_invalid_config_prevents_gh(
     monkeypatch.setattr(module.subprocess, "run", forbidden)
     assert module.main(["--pr", "135", "--head", HEAD]) == 1
     assert capsys.readouterr().out.startswith("error: ")
+
+
+@pytest.mark.parametrize("given", ["A" * 40, "aAbB" * 10])
+def test_head_is_normalized_to_lowercase(
+    module: ModuleType, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    given: str,
+) -> None:
+    calls = []
+
+    def gh(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess:
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, json.dumps({
+            "headRefOid": given.lower(), "statusCheckRollup": [{}]}), "")
+
+    monkeypatch.setattr(module.subprocess, "run", gh)
+    assert module.main(["--pr", "135", "--head", given]) == 0
+    assert len(calls) == 1
+    assert capsys.readouterr().out.strip() == f"ci-registration: registered {given.lower()}"
+
+
+def test_checks_on_another_head_do_not_register(
+    module: ModuleType, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    def gh(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess:
+        return subprocess.CompletedProcess(cmd, 0, json.dumps({
+            "headRefOid": "b" * 40, "statusCheckRollup": [{}]}), "")
+
+    monkeypatch.setattr(module.subprocess, "run", gh)
+    (module.SKILL_DIR / "config.local.conf").write_text(
+        "CI_REGISTRATION_TIMEOUT_SECONDS=60", encoding="utf-8")
+    assert module.main(["--pr", "135", "--head", "A" * 40]) == 2
+    assert capsys.readouterr().out.strip() == f"ci-registration: timeout after 60s (head {HEAD})"
+
+
+@pytest.mark.parametrize("argv", [
+    [], ["--pr", "135"], ["--head", HEAD], ["--pr", "135", "--head", HEAD, "--extra"],
+    ["--pr", "135", "--head"], ["--pr", "--head", HEAD], ["--pr", "abc", "--head", HEAD],
+    ["--pr", "0", "--head", HEAD], ["--pr", "-1", "--head", HEAD],
+    ["--pr", "135", "--head", "a" * 39], ["--pr", "135", "--head", "a" * 41],
+    ["--pr", "135", "--head", "g" * 40],
+])
+def test_invalid_arguments_return_1_without_config_or_gh(
+    module: ModuleType, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    argv: list[str],
+) -> None:
+    def forbidden(*args: object, **kwargs: object) -> None:
+        pytest.fail("invalid arguments must not read config or invoke gh")
+
+    monkeypatch.setattr(module, "read_config", forbidden)
+    monkeypatch.setattr(module.shutil, "which", forbidden)
+    monkeypatch.setattr(module.subprocess, "run", forbidden)
+    assert module.main(argv) == 1
+    out = capsys.readouterr()
+    lines = out.out.splitlines()
+    assert len(lines) == 1 and lines[0].startswith("error: ")
+    assert out.err == ""
+
+
+def test_help_exits_0(module: ModuleType, capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exc:
+        module.main(["--help"])
+    assert exc.value.code == 0
+    assert "--head" in capsys.readouterr().out

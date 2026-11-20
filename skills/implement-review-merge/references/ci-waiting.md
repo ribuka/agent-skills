@@ -11,7 +11,8 @@ The script checks every 30 seconds, bounded by this skill's
 Exit `0` (`ci-registration: registered <sha>`) allows the watcher below.
 Exit `2` (`ci-registration: timeout after <seconds>s (head <sha>)`) means
 report `monitor-error: no checks reported on <sha> after <seconds>s`.
-Exit `1` (`error: <reason>`) means report `monitor-error: <reason>`.
+Exit `1` (`error: <reason>`: invalid arguments or settings, or a `gh`
+failure) means report `monitor-error: <reason>`.
 In worker mode report the blocker to the Coordinator. Only this script may
 poll registration; never build an agent-side polling loop.
 Apply the same procedure in Standalone mode. In Orchestration worker /

@@ -18,7 +18,8 @@ def test_ci_registration_and_worker_completion_contract() -> None:
     for text in (skill, waiting):
         for phrase in ("wait_ci_registration.py --pr <pr-number> --head <full-sha>",
                        "CI_REGISTRATION_TIMEOUT_SECONDS", "30 seconds", "Exit `0`",
-                       "Exit `2`", "Exit `1`", "monitor-error: no checks reported on",
+                       "Exit `2`", "Exit `1`", "invalid arguments or settings",
+                       "monitor-error: no checks reported on",
                        "CI completion (success or failure) on the synced head before `worker_done`",
                        "never hand off with `CI pending`"):
             assert phrase in text
