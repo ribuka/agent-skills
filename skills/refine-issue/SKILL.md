@@ -15,7 +15,9 @@ can pick up without asking a single question.
 - No ambiguity remains in the specification or the implementation approach.
   Every open point was either settled from the codebase, decided by the
   user through a multiple-choice question, or (only without an interview,
-  see step 5) settled by the recommended option and marked `[auto]`.
+  or for the points not asked yet when the user delegates the rest partway
+  through the interview, see step 5) settled by the recommended option and
+  marked `[auto]`.
 - Every acceptance criterion states its `Intent:` and has a `Check:` the
   implementing agent can run in its expected environment and permissions,
   with a stated `Passing:` result, or is a user-required pre-merge check
@@ -38,8 +40,9 @@ The labels stay in English whatever the issue's language.
   checking it.
 - Each line in Decisions is `- <question>: <decision> (<reason>)`. A
   decision the user did not choose (the recommended option taken without an
-  interview) starts with `- [auto] `. Points the code or docs settled are
-  not marked.
+  interview, or for a point not asked yet when the user delegated the rest
+  partway through the interview) starts with `- [auto] `. Points the code or
+  docs settled are not marked.
 - A `## Related issues` section appears when an open issue or unmerged pull
   request touches the same feature, file, or state. It states the assumed
   state of the default branch and decides every point that depends on the
@@ -148,6 +151,11 @@ tool's limits:
 
 - Ask the most fundamental questions first; later questions often depend on
   earlier answers.
+  - When the request names a means (e.g. copying to the clipboard) and your
+    investigation shows that the requested means cannot meet the expected
+    scale or the purpose, ask about the requested means itself before any
+    detailed question. Include alternative means that meet the purpose
+    (e.g. an existing file export) among its options.
 - Give concrete, mutually exclusive options. Put your recommendation first
   and mark it `(Recommended)`; explain each option's trade-off in its
   description.
@@ -166,6 +174,23 @@ the user asks to skip the interview (e.g. "インタビュー無しで", "おす
   Post-merge checks.
 - Step 7 still follows `CONFIRM_BEFORE_PUBLISH`.
 - In step 9, list the `[auto]` decisions.
+
+**Delegated partway:**
+
+- When the user answers one question with the recommendation (picks the
+  `(Recommended)` option, or writes "おすすめ" in Other), treat it as the
+  answer to that question: it is the user's decision, not `[auto]`.
+- When the user delegates the rest partway through the interview (e.g.
+  "あとはおすすめで", "残りは任せる"):
+  - Keep the points already answered as the user's decisions.
+  - Take the recommended option for only the points not asked yet, and mark
+    them `[auto]`.
+  - From then on, follow "Without an interview" above: do not skip steps
+    2–4 or the checks in step 6, do not create a pre-merge check run by a
+    person, and list the `[auto]` decisions in step 9.
+- When you cannot tell whether an answer is the answer to that one question
+  or a delegation of the rest, treat it as the answer to that question and
+  keep asking in the next round.
 
 ### 6. Write the issue
 

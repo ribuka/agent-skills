@@ -139,5 +139,8 @@ as an acceptance criterion like:
   later rows are much longer can exceed the budget; accepted, left as a
   follow-up."
 - Mark a decision `[auto]` when the user did not choose it: an open point
-  settled by taking the recommended option without an interview. Do not
-  mark points the code or docs settled; there was no choice to make.
+  settled by taking the recommended option without an interview, or a
+  point not asked yet when the user delegated the rest partway through the
+  interview. A recommended option the user picked as the answer to a
+  question is the user's decision; do not mark it. Do not mark points the
+  code or docs settled; there was no choice to make.

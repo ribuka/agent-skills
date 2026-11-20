@@ -89,3 +89,17 @@ def test_template_covers_baseline_path_and_pr_ci_values() -> None:
     template = _flat(TEMPLATE)
     for phrase in ("same entry point", "PR's own CI"):
         assert phrase in template
+
+
+def test_interview_delegated_partway_marks_only_unasked_points_auto() -> None:
+    step = _flat(SKILL_MD).split("### 5. Interview the user", 1)[1].split("### 6.", 1)[0]
+    for phrase in ("partway through the interview", "only the points not asked yet",
+                   "treat it as the answer to that question"):
+        assert phrase in step
+    done_when = _flat(SKILL_MD).split("## Done when", 1)[1].split("## Output format", 1)[0]
+    assert "partway through the interview" in done_when
+
+
+def test_interview_asks_about_the_requested_means_first() -> None:
+    step = _flat(SKILL_MD).split("### 5. Interview the user", 1)[1].split("### 6.", 1)[0]
+    assert "the requested means" in step
