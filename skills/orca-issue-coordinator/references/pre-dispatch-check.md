@@ -41,6 +41,7 @@ functional-dependency: #<earlier> -> #<later> | evidence: <...>
 ordering: #<earlier> -> #<later> | evidence: <...>
 last: #<n> | evidence: <the whole-repository criterion and the Issues that could break it>
 distant-same-file: #<a> #<b> | evidence: <the file and the part each Issue edits>
+implied-change: #<n> | evidence: <path:line ...> | change: <the change the Issue implies but does not state>
 spec-gap: #<n> | evidence: <path:line ...> | gap: <the change the Issue needs but does not state>
 ```
 
@@ -54,12 +55,21 @@ spec-gap: #<n> | evidence: <path:line ...> | gap: <the change the Issue needs bu
   reference to the old name remains in docs and tests") that another
   Issue's change could break.
 - `distant-same-file`: both Issues edit the same file, in parts far apart.
-- `spec-gap`: the code shows a change the Issue needs but does not state
-  (e.g. the Issue lists one test import to change, but other tests also
-  patch the same private function).
+- `implied-change`: existing code, tests, or docs in `origin/HEAD` still
+  hard-code the old form of a behavior the Issue explicitly changes, and
+  only one fix is consistent with the Issue (e.g. the Issue adds a menu
+  item, but a test asserts the old list of menu items; the Issue lists one
+  test import to change, but other tests also patch the same private
+  function).
+- `spec-gap`: the code shows a change the Issue needs but does not state,
+  and two or more fixes are consistent with the Issue (e.g. the Issue
+  renames a configuration key, but does not say whether saved files written
+  with the old key are migrated or rejected). When unsure whether only one
+  fix fits, report `spec-gap`.
 - If you find nothing, report the single line `none`.
 - If the findings exceed 60 lines, drop `distant-same-file` lines first
-  (the Coordinator runs those Issues in parallel either way). Never drop a
-  `functional-dependency`, `ordering`, `last`, or `spec-gap` line; if those
-  alone exceed 60 lines, report them all anyway; the Coordinator handles the
-  report as a failed check.
+  (the Coordinator runs those Issues in parallel either way), then
+  `implied-change` lines (the implementation worker finds them when it runs
+  its tests). Never drop a `functional-dependency`, `ordering`, `last`, or
+  `spec-gap` line; if those alone exceed 60 lines, report them all anyway;
+  the Coordinator handles the report as a failed check.

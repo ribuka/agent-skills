@@ -963,7 +963,8 @@ def test_restated_checks_and_auto_decisions_do_not_go_to_the_user() -> None:
 
 PRE_DISPATCH_CHECK = SKILL_DIR / "references" / "pre-dispatch-check.md"
 PRE_DISPATCH_CHECK_INSTALLED = "~/.agents/skills/orca-issue-coordinator/references/pre-dispatch-check.md"
-REPORT_KINDS = ("functional-dependency", "ordering", "last", "distant-same-file", "spec-gap")
+REPORT_KINDS = ("functional-dependency", "ordering", "last", "distant-same-file", "implied-change",
+                "spec-gap")
 
 
 def _flat_step(skill: str, start: str, end: str) -> str:
@@ -1040,7 +1041,9 @@ def test_spec_gaps_stop_the_whole_run_and_offer_three_choices() -> None:
     skill = SKILL_MD.read_text(encoding="utf-8")
     step6 = _flat_step(skill, "6. Before the first dispatch", "## 2.")
     gaps = step6.split("**Specification gaps:**", 1)[1]
-    for phrase in ("stop the whole Run", "dispatch nothing until the user replies",
+    for phrase in ("a change the Issue needs but does not state, with two or more fixes "
+                   "consistent with the Issue",
+                   "stop the whole Run", "dispatch nothing until the user replies",
                    "**Fix the Issue first:**", "the Issue stays in the Run",
                    "Never edit the Issue yourself", "`awaiting-issue-fix: #<n> ...`",
                    "start a new pre-dispatch check worker (step 3)",
@@ -1057,6 +1060,7 @@ def test_pre_dispatch_check_reference_defines_report_and_read_only_rules() -> No
                  "ordering: #<earlier> -> #<later> | evidence:",
                  "last: #<n> | evidence:",
                  "distant-same-file: #<a> #<b> | evidence:",
+                 "implied-change: #<n> | evidence: <path:line ...> | change:",
                  "spec-gap: #<n> | evidence: <path:line ...> | gap:"):
         assert line in ref, line
     for phrase in ("`worker_done`", "at most **60 lines**", "the single line `none`",
@@ -1112,3 +1116,57 @@ def test_issue_set_and_dag_are_settled_before_tasks_are_created() -> None:
                    "Offer it only while none of those Issues has a Task",
                    "offer only the other two choices for an Issue that has a Task"):
         assert phrase in gaps, phrase
+
+
+def _ref_definition(ref: str, kind: str) -> str:
+    return ref.split(f"- `{kind}`:", 1)[1].split(" - ", 1)[0]
+
+
+def test_pre_dispatch_check_splits_implied_changes_from_spec_gaps() -> None:
+    ref = " ".join(PRE_DISPATCH_CHECK.read_text(encoding="utf-8").split())
+    implied = _ref_definition(ref, "implied-change")
+    for phrase in ("still hard-code the old form of a behavior the Issue explicitly changes",
+                   "only one fix is consistent with the Issue",
+                   "a test asserts the old list of menu items",
+                   "the Issue lists one test import to change",
+                   "patch the same private function"):
+        assert phrase in implied, phrase
+    gap = _ref_definition(ref, "spec-gap")
+    for phrase in ("two or more fixes are consistent with the Issue",
+                   "renames a configuration key", "migrated or rejected",
+                   "When unsure whether only one fix fits, report `spec-gap`"):
+        assert phrase in gap, phrase
+    for phrase in ("monkeypatch", "import", "private function"):
+        assert phrase not in gap, phrase
+
+
+def test_pre_dispatch_check_drops_implied_changes_after_distant_same_file() -> None:
+    ref = " ".join(PRE_DISPATCH_CHECK.read_text(encoding="utf-8").split())
+    drop = ref.split("If the findings exceed 60 lines", 1)[1]
+    assert "drop `distant-same-file` lines first" in drop
+    assert "then `implied-change` lines" in drop
+    assert drop.index("`distant-same-file` lines first") < drop.index("then `implied-change` lines")
+    assert "Never drop a `functional-dependency`, `ordering`, `last`, or `spec-gap` line" in drop
+
+
+def test_implied_changes_go_into_the_brief_without_stopping_the_run() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    step3 = _flat_step(skill, "3. Create one Orchestration Run", "4. Before creating any Task")
+    assert "`implied-change` → a change added to that Issue's brief (steps 6 and 7)" in step3
+    assert "Record `pre-dispatch-check: done` and the report lines in the checkpoint" in step3
+    step6 = _flat_step(skill, "6. Before the first dispatch", "## 2.")
+    plan = step6.split("**Specification gaps:**", 1)[0]
+    assert ("For each Issue with an `implied-change`, list each change that its brief adds "
+            "(step 7)") in plan
+    assert "An `implied-change` alone never stops the Run or waits for approval" in plan
+    exception = plan.split("Then start dispatching without waiting for approval,", 1)[1]
+    exception = exception.split("`spec-gap`.", 1)[0]
+    assert "unless step 3 requires asking for the order" in exception
+    assert "implied-change" not in exception
+    fix = step6.split("**Fix the Issue first:**", 1)[1].split("**Dispatch as is:**", 1)[0]
+    assert ("Add a new `implied-change` only to the briefs of Tasks not yet dispatched; never "
+            "send it to a Task already dispatched") in fix
+    step7 = _flat_step(skill, "7. Instruct each worker", "8. Fill available")
+    assert ("For each `implied-change` the pre-dispatch check reported for the Issue, add the "
+            "change and tell the worker to make it as a consequence of the Issue's scope and to "
+            "state the change in the PR body") in step7

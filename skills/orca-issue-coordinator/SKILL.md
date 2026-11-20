@@ -217,8 +217,9 @@ only after the user confirms.
      - Classify from its report alone. Each line maps to a relation below:
        `functional-dependency` → **Functional dependency**, `ordering` →
        **Ordering**, `last` → **Last**, `distant-same-file` → **Distant
-       parts of the same file only**, and `spec-gap` → a specification gap
-       (step 6). `none` means no relation and no gap. Treat a relation the
+       parts of the same file only**, `implied-change` → a change added to
+       that Issue's brief (steps 6 and 7), and `spec-gap` → a specification
+       gap (step 6). `none` means no relation and no gap. Treat a relation the
        report does not settle as an **Ordering**. Record
        `pre-dispatch-check: done` and the report lines in the checkpoint.
      - **If it fails:** a failed start follows the exit codes in **Starting
@@ -330,11 +331,15 @@ only after the user confirms.
    the overlap is unclear). For each **Last** Issue, state its
    whole-repository criterion. For Tasks that edit the same file
    but run in parallel, state that decision and its reason (e.g. which
-   parts each edits). Then start dispatching without waiting for approval,
+   parts each edits). For each Issue with an `implied-change`, list each
+   change that its brief adds (step 7).
+   Then start dispatching without waiting for approval,
    unless step 3 requires asking for the order (including several **Last**
    Issues) or the pre-dispatch check reported a `spec-gap`.
+   An `implied-change` alone never stops the Run or waits for approval.
    **Specification gaps:** when the pre-dispatch check reports any
-   `spec-gap` (a change the Issue needs but does not state), stop the
+   `spec-gap` (a change the Issue needs but does not state, with two or
+   more fixes consistent with the Issue), stop the
    whole Run: present every gap with the plan, and create no Task and
    dispatch nothing until the user replies (step 4). For each Issue with a
    gap, ask (**Asking the user**) for one of:
@@ -349,7 +354,9 @@ only after the user confirms.
      of the Run not yet merged. Apply new relations only to Tasks not yet
      dispatched, by holding their dispatch (a created Task keeps its
      `--deps`); ask the user the same way about a new `spec-gap` or a
-     relation that would hold a Task already dispatched.
+     relation that would hold a Task already dispatched. Add a new
+     `implied-change` only to the briefs of Tasks not yet dispatched; never
+     send it to a Task already dispatched.
    - **Dispatch as is:** keep the gap and dispatch by the plan.
    - **Remove from the Run:** remove the Issue from the Run's Issue set
      and update the checkpoint's `issues:` line. In this option, name the
@@ -377,6 +384,9 @@ only after the user confirms.
    **Orchestration worker / Implementation** mode.
    - Provide the Issue number, scope, acceptance criteria, and dependencies.
      Tell the worker to read the Issue itself.
+   - For each `implied-change` the pre-dispatch check reported for the
+     Issue, add the change and tell the worker to make it as a consequence
+     of the Issue's scope and to state the change in the PR body.
    - Do not restate general token-saving rules in the brief: the worker
      loads them with `implement-review-merge` (its **Token budget**). Add
      only what the Issue requires, such as the E2E suite or the benchmark
