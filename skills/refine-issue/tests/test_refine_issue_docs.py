@@ -103,3 +103,25 @@ def test_interview_delegated_partway_marks_only_unasked_points_auto() -> None:
 def test_interview_asks_about_the_requested_means_first() -> None:
     step = _flat(SKILL_MD).split("### 5. Interview the user", 1)[1].split("### 6.", 1)[0]
     assert "the requested means" in step
+
+
+def test_section_headings_and_decision_separator_stay_ascii() -> None:
+    output_format = " ".join(
+        _section(SKILL_MD.read_text(encoding="utf-8"), "## Output format").split())
+    assert "section headings" in output_format
+    assert "section headings" in _flat(TEMPLATE)
+    for heading in ("## Background", "## Goal", "## Specification", "## Related issues",
+                    "## Out of scope", "## Implementation plan", "## Acceptance criteria",
+                    "## Post-merge checks", "## Decisions"):
+        assert heading in output_format
+    assert "(`: `)" in output_format
+    assert "(`：`)" in output_format
+    step = _flat(SKILL_MD).split("### 6. Write the issue", 1)[1].split("### 7.", 1)[0]
+    assert "section headings" in step
+    assert "`: `" in step
+
+
+def test_publish_writes_body_with_file_writing_tool() -> None:
+    step = _flat(SKILL_MD).split("### 8. Publish", 1)[1].split("### 9.", 1)[0]
+    assert "heredoc" in step
+    assert "file-writing tool" in step

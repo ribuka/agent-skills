@@ -26,7 +26,10 @@ can pick up without asking a single question.
 ## Output format
 
 Issues this skill writes keep this format, which other tools may rely on.
-The labels stay in English whatever the issue's language.
+The template's section headings (`## Background`, `## Goal`,
+`## Specification`, `## Related issues`, `## Out of scope`,
+`## Implementation plan`, `## Acceptance criteria`, `## Post-merge checks`,
+`## Decisions`) and the labels stay in English whatever the issue's language.
 
 - Each acceptance criterion:
 
@@ -38,7 +41,9 @@ The labels stay in English whatever the issue's language.
 
   `Intent:` is the criterion; `Check:` and `Passing:` are one example of
   checking it.
-- Each line in Decisions is `- <question>: <decision> (<reason>)`. A
+- Each line in Decisions is `- <question>: <decision> (<reason>)`. The
+  separator is an ASCII colon and a space (`: `) in every language, including
+  Japanese; never use the full-width colon (`：`). A
   decision the user did not choose (the recommended option taken without an
   interview, or for a point not asked yet when the user delegated the rest
   partway through the interview) starts with `- [auto] `. Points the code or
@@ -211,6 +216,8 @@ Before publishing, check the draft against "Done when" and these points:
   ("push on commit", "apply on save"), list every path that changes the
   state and confirm whether each goes through the trigger.
 - Related issues contains no "undecided" or "decide before starting".
+- The section headings and labels are in English, and every line in
+  Decisions separates the question from the decision with `: `.
 
 If any sentence still allows two readings or a check fails, go back to
 step 5.
@@ -228,8 +235,10 @@ ask again. If `false`, go straight to step 8.
 
 ### 8. Publish
 
-Write the body to a file under `tmp/` (git-ignored) and pass it with
-`--body-file`, never inline. Delete the file afterwards.
+Write the body to a file under `tmp/` (git-ignored) with your
+file-writing tool, not a shell heredoc (the body contains quotes and
+backticks), and pass it with `--body-file`, never inline. Delete the file
+afterwards.
 
 **Update mode:**
 
