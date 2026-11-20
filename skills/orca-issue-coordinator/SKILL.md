@@ -476,6 +476,19 @@ only after the user confirms.
     receipt's recovery action and Orca's `references/recovery-and-cleanup.md`;
     never close the terminal another way. Never release a worker the user
     kept open or took over.
+    An **unfound-terminal release** is a worker whose `list_workers.py` row
+    (step 10) has `state` `succeeded` or `failed`, `terminalState`
+    `release_unknown`, and `liveness` `unverifiable`: Orca no longer finds
+    the terminal it recorded, so no retry can prove the process gone. Tell
+    it apart by these three fields only, never by the receipt's `lastError`
+    text. When `worker-release` returns `release_unknown`, run
+    `worker-show --dispatch <dispatch_id> --json` once, as the receipt's
+    `next` says, then retry `worker-release` exactly once with a fresh
+    request ID (without `--retry-request`). If the worker is still an
+    unfound-terminal release, do not retry again: write
+    `unreleased: <dispatch_id> <absolute worktree path> (terminal not found)`
+    on that Task's checkpoint entry, keep the Run going, and state it in one
+    line in that turn's final message.
 
 ## 3. Sequential merge
 
@@ -681,10 +694,22 @@ Use these checks in steps 12 and 14, against the current PR head:
     (step 10) for the whole Run and reconcile every row: no worker may be
     `active`; follow every non-empty `next`; release a `reclaimable` worker
     nobody will use; report `release_pending` / `release_unknown` and
-    unresolved `stop_unknown` results as unresolved blockers, not as done.
+    unresolved `stop_unknown` results as unresolved blockers, not as done,
+    except an unfound-terminal release (step 11). Run `worker-release`
+    exactly once for each unfound-terminal release: if it is released, treat
+    it as any released worker; if it is still an unfound-terminal release,
+    it does not block the Run's completion.
     A worker the user kept open or took over stays open: name it in the
     report as intentionally retained. Do not report the Run complete while
-    a release or an unknown state remains. Finally delete this Run's
+    a release or an unknown state other than an unfound-terminal release
+    remains. When only unfound-terminal releases remain, report the Run
+    complete and list them separately under
+    **解放を確かめられなかった worker**, one item per worker with: the Issue
+    number, the dispatch ID, the absolute worktree path, the reason (Orca
+    no longer finds the terminal it recorded, so it cannot prove the
+    process is gone), and what the user should do (in the Orca UI, check
+    whether an agent terminal is still running in that worktree, and close
+    it if one is). Finally delete this Run's
     files with these commands only, from the Coordinator's working
     repository:
     - Temporary directory:

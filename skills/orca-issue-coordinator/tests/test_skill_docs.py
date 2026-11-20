@@ -598,6 +598,7 @@ def test_auto_released_and_kept_open_workers_are_told_apart() -> None:
     assert "new top-level worktree, which Orca keeps open" in step
     assert "`worker-release --dispatch <dispatch_id>`" in step
     assert "`release_pending` or `release_unknown`" in step
+    assert "never close the terminal another way" in step
     assert "Never release a worker the user kept open or took over" in step
 
 
@@ -610,7 +611,64 @@ def test_run_end_reconciles_every_worker() -> None:
     assert "`release_pending` / `release_unknown`" in step
     assert "`stop_unknown`" in step
     assert "intentionally retained" in step
-    assert "Do not report the Run complete while a release or an unknown state remains" in step
+    assert ("Do not report the Run complete while a release or an unknown state other than "
+            "an unfound-terminal release remains") in step
+
+
+def _step11(skill: str) -> str:
+    return _flat_step(skill, "11. Workers in an existing", "## 3.")
+
+
+def _step17(skill: str) -> str:
+    return _flat_step(skill, "17. Mark only confirmed", "## Quota control")
+
+
+def test_unfound_terminal_release_is_retried_once_and_recorded_mid_run() -> None:
+    step = _step11(SKILL_MD.read_text(encoding="utf-8"))
+    definition = step.split("An **unfound-terminal release** is", 1)[1].split(". ", 1)[0]
+    for condition in ("`state` `succeeded` or `failed`", "`terminalState` `release_unknown`",
+                      "`liveness` `unverifiable`", "`list_workers.py` row"):
+        assert condition in definition, condition
+    assert "never by the receipt's `lastError` text" in step
+    assert step.index("`worker-show --dispatch <dispatch_id> --json` once") < step.index(
+        "retry `worker-release` exactly once with a fresh request ID (without `--retry-request`)")
+    assert "do not retry again" in step
+    assert ("`unreleased: <dispatch_id> <absolute worktree path> (terminal not found)` on that "
+            "Task's checkpoint entry") in step
+    assert "keep the Run going" in step
+    assert "state it in one line in that turn's final message" in step
+    waiting = WAITING.read_text(encoding="utf-8")
+    checkpoint = " ".join(waiting.split("## Checkpoint", 1)[1].split("\n## ", 1)[0].split())
+    per_task = checkpoint.split("- Per Task:", 1)[1].split(" - ", 1)[0]
+    assert "`ci-reruns: <test ID> x<count> ...`" in per_task
+    assert ("`unreleased: <dispatch_id> <absolute worktree path> (terminal not found)` for each "
+            "unfound-terminal release (`SKILL.md` step 11)") in per_task
+
+
+def test_run_end_completes_with_unfound_terminal_releases_listed_apart() -> None:
+    step = _step17(SKILL_MD.read_text(encoding="utf-8"))
+    assert "Run `worker-release` exactly once for each unfound-terminal release" in step
+    assert "if it is released, treat it as any released worker" in step
+    assert "it does not block the Run's completion" in step
+    report = step.split("When only unfound-terminal releases remain", 1)[1].split(
+        "Finally delete", 1)[0]
+    assert "report the Run complete" in report
+    assert "**解放を確かめられなかった worker**, one item per worker" in report
+    for item in ("the Issue number", "the dispatch ID", "the absolute worktree path",
+                 "the reason (Orca no longer finds the terminal it recorded, so it cannot prove "
+                 "the process is gone)",
+                 "what the user should do (in the Orca UI, check whether an agent terminal is "
+                 "still running in that worktree, and close it if one is)"):
+        assert item in report, item
+
+
+def test_other_unresolved_release_states_still_block_run_completion() -> None:
+    step = _step17(SKILL_MD.read_text(encoding="utf-8"))
+    assert ("report `release_pending` / `release_unknown` and unresolved `stop_unknown` results "
+            "as unresolved blockers, not as done, except an unfound-terminal release (step 11)"
+            ) in step
+    assert ("Do not report the Run complete while a release or an unknown state other than "
+            "an unfound-terminal release remains") in step
 
 
 def test_waiting_ends_turn_and_receives_without_ack() -> None:

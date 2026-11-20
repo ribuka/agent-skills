@@ -82,7 +82,9 @@ everywhere. Update it before ending every turn and right after every
   any draft comment for remaining criteria (comment URL, criteria, reasons,
   and merge-target head as a full SHA), any head approved with **Merge as is**,
   `follow-up candidates:` from each handoff, unchanged, `ci-reruns: <test ID> x<count> ...`
-  (step 14's reruns of unrelated CI failures, or `ci-reruns: none`), and the IDs
+  (step 14's reruns of unrelated CI failures, or `ci-reruns: none`),
+  `unreleased: <dispatch_id> <absolute worktree path> (terminal not found)`
+  for each unfound-terminal release (`SKILL.md` step 11), and the IDs
   of the messages already processed.
 - Pending CI: PR, head SHA, and absolute deadline.
 - Every pending time as its own line
