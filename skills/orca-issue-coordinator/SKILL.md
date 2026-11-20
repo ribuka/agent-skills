@@ -599,12 +599,13 @@ Use these checks in steps 12 and 14, against the current PR head:
       (`gh run view <run-id> --log-failed`, tail). Only when the failure is
       unrelated to the PR's diff (e.g. a timeout or network error in a test
       the PR does not touch), rerun the failed jobs once yourself
-      (`gh run rerun <run-id> --failed`), note the rerun and the test name
-      for the Issue's report, and wait for CI again. If the failure relates
+      (`gh run rerun <run-id> --failed`), record the rerun and the test ID
+      in the Task's `ci-reruns:` checkpoint line (Run checkpoint), and wait
+      for CI again. If the failure relates
       to the diff, or the rerun fails again, do not rerun further: start
       merge preparation (step 13) with the failure in the handoff, or block
-      the PR and ask the user. In step 17, list every rerun and suggest an
-      Issue for a test that failed this way more than once.
+      the PR and ask the user. Step 17 lists every rerun and counts it with
+      the `local test failure:` reports of the same test.
 15. Merge the PR yourself only when all conditions are met and the quota
     `check` immediately before the merge is READY. When the latest handoff's
     `unmet/unverified acceptance criteria:` is not `none`, first write the
@@ -642,9 +643,17 @@ Use these checks in steps 12 and 14, against the current PR head:
     outcome and PR URL for each Issue.
     List any open Issues outside the fixed set that you noticed during the
     Run as outside this Run's scope, with their numbers and titles.
-    Collect each Issue handoff's `follow-up candidates:` under **起票候補**,
-    with each suggestion's summary and review comment URL. Do not create
-    Issues; the user decides which candidates to file.
+    Collect each Issue handoff's `follow-up candidates:` (as saved in the
+    Run checkpoint) under **起票候補**: for a review suggestion, its summary
+    and review comment URL; for a `local test failure:` item (no review
+    comment URL), its line as reported. Merge `local test failure:` items
+    with the same test ID into one entry stating the count and the Issue
+    numbers it came from. That count is the number of such reports plus
+    every CI rerun of the same test ID recorded in step 14 (`ci-reruns:`);
+    a rerun test with no such report gets its own entry. Mark every entry
+    whose total is two or more with "suggest filing an Issue", and still
+    list entries with a total of one. Do not create Issues; the user
+    decides which candidates to file.
     Alongside them under **起票候補**, list every PR merged with remaining
     criteria (**Unmet or unverified acceptance criteria**): the PR, the
     original Issue and its state (closed by the merge), the summary, the

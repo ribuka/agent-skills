@@ -68,3 +68,38 @@ shape and scale, steps, environment):
   confirm once under the reproduction conditions at the end.
 - Report only the conditions you cannot prepare locally (e.g. real
   hardware) in `unmet/unverified acceptance criteria:`, with the reason.
+
+## Local test failures
+
+In every mode, when a test fails in a local run (while developing in step
+2, the full run before pushing, or the re-verification in step 9) and you
+believe the cause is not the diff, do not judge it unrelated until you
+have checked it on `main`. When the cause is known to be the diff, fix it
+as usual.
+
+1. Run the failed test alone on the branch (only that test, e.g. a pytest
+   node ID).
+2. Run `git fetch origin main`, then create a temporary worktree outside
+   the repository: `git worktree add --detach <dir> origin/main`, where
+   `<dir>` is a new temporary directory (e.g. from `mktemp -d`). Prepare
+   the dependencies the test needs as the repository's docs say, and run
+   the same test alone there. Then remove it with
+   `git worktree remove --force <dir>`. Never switch branches in the
+   working worktree.
+3. Handle the result:
+
+| Branch alone | `main` alone | Handling |
+|---|---|---|
+| fails | fails | Existing failure. Do not fix; add it as a follow-up candidate. |
+| passes | passes | Order-dependent or flaky. Do not fix; add it as a follow-up candidate. |
+| fails | passes | Caused by the diff. Fix it (steps 2–4; also steps 6–7 if already reviewed). |
+| passes | fails | Existing failure on `main`. Do not fix; add it as a follow-up candidate. |
+| cannot run on `main` (e.g. dependency setup fails) | — | Do not judge it unrelated. In worker mode, report it as a blocker with the reason; in Standalone mode, report it to the user and wait for instructions. |
+
+Add each follow-up candidate as one item, with no review comment URL, to
+`follow-up candidates:` in `worker_done` (worker mode) or to **起票候補** in
+the final report (Standalone mode). Do not create Issues.
+
+```text
+local test failure: <test ID> — failed in: <the run that failed, e.g. full suite on branch>; branch alone: <failed|passed>; main alone (<first 7 characters of the main SHA>): <failed|passed>
+```
