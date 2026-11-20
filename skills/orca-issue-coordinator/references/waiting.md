@@ -2,7 +2,8 @@
 
 Use this for both Claude Code and Codex Coordinators. `<orca>`, `<handle>`,
 `<run-id>`, `<agent>`, and `<quota-check>` mean the same as in `SKILL.md`;
-`<orca>` is always the absolute path printed as `orca-executable:`.
+`<orca>` is always the absolute path printed as `orca-executable:`, and
+`<handle>` is always the checkpoint's `coordinator-terminal:` value.
 
 ## Wait by ending the turn
 
@@ -58,8 +59,10 @@ root (git-ignored, not the installed skill checkout) and use its absolute path
 everywhere. Update it before ending every turn and right after every
 `worker-start`, merge, or reservation change. It holds:
 
-- Run ID, Coordinator terminal handle, agent, absolute `<orca>` path, and the
-  resolved worker settings.
+- Run ID, agent, absolute `<orca>` path, and the resolved worker settings.
+- `coordinator-terminal: <handle>`: the Coordinator terminal handle, first the
+  value `check_preconditions.py` printed (`SKILL.md` step 0). Only
+  **Re-bind to this terminal** (**On every resume**) rewrites it.
 - `issues: #<n> #<n> ...`: the Issue set fixed in step 2. Update this line
   only for additions explicitly instructed by the user, before dispatch, and
   for removals the user chose for a `spec-gap` (step 6).
@@ -141,23 +144,53 @@ be manual.
 A notification, a user message, or a timed wake-up all resume the Run the same
 way. If one arrives during an active turn, finish the current operation first.
 
-1. If the quota is paused, follow `quota-pause.md` first.
-2. If a `coordinator-wait:<run-id>` time has come: in Codex remove that
+1. **Re-bind to this terminal.** Read this terminal's handle (Claude Code:
+   `$ORCA_TERMINAL_HANDLE` in bash; Codex: `$env:ORCA_TERMINAL_HANDLE` in
+   PowerShell) and compare it with the checkpoint's `coordinator-terminal:`.
+   If they are equal, do nothing. Otherwise:
+   1. Run `<orca> orchestration run-use --id <run-id> --json` once.
+   2. On success, rewrite the checkpoint's `coordinator-terminal:` to this
+      handle; `<handle>` is this value from now on. While the quota is paused,
+      also rewrite the terminal handle in the quota checkpoint (`<run-id>.md`
+      under `checkpoint_dir`, **On PAUSED_QUOTA or UNKNOWN** in
+      `quota-pause.md`).
+   3. Re-target the reservation: if the checkpoint's `reservation:` is not
+      `none` and its time has not come yet (one whose time has come is
+      removed by the steps below), re-create it to wake this terminal. While
+      the quota is paused, this is the `quota-guard:<run-id>` wake-up.
+      - **Codex:** remove the automation with `<orca> automations remove <id>`
+        and confirm with `<orca> automations list --json` that it is gone,
+        then create it again with the same name and time, passing the new
+        `<handle>` to `--terminal` (**Timed wake-ups** above, or
+        `quota-pause.md` for `quota-guard:<run-id>`). Record the new ID.
+      - **Claude Code:** run `CronList` and look for the reservation's marker;
+        if it is missing, `CronCreate` it again at the same time with the
+        same marker.
+   4. State in one line of the turn's final message that the Run was
+      re-bound to this terminal.
+
+   If `run-use` fails, do not repeat it: report its `error:` line to the user
+   (`SKILL.md` **Asking the user**) and do not advance the Run. When `check`
+   or another orchestration command fails with `consumer_fenced` (the Run is
+   bound to another terminal), do sub-steps 1-4 as above, then retry the
+   failed command once.
+2. If the quota is paused, follow `quota-pause.md` first.
+3. If a `coordinator-wait:<run-id>` time has come: in Codex remove that
    automation now (resolve a failure before creating another); in Claude Code
    it is already gone. Record `reservation: none`.
-3. Run `<quota-check>`; continue only on exit `0` (see `SKILL.md`
+4. Run `<quota-check>`; continue only on exit `0` (see `SKILL.md`
    **Quota control**).
-4. Process the messages as in **Receive messages**.
-5. Reconcile once: compare the checkpoint with live state (`list_workers.py`
+5. Process the messages as in **Receive messages**.
+6. Reconcile once: compare the checkpoint with live state (`list_workers.py`
    from `SKILL.md`, `task-list`, PRs). Use the checkpoint's `issues:` line
    as the Run's Issue set; never list Issues again to expand that set.
    Never repeat a dispatch, phase, or
    merge the checkpoint or live state shows as done or in progress; a second
    wake for the same event is not a new event.
-6. Handle due `wake-at:` times (pending CI, a reviewer retry per
+7. Handle due `wake-at:` times (pending CI, a reviewer retry per
    **On wake-up** in `review-quota-retry.md`), then start ready work within
    quota, `MAX_IMPL_WORKERS`, and `MAX_MERGE_WORKERS`.
-7. Set the reservation to the earliest remaining `wake-at:` time (none if
+8. Set the reservation to the earliest remaining `wake-at:` time (none if
    nothing remains), save the checkpoint, and end the turn. If a question to
    the user is pending, end with the reminder line from `SKILL.md`
    **Asking the user**.

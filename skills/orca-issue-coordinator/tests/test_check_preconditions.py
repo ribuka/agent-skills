@@ -83,6 +83,7 @@ def test_all_checks_pass(cp, capsys: pytest.CaptureFixture[str]) -> None:
         "preconditions: ok",
         f"skill-checkout: {CHECKOUT}",
         f"orca-executable: {ORCA}",
+        "coordinator-terminal: term_test",
     ]
     assert [ORCA, "status", "--json"] in cp.calls
     assert ["gh", "auth", "status"] in cp.calls
@@ -94,6 +95,15 @@ def test_all_checks_pass(cp, capsys: pytest.CaptureFixture[str]) -> None:
             "HEAD...origin/main"] in cp.calls
     assert ["git", "-C", CHECKOUT, "status", "--porcelain", "--",
             str(cp.SKILL_DIR.parent)] in cp.calls
+
+
+def test_prints_coordinator_terminal_after_orca_executable(
+        cp, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    monkeypatch.setenv("ORCA_TERMINAL_HANDLE", "term_1f1de89c-d8bd-49c2")
+    assert cp.main(args()) == 0
+    lines = capsys.readouterr().out.splitlines()
+    index = lines.index(f"orca-executable: {ORCA}")
+    assert lines[index + 1] == "coordinator-terminal: term_1f1de89c-d8bd-49c2"
 
 
 def test_skill_dir_is_the_resolved_script_parent(cp) -> None:

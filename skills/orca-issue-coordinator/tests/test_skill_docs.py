@@ -546,7 +546,7 @@ def test_cli_is_selected_once_and_used_by_absolute_path() -> None:
     for selector in ("ORCA_CLI_COMMAND", "orca-dev", "ORCA_DEV_REPO_ROOT", "orca-ide"):
         assert selector in step0
     assert "`orca-executable: <path>`" in step0
-    assert "never select\nthe executable again" in step0
+    assert "never select the executable again" in " ".join(step0.split())
     assert "do not try another Orca\nexecutable" in step0
     assert "orchestration.worker-auto-release.v1" in step0
     assert "outside the sandbox" in step0
@@ -713,7 +713,8 @@ def test_review_retry_shares_the_runs_reservation() -> None:
 def test_checkpoint_holds_resume_state() -> None:
     waiting = WAITING.read_text(encoding="utf-8")
     section = " ".join(waiting.split("## Checkpoint", 1)[1].split("\n## ", 1)[0].split())
-    for item in ("Run ID, Coordinator terminal handle, agent, absolute `<orca>` path",
+    for item in ("Run ID, agent, absolute `<orca>` path",
+                 "`coordinator-terminal: <handle>`: the Coordinator terminal handle",
                  "dispatch ID, worktree, branch, PR URL, review count",
                  "IDs of the messages already processed",
                  "head SHA, and absolute deadline",
@@ -806,7 +807,7 @@ def test_quota_paused_worker_resume_is_chosen_by_context_size() -> None:
     for text in ("worker-keep-open --dispatch <dispatch_id>",
                  "at or above the threshold, or `unknown`",
                  "--task <task_id> --retry-of <dispatch_id> --worktree branch:<branch> "
-                 "--terminal <handle>",
+                 "--terminal <worker-terminal>",
                  "--task <task_id> --retry-of <dispatch_id> --worktree branch:<branch> "
                  "--agent <agent> --model <model> --effort <effort>",
                  "Do not create a new Task with `--spec`"):
@@ -1170,3 +1171,100 @@ def test_implied_changes_go_into_the_brief_without_stopping_the_run() -> None:
     assert ("For each `implied-change` the pre-dispatch check reported for the Issue, add the "
             "change and tell the worker to make it as a consequence of the Issue's scope and to "
             "state the change in the PR body") in step7
+
+
+def _rebind(waiting: str) -> str:
+    resume = " ".join(waiting.split("## On every resume", 1)[1].split("\n## ", 1)[0].split())
+    return resume.split("1. **Re-bind to this terminal.**", 1)[1].split(
+        "2. If the quota is paused", 1)[0]
+
+
+def test_skill_md_defines_handle_from_preconditions() -> None:
+    skill = " ".join(SKILL_MD.read_text(encoding="utf-8").split())
+    step0 = skill.split("## 0. Check preconditions", 1)[1].split("## 1. Plan and dispatch", 1)[0]
+    assert ("prints `skill-checkout: <path>`, `orca-executable: <path>`, and "
+            "`coordinator-terminal: <handle>`; keep all three") in step0
+    assert ("`<handle>` below is the Coordinator terminal handle: the `coordinator-terminal:` "
+            "value, and after the Run is re-bound to a new terminal (**Re-bind to this terminal** "
+            "in [Waiting](references/waiting.md)), the checkpoint's `coordinator-terminal:` "
+            "value") in step0
+    waiting = " ".join(WAITING.read_text(encoding="utf-8").split())
+    intro = waiting.split("## Wait by ending the turn", 1)[0]
+    assert "`<handle>` is always the checkpoint's `coordinator-terminal:` value" in intro
+
+
+def test_resume_rebinds_the_run_before_quota_and_messages() -> None:
+    waiting = WAITING.read_text(encoding="utf-8")
+    resume = " ".join(waiting.split("## On every resume", 1)[1].split("\n## ", 1)[0].split())
+    rebind_at = resume.index("**Re-bind to this terminal.**")
+    assert rebind_at < resume.index("follow `quota-pause.md` first")
+    assert rebind_at < resume.index("Run `<quota-check>`")
+    assert rebind_at < resume.index("Process the messages")
+    rebind = _rebind(waiting)
+    for text in ("`$ORCA_TERMINAL_HANDLE` in bash", "`$env:ORCA_TERMINAL_HANDLE` in PowerShell",
+                 "compare it with the checkpoint's `coordinator-terminal:`",
+                 "If they are equal, do nothing",
+                 "Run `<orca> orchestration run-use --id <run-id> --json` once",
+                 "rewrite the checkpoint's `coordinator-terminal:` to this handle",
+                 "`<handle>` is this value from now on",
+                 "the Run was re-bound to this terminal",
+                 "fails with `consumer_fenced`", "retry the failed command once"):
+        assert text in rebind, text
+    assert rebind.index("run-use --id <run-id>") < rebind.index(
+        "rewrite the checkpoint's `coordinator-terminal:`")
+
+
+def test_rebind_updates_quota_checkpoint_and_retargets_reservations() -> None:
+    rebind = _rebind(WAITING.read_text(encoding="utf-8"))
+    assert ("While the quota is paused, also rewrite the terminal handle in the quota checkpoint "
+            "(`<run-id>.md` under `checkpoint_dir`") in rebind
+    for text in ("if the checkpoint's `reservation:` is not `none`",
+                 "the `quota-guard:<run-id>` wake-up",
+                 "**Codex:** remove the automation with `<orca> automations remove <id>`",
+                 "`<orca> automations list --json` that it is gone",
+                 "create it again with the same name and time, passing the new `<handle>` to "
+                 "`--terminal`",
+                 "**Claude Code:** run `CronList` and look for the reservation's marker",
+                 "`CronCreate` it again at the same time with the same marker"):
+        assert text in rebind, text
+    pause = " ".join(QUOTA_PAUSE.read_text(encoding="utf-8").split())
+    checkpoint = pause.split("## On PAUSED_QUOTA or UNKNOWN", 1)[1].split("2. Ask every", 1)[0]
+    assert "the Coordinator terminal handle (`<handle>`)" in checkpoint
+    assert "saved Coordinator terminal (`<handle>`)" in pause
+
+
+def test_rebind_failure_stops_the_run() -> None:
+    rebind = _rebind(WAITING.read_text(encoding="utf-8"))
+    assert ("If `run-use` fails, do not repeat it: report its `error:` line to the user "
+            "(`SKILL.md` **Asking the user**) and do not advance the Run") in rebind
+
+
+def test_quota_pause_rebinds_first_by_reference_only() -> None:
+    pause = QUOTA_PAUSE.read_text(encoding="utf-8")
+    rebind = "do **Re-bind to this terminal** (**On every resume** in [Waiting](waiting.md))"
+    paused = " ".join(pause.split("## While paused", 1)[1].split("\n## ", 1)[0].split())
+    assert paused.split("2. ", 1)[0].endswith(f"1. Before anything else, {rebind}. ")
+    wake = " ".join(pause.split("## On wake-up", 1)[1].split("\n## ", 1)[0].split())
+    assert wake.startswith(f"Before anything else, {rebind}.")
+    for copied in ("run-use", "coordinator-terminal:", "consumer_fenced"):
+        assert copied not in pause
+
+
+def test_worker_terminal_placeholder_differs_from_coordinator_handle() -> None:
+    pause = " ".join(QUOTA_PAUSE.read_text(encoding="utf-8").split())
+    assert "--terminal <handle>" not in pause
+    assert "the worker's terminal handle (`<worker-terminal>`)" in pause
+    assert "where `<worker-terminal>` is the worker's terminal handle you recorded" in pause
+
+
+def test_waiting_section_warns_about_agent_sleep() -> None:
+    skill = " ".join(SKILL_MD.read_text(encoding="utf-8").split())
+    section = skill.split("## Waiting", 1)[1].split("## Token budget", 1)[0]
+    for text in ("Orca's Agent sleep suspends a waiting Coordinator",
+                 "not processed until the user resumes the Coordinator",
+                 "**Re-bind to this terminal** in [Waiting](references/waiting.md) before "
+                 "anything else",
+                 "first re-binds the Run to this terminal if its handle changed"):
+        assert text in section, text
+    plan = skill.split("6. Before the first dispatch", 1)[1].split("## 2.", 1)[0]
+    assert "sleep" not in plan.lower()

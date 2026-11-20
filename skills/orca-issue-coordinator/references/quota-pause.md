@@ -3,9 +3,8 @@
 Read this when `<quota-check>` returns PAUSED_QUOTA or UNKNOWN, when a
 worker reports `worker-quota-paused:`, when a worker's `escalation` carries
 `failureKind=usageLimitReached`, or when the Coordinator is woken while
-a Run is paused. `<quota-check>`, `<run-id>`,
-`<orca>`, and `<skill-dir>` mean the same as in `SKILL.md`. While paused, no
-new work starts:
+a Run is paused. `<quota-check>`, `<run-id>`, `<orca>`, `<handle>`, and
+`<skill-dir>` mean the same as in `SKILL.md`. While paused, no new work starts:
 no dispatch, merge preparation, merge, or re-dispatch, and the normal rule to
 continue other independent Tasks does not apply.
 
@@ -38,8 +37,8 @@ Task:
      `unknown`. While the quota waits, the prompt cache expires, so the
      same conversation would be written to the cache again in full and then
      resent on every call. Release the worker as `SKILL.md` step 11 says.
-2. Record in the checkpoint the Task, dispatch ID, terminal handle,
-   worktree, branch, PR URL, review count, unresolved must findings, follow-up candidates, the work left,
+2. Record in the checkpoint the Task, dispatch ID, the worker's terminal
+   handle (`<worker-terminal>`), worktree, branch, PR URL, review count, unresolved must findings, follow-up candidates, the work left,
    `context-tokens`, and the chosen resume method.
 3. Run `<quota-check>`. On PAUSED_QUOTA or UNKNOWN, follow
    **On PAUSED_QUOTA or UNKNOWN** (or **While paused** when the Run is
@@ -55,8 +54,8 @@ reaches it only after its next turn ends, and its long conversation would be
 written to the expired prompt cache again in full. Always use the **fresh
 worker** method:
 
-1. Record in the checkpoint the Task, dispatch ID, terminal handle,
-   worktree, branch, PR URL (if any), review count, unresolved must findings, follow-up candidates, and the
+1. Record in the checkpoint the Task, dispatch ID, the worker's terminal
+   handle, worktree, branch, PR URL (if any), review count, unresolved must findings, follow-up candidates, and the
    resume method `fresh worker`. The work left is unknown until the branch
    and PR are checked (**Handoff to a retried worker**).
 2. Stop the old dispatch, so that it cannot continue beside its successor:
@@ -102,9 +101,9 @@ first turn ends.
 ## On PAUSED_QUOTA or UNKNOWN
 
 1. Write the checkpoint to `<run-id>.md` under the result's
-   `checkpoint_dir`: Run ID, each Task's
-   phase, dispatch ID, worktree, branch, PR URL, review count, blockers,
-   and pending actions, plus the quota helper path and state directory.
+   `checkpoint_dir`: Run ID, the Coordinator terminal handle (`<handle>`),
+   each Task's phase, dispatch ID, worktree, branch, PR URL, review count,
+   blockers, and pending actions, plus the quota helper path and state directory.
    For each worker asked to stop, record the work left in that phase.
 2. Ask every active worker, through ORCA Orchestration messages sent to its
    Dispatch (`send --to dispatch:<dispatch_id>`, see `SKILL.md`
@@ -118,8 +117,8 @@ first turn ends.
    Run's only reservation.
    **Codex:** follow the
    `quota-guard` skill's Codex Orca automation procedure: deduplicate the
-   `quota-guard:<run-id>` name, use its `wake` precheck with the saved terminal
-   and the absolute `<orca>` from the checkpoint, record the automation ID,
+   `quota-guard:<run-id>` name, use its `wake` precheck with the saved
+   Coordinator terminal (`<handle>`) and the absolute `<orca>` from the checkpoint, record the automation ID,
    and verify it.
    Include this reference's installed path and the checkpoint in the wake text.
    On wake-up remove that automation before checking quota. Do not use
@@ -145,22 +144,25 @@ the user that manual resumption is required.
 Whatever wakes the Coordinator (a worker message, a user message, or any
 other notification):
 
-1. In Codex, reconcile the recorded automation with `<orca> automations list
+1. Before anything else, do **Re-bind to this terminal** (**On every
+   resume** in [Waiting](waiting.md)).
+2. In Codex, reconcile the recorded automation with `<orca> automations list
    --json` and keep exactly one quota wake-up per Run, following `quota-guard`.
    In Claude Code, run `CronList` and look for `quota-guard:<run-id>`. If it exists, do not
    create another; never create a second wake-up for one Run. If it is
    missing, create it as in **On PAUSED_QUOTA or UNKNOWN** step 3.
-2. Receive the messages as in **Receive messages** in [Waiting](waiting.md)
+3. Receive the messages as in **Receive messages** in [Waiting](waiting.md)
    and record every delivered worker state in the checkpoint. Answer
    questions, but start no new work. Do not create a `coordinator-wait`
    reservation while paused.
-3. Reply with one short line and end the turn.
+4. Reply with one short line and end the turn.
 
 ## On wake-up
 
-In Codex, remove the recorded quota automation first (its cron recurs);
-resolve removal failures before creating another. In Claude Code, the fired
-one-shot is gone. Run `<quota-check>`. If it is not READY, create
+Before anything else, do **Re-bind to this terminal** (**On every resume** in
+[Waiting](waiting.md)). Then, in Codex, remove the recorded quota automation
+first (its cron recurs); resolve removal failures before creating another. In
+Claude Code, the fired one-shot is gone. Run `<quota-check>`. If it is not READY, create
 exactly one new provider-specific wake-up as in **On PAUSED_QUOTA or UNKNOWN** and end
 the turn. On READY, reconcile the checkpoint with live `task-list`,
 `list_workers.py`, branches, and PRs, then resume without repeating completed
@@ -175,8 +177,9 @@ phases or duplicating dispatches:
   conversation** method and whose kept-open terminal is still available:
   start it again in its own conversation with `start_worker.py`
   (`SKILL.md` **Starting workers**) and
-  `--task <task_id> --retry-of <dispatch_id> --worktree branch:<branch> --terminal <handle>`
-  (no `--model` / `--effort`; they cannot combine with `--terminal`). After
+  `--task <task_id> --retry-of <dispatch_id> --worktree branch:<branch> --terminal <worker-terminal>`,
+  where `<worker-terminal>` is the worker's terminal handle you recorded (no
+  `--model` / `--effort`; they cannot combine with `--terminal`). After
   verifying its next `worker_done`, release the terminal you kept open as
   `SKILL.md` step 11 says.
 - Any other stopped worker (the **fresh worker** method, including every
