@@ -74,3 +74,18 @@ def test_template_decisions_and_related_issues_rules() -> None:
                    "Never write \"undecided\" or \"decide before starting\"",
                    "decide it for each case", "run-to-run variation"):
         assert phrase in template
+
+
+def test_verification_plan_covers_baseline_path_and_pr_ci_values() -> None:
+    step = _flat(SKILL_MD).split("### 4. Plan how each acceptance criterion is verified", 1)[1]
+    step = step.split("### 5.", 1)[0]
+    for phrase in ("same entry point, data, and settings", "prototype",
+                   "skips or replaces part of the path", "PR's own CI",
+                   "pull request comment", "the run that counts"):
+        assert phrase in step
+
+
+def test_template_covers_baseline_path_and_pr_ci_values() -> None:
+    template = _flat(TEMPLATE)
+    for phrase in ("same entry point", "PR's own CI"):
+        assert phrase in template
