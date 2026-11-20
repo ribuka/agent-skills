@@ -234,3 +234,36 @@ def test_restated_checks_accumulate_across_phases() -> None:
         assert "restatement applied to the PR so far, not only" in text
         assert "`none` only when the PR has none" in text
         assert "the PR body's `Restated acceptance criteria` section" in text
+
+
+def test_local_test_failures_are_checked_on_main_before_judged_unrelated() -> None:
+    skill = " ".join(SKILL_MD.read_text(encoding="utf-8").split())
+    ref = (SKILL_DIR / "references/verification.md").read_text(encoding="utf-8")
+    section = " ".join(_section(ref, "Local test failures").split())
+    for phrase in ("In every mode", "Run the failed test alone on the branch",
+                   "git fetch origin main", "git worktree add --detach <dir> origin/main",
+                   "outside the repository", "mktemp -d", "run the same test alone there",
+                   "git worktree remove --force <dir>",
+                   "Never switch branches in the working worktree",
+                   "| fails | fails | Existing failure.",
+                   "| passes | passes | Order-dependent or flaky.",
+                   "| fails | passes | Caused by the diff. Fix it",
+                   "| passes | fails | Existing failure on `main`.",
+                   "| cannot run on `main` (e.g. dependency setup fails) | — | Do not judge it unrelated.",
+                   "In worker mode, report it as a blocker with the reason",
+                   "in Standalone mode, report it to the user and wait for instructions",
+                   "with no review comment URL", "Do not create Issues",
+                   "local test failure: <test ID> — failed in: <the run that failed, "
+                   "e.g. full suite on branch>; branch alone: <failed|passed>; "
+                   "main alone (<first 7 characters of the main SHA>): <failed|passed>"):
+        assert phrase in section
+    step2 = skill.split("### 2.", 1)[1].split("### 3.", 1)[0]
+    step7 = skill.split("### 7.", 1)[1].split("### 8.", 1)[0]
+    step9 = skill.split("### 9.", 1)[1].split("### 10.", 1)[0]
+    for step in (step2, step7, step9):
+        assert "**Local test failures** in [Verification](references/verification.md)" in step
+    assert "Never judge a local test failure unrelated to the diff" in step2
+    assert "`local test failure:` items without a review comment URL" in step7
+    modes = skill.split("## Execution modes", 1)[1].split("## Workflow", 1)[0]
+    assert "report as a blocker, with the reason, a local test failure" in modes
+    assert "cannot run on `main`" in modes

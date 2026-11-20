@@ -77,7 +77,9 @@ everywhere. Update it before ending every turn and right after every
   findings, blockers, `unmet/unverified acceptance criteria:` with reasons,
   `restated acceptance criteria:`,
   any draft comment for remaining criteria (comment URL, criteria, reasons,
-  and merge-target head as a full SHA), any head approved with **Merge as is**, and the IDs
+  and merge-target head as a full SHA), any head approved with **Merge as is**,
+  `follow-up candidates:` from each handoff, unchanged, `ci-reruns: <test ID> x<count> ...`
+  (step 14's reruns of unrelated CI failures, or `ci-reruns: none`), and the IDs
   of the messages already processed.
 - Pending CI: PR, head SHA, and absolute deadline.
 - Every pending time as its own line

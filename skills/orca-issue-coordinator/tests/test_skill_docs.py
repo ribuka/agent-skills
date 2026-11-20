@@ -54,9 +54,29 @@ def test_findings_status_and_followup_candidates() -> None:
                  "review-latest-findings: none", "do not merge"):
         assert text in common
     step17 = skill.split("17. Mark", 1)[1].split("## Quota control", 1)[0]
-    for text in ("`follow-up candidates:`", "**起票候補**", "summary and review comment URL",
+    for text in ("`follow-up candidates:`", "**起票候補**",
+                 "for a review suggestion, its summary and review comment URL",
+                 "for a `local test failure:` item (no review comment URL), its line as reported",
                  "Do not create Issues", "user decides"):
         assert text in step17
+
+
+def test_step17_aggregates_local_test_failures_with_ci_reruns() -> None:
+    skill = " ".join(SKILL_MD.read_text(encoding="utf-8").split())
+    step17 = skill.split("17. Mark", 1)[1].split("## Quota control", 1)[0]
+    for text in ("Merge `local test failure:` items with the same test ID into one entry",
+                 "the count and the Issue numbers it came from",
+                 "every CI rerun of the same test ID recorded in step 14 (`ci-reruns:`)",
+                 "a rerun test with no such report gets its own entry",
+                 'whose total is two or more with "suggest filing an Issue"',
+                 "still list entries with a total of one"):
+        assert text in step17
+    assert "more than once" not in step17
+    waiting = " ".join(WAITING.read_text(encoding="utf-8").split())
+    per_task = waiting.split("- Per Task:", 1)[1].split("- Pending CI:", 1)[0]
+    for text in ("`follow-up candidates:` from each handoff, unchanged",
+                 "`ci-reruns: <test ID> x<count> ...`", "`ci-reruns: none`"):
+        assert text in per_task
 
 
 def test_merge_prep_skipped_when_pr_is_already_ready() -> None:
@@ -495,7 +515,10 @@ def test_failed_ci_reruns_once_only_when_unrelated() -> None:
     assert "rerun the failed jobs once yourself" in rule
     assert "`gh run rerun <run-id> --failed`" in rule
     assert "or the rerun fails again, do not rerun further" in rule
-    assert "suggest an\n      Issue for a test that failed this way more than once" in rule
+    flat = " ".join(rule.split())
+    assert "record the rerun and the test ID in the Task's `ci-reruns:` checkpoint line" in flat
+    assert "counts it with the `local test failure:` reports of the same test" in flat
+    assert "more than once" not in rule
 
 
 def all_docs() -> list[Path]:

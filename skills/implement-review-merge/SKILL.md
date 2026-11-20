@@ -39,8 +39,9 @@ whenever a step below says so; never merge on a guess.
     SHA, findings counts, unresolved must findings, blockers, the
     CI-verified head (full SHA) with its CI result (`success` or `failure`,
     naming failed checks), and `follow-up candidates:` (valuable unadopted
-    optional suggestions with their summaries and review comment URLs;
-    `none` if empty), so a fresh worker can take over. Do not merge.
+    optional suggestions with their summaries and review comment URLs,
+    and `local test failure:` items; `none` if empty), so a fresh worker
+    can take over. Do not merge.
   - **Merge preparation:** Execute steps 8–9 only after the Coordinator
     requests it. This usually starts in a new conversation: rebuild the
     state from the Coordinator's handoff, `gh pr view <pr-number>` (without
@@ -63,6 +64,10 @@ whenever a step below says so; never merge on a guess.
     never hand off with `CI pending`. Report monitor-error as a blocker.
     Do not merge.
 - In worker mode:
+  - In both phases, report as a blocker, with the reason, a local test
+    failure you believe is not caused by the diff but cannot run on
+    `main` (**Local test failures** in
+    [Verification](references/verification.md)); never judge it unrelated.
   - In both Implementation and Merge preparation, include
     `unmet/unverified acceptance criteria:` in `worker_done`: list every
     criterion not met or not verified, with the reason for each (for example,
@@ -144,6 +149,10 @@ Implement the task, or address the review findings from step 6.
 
 Run the relevant tests as **Token budget** below says.
 
+Never judge a local test failure unrelated to the diff without checking
+the test alone on the branch and on `origin/main`; follow **Local test
+failures** in [Verification](references/verification.md), in every mode.
+
 When the Issue fixes a bug and states its reproduction conditions (data
 shape and scale, steps, environment), confirm the fix under those
 conditions once at the end; synthesize data the Issue describes, and report
@@ -210,7 +219,10 @@ Use `review-findings` to decide whether to go back to step 2:
   with a summary and review comment URL for each. In Standalone mode,
   include them as **起票候補** in the final report; do not create Issues.
   In both worker phases, include them in `worker_done` as
-  `follow-up candidates:`.
+  `follow-up candidates:`. Local test failures not caused by the diff
+  go into the same list in every mode, as `local test failure:` items
+  without a review comment URL (**Local test failures** in
+  [Verification](references/verification.md)).
 - If status reports `review-latest-findings: unknown`, read only the latest
   review body and determine whether unresolved must findings remain.
   `review-latest-findings: none` means no review; do not merge.
@@ -241,6 +253,8 @@ git fetch --prune origin
 Re-run the tests and CI on the branch as synced with `main`, and confirm that
 everything passes.
 
+- If a local test fails and you believe the diff is not the cause, follow
+  **Local test failures** in [Verification](references/verification.md).
 - If the rebase or conflict resolution changed the implementation in
   substance, re-run `pr-cross-review` as needed.
 - Re-reviews count toward the `MAX_REVIEWS` limit.
