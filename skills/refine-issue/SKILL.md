@@ -103,6 +103,24 @@ expected to have, and the result that counts as passing.
   (minimum to maximum) before choosing the value. State in `Passing:` how
   run-to-run variation is handled (e.g. judged on the median, or m of n
   runs pass), and record the measurements in Decisions.
+  - Measure the baseline through the `Check:`'s same entry point, data,
+    and settings (the same function or command). When the default branch
+    cannot run that check (the feature is missing or fails), measure a
+    prototype that goes through the same entry point.
+  - Never choose a threshold from a measurement that skips or replaces
+    part of the path (e.g. a prototype that processes all the data at
+    once while the real code processes it chunk by chunk).
+  - In Decisions, record the entry point measured and whether it ran on
+    the default branch or a prototype.
+- When a criterion records a value only the PR's own CI produces (a value
+  known only after that PR's CI runs, e.g. the duration or run ID of the
+  PR's run), have it recorded in a pull request comment, and make
+  `Check:` reading that comment.
+  - Require recording it in a file only when a file is needed: the user
+    asks for it, or the repository's rules keep measurements in files.
+    Then state in `Passing:` the run that counts (the run of the last
+    commit that changed what is measured) and that later commits not
+    changing what is measured do not replace the value.
 - Only when the user explicitly requires such a check before merging, keep
   it as a pre-merge acceptance criterion and decide, before publishing: who
   runs it, the environment and steps, when it runs (e.g. after review, on

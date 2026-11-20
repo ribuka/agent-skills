@@ -108,7 +108,8 @@ criterion is checked by the repository's tests or commands.
 | Wanted, but the agent cannot run it | Post-merge checks. Not an acceptance criterion. |
 | The user requires it before merging | Acceptance criteria, with indented lines under `Check:` for who runs it, environment and steps, timing, passing result, and what happens if it cannot be run. |
 | Feasibility unknown and it would decide the merge | A first implementation step (or a separate issue) for a short investigation; the dependent criteria are fixed from its result, and the issue says how. |
-| A measured value with a threshold | `Passing:` states the threshold and how run-to-run variation is handled; the baseline measurement goes in Decisions. |
+| A measured value with a threshold | `Passing:` states the threshold and how run-to-run variation is handled; the baseline is measured through the `Check:`'s same entry point, data, and settings, and goes in Decisions with that entry point and whether it ran on the default branch or a prototype. |
+| A value only the PR's own CI produces | Acceptance criteria, with `Check:` reading the pull request comment that records it. Only when the value must also go in a file, `Passing:` names the run that counts (the run of the last commit that changed what is measured) and says later commits not changing what is measured do not replace the value. |
 
 Omit the Post-merge checks section when there are none.
 
