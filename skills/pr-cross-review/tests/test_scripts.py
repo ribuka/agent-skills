@@ -11,6 +11,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -173,6 +174,9 @@ fake_reviewer() {
         fi
         : >"$REVIEW_STATE_FILE"
     fi
+    if [ "$REVIEW_REVIEWER_DELAY" != "0" ]; then
+        sleep "$REVIEW_REVIEWER_DELAY"
+    fi
     return "$REVIEW_EXIT_CODE"
 }
 
@@ -227,6 +231,7 @@ def run_review_script(
     merge_base: str = "found",
     diff_stat: str = "found",
     pr_title: str = "T",
+    reviewer_delay: int = 0,
 ) -> subprocess.CompletedProcess[str]:
     """Run a review script with deterministic fake CLI and GitHub commands."""
     git = shutil.which("git")
@@ -277,6 +282,7 @@ def run_review_script(
         "REVIEW_MERGE_BASE_COMMIT": MERGE_BASE_COMMIT,
         "REVIEW_GIT_FETCH_FILE": (tmp_path / "git-fetch").as_posix(),
         "REVIEW_DIFF_STAT": diff_stat,
+        "REVIEW_REVIEWER_DELAY": str(reviewer_delay),
         "TMPDIR": temp_dir.as_posix(),
     }
     environment.pop("PR_CROSS_REVIEW_IN_PROGRESS", None)
@@ -1463,6 +1469,15 @@ def test_codex_disables_unused_features(tmp_path: Path) -> None:
     args = reviewer_args(result.stdout)
     assert CODEX_DISABLED_FEATURES in args
     assert "multi_agent" not in args
+
+
+def test_codex_exit_is_noticed_within_a_second(tmp_path: Path) -> None:
+    """A reviewer still running at the first check is noticed soon after it exits, not after 10 seconds."""
+    started = time.monotonic()
+    result = run_review_script(tmp_path, "run_codex_review.sh", post_comment=True, reviewer_delay=1)
+    elapsed = time.monotonic() - started
+    assert result.returncode == 0, result.stderr
+    assert elapsed < 6, f"run_codex_review.sh took {elapsed:.1f}s"
 
 
 @pytest.mark.parametrize("script_name", SCRIPT_NAMES)

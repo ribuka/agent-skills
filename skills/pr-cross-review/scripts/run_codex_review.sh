@@ -141,19 +141,26 @@ codex_args+=(--disable memories --disable plugins --disable apps --disable compu
 # `-` makes codex read the prompt from stdin (the prompt file).
 start_reviewer "$prompt_file" codex "${codex_args[@]}" - >"$log_file" 2>&1
 
-poll_interval_seconds=10
+# Codex's exit is noticed within a second; the timeouts are checked every
+# check_interval_seconds.
+check_interval_seconds=10
 start_time=$(date +%s)
 last_log_size=-1
 last_progress_time=$start_time
 
 while true; do
-    # Re-check aliveness both before and after the sleep: codex may have
-    # exited during the sleep, which must not be misreported as a timeout.
-    if ! kill -0 "$REVIEWER_PID" 2>/dev/null; then
-        break
-    fi
-    sleep "$poll_interval_seconds"
-    if ! kill -0 "$REVIEWER_PID" 2>/dev/null; then
+    # Check aliveness every second until the next timeout check, and once more
+    # right before it: codex may have exited meanwhile, which must not be
+    # misreported as a timeout.
+    reviewer_exited=false
+    for ((waited = 0; waited < check_interval_seconds; waited++)); do
+        if ! kill -0 "$REVIEWER_PID" 2>/dev/null; then
+            reviewer_exited=true
+            break
+        fi
+        sleep 1
+    done
+    if [ "$reviewer_exited" = "true" ] || ! kill -0 "$REVIEWER_PID" 2>/dev/null; then
         break
     fi
 
