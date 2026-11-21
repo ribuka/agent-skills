@@ -933,6 +933,17 @@ Follow [Waiting](references/waiting.md) in both Claude Code and Codex
 - Report to the user only when state changes (dispatch, worker_done, merge,
   blocker, question). Never post "no news yet" updates.
 - Keep reports short: Issue, PR URL, state, next step.
+- **Status table at milestones only:** after the first dispatch, after each
+  merge, when asking the user or reporting a blocker, and at Run completion,
+  end the report with one table covering every Issue in the Run, not only
+  the one that changed. Other state changes get one line without a table.
+  - Columns, in this order: `Issue`, `ワーカー` (dispatch ID and worktree),
+    `PR` (URL), `状態`, `次の手順`. Use `-` for an empty cell.
+  - `状態` is exactly one of: `依存待ち`, `枠待ち`, `実装中`, `マージ準備中`,
+    `CI 待ち`, `クォータ待ち`, `ブロック中`, `マージ済み`.
+  - Put anything else worth telling (e.g. a change the pre-dispatch check
+    added, a restated acceptance criterion) in the text before the table,
+    never in a table cell. Keep `次の手順` to the next action only.
 - **Read each guide or reference at most once per Run:** a skill's
   `SKILL.md`, an `<orca> skills get` guide or `--reference`, and this skill's
   `references/`. Never load the same one again through another command (e.g.
