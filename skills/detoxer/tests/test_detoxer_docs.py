@@ -162,10 +162,13 @@ def test_settings_are_resolved_by_the_script() -> None:
 
 def test_dedup_reads_records_respects_rejections_and_open_prs() -> None:
     loaded = _step(2)
-    for phrase in ("gh api --paginate", "state=all", "never a capped list",
+    for phrase in ('gh api --method GET --paginate "repos/{owner}/{repo}/issues"',
+                   "-f labels=<ISSUE_LABEL> -f state=all -f per_page=100",
+                   "never inside the URL", "never a capped list",
                    "the marker in its body", "`not_planned`"):
         assert phrase in loaded
     assert "--limit" not in loaded
+    assert "issues?" not in loaded
     dedup = _step(5)
     for phrase in ("fingerprint", "compare by intent", "`gh pr list`"):
         assert phrase in dedup

@@ -93,10 +93,13 @@ the hotspot is every file tracked at `<scan-ref>`
 ### 2. Load what was already decided
 
 List every issue with the label, following every page (never a capped
-list; a missing old issue would be filed again):
+list; a missing old issue would be filed again). Pass the query values as
+`-f` fields, never inside the URL, so `gh` encodes a label holding `&`,
+spaces, or other special characters:
 
 ```bash
-gh api --paginate "repos/{owner}/{repo}/issues?labels=<ISSUE_LABEL>&state=all&per_page=100" \
+gh api --method GET --paginate "repos/{owner}/{repo}/issues" \
+  -f labels=<ISSUE_LABEL> -f state=all -f per_page=100 \
   --jq '.[] | select(.pull_request | not) | {number, title, state, state_reason, body}'
 ```
 
