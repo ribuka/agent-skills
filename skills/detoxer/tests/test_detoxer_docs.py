@@ -13,6 +13,7 @@ SKILL_MD = SKILL_DIR / "SKILL.md"
 CONFIG = SKILL_DIR / "config.conf"
 CANDIDATE = SKILL_DIR / "references" / "candidate.md"
 TRIAGE = SKILL_DIR / "references" / "triage.md"
+REPORT = SKILL_DIR / "references" / "report.md"
 
 CONFIG_KEYS = (
     "MAX_ISSUES_PER_RUN",
@@ -187,15 +188,25 @@ def test_filing_is_capped_labelled_and_records_each_issue() -> None:
 
 
 def test_report_keeps_every_unfiled_candidate_in_the_session_log() -> None:
-    report = _step(7)
-    assert "in your final response, so it stays in the session log" in report
-    unfiled = report.split("Unfiled candidates:", 1)[1].split("Skipped as duplicates", 1)[0]
-    for phrase in ("every candidate that passed triage but was not filed",
+    step = _step(7)
+    assert "in your final response, so it stays in the session log" in step
+    assert "[report.md](references/report.md)" in step
+    assert "every list of items is a table" in step
+    assert "unfiled candidates" in _step(5)
+    report = REPORT.read_text(encoding="utf-8")
+    headings = re.findall(r"^## (.+)$", report, flags=re.MULTILINE)
+    assert headings == ["Scope", "Filed issues", "Unfiled candidates",
+                        "Skipped as duplicates", "Dropped findings", "Detectors"]
+    assert "Put every list of items in a table" in _flat(REPORT)
+    unfiled = _flat(REPORT).split("## Unfiled candidates", 1)[1].split(
+        "## Skipped as duplicates", 1)[0]
+    for phrase in ("Every candidate that passed triage but was not filed",
+                   "| # | Title | Score | B / C / R | Why not filed |",
                    "`MAX_ISSUES_PER_RUN`", "rejected at confirmation",
                    "open pull request", "refine-issue did not file it", "`--dry-run`",
-                   "fingerprint", "score", "Evidence", "proposed change"):
+                   "local mode", "Fingerprint:", "| Axis | Rating | Reason |",
+                   "| Evidence | What is there |", "**Proposed change:**"):
         assert phrase in unfiled
-    assert "unfiled candidates" in _step(5)
 
 
 def test_dry_run_skips_filing_and_implementing() -> None:

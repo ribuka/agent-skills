@@ -165,25 +165,9 @@ First clean up: `git worktree remove --force <scan-dir>/checkout`, then
 delete `<scan-dir>` (on every path through steps 1-6, including errors).
 
 Write the report in your final response, so it stays in the session log:
-the session log is the only place unfiled candidates are kept. Report, in
-this order:
-
-- Scope: default branch commit, hotspot window (or whole repository), number of files.
-- Filed issues (URL, title, score).
-- Unfiled candidates: every candidate that passed triage but was not
-  filed, each with:
-  - Why it was not filed: beyond `MAX_ISSUES_PER_RUN`, rejected at
-    confirmation, waiting for an open pull request (its number),
-    refine-issue did not file it (its reason), `--dry-run`, or local mode.
-  - Title, fingerprint, and the benefit / cost / risk ratings with the
-    score.
-  - Evidence (paths and line ranges) and the proposed change in one or two
-    sentences.
-
-  They are found again next run if still relevant.
-- Skipped as duplicates (with the matching issue number).
-- Dropped findings worth mentioning, with the triage reason.
-- Detectors skipped and why.
+the session log is the only place unfiled candidates are kept. Use the
+sections and tables in [report.md](references/report.md), in its order:
+every list of items is a table, never a run of bullets.
 
 If `IMPLEMENT_FILED_ISSUES` is `false`, stop here.
 
