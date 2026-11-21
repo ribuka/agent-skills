@@ -18,7 +18,10 @@
 #     the body cannot end up somewhere git would pick it up;
 #   - records the PR head commit captured by the parent review wrapper
 #     (PR_CROSS_REVIEW_REVIEWED_COMMIT), which the wrapper later reads back to
-#     count reviews and narrow re-reviews.
+#     count reviews and narrow re-reviews;
+#   - records the reviewer model and reasoning effort the parent review
+#     wrapper launched the reviewer with (PR_CROSS_REVIEW_REVIEWER_MODEL,
+#     PR_CROSS_REVIEW_REVIEWER_EFFORT).
 #
 # Usage:
 #   post_pr_comment.sh <pr-number> <body-file> <codex|claude>
@@ -82,6 +85,13 @@ if ! [[ "$reviewed_commit" =~ ^[0-9a-fA-F]{40}$ ]]; then
     exit 1
 fi
 
+reviewer_model=${PR_CROSS_REVIEW_REVIEWER_MODEL:-}
+reviewer_effort=${PR_CROSS_REVIEW_REVIEWER_EFFORT:-}
+if ! [[ "$reviewer_model" =~ ^[^[:space:]]+$ && "$reviewer_effort" =~ ^[^[:space:]]+$ ]]; then
+    echo "error: PR_CROSS_REVIEW_REVIEWER_MODEL and PR_CROSS_REVIEW_REVIEWER_EFFORT must be set without whitespace" >&2
+    exit 1
+fi
+
 comment_file=$(mktemp)
 trap 'rm -f "$comment_file"' EXIT
 
@@ -103,6 +113,8 @@ gh pr view "$pr_number" --repo "$repo" --json url >/dev/null
 
 # The footer format is parsed by list_review_history in common.sh; keep both in sync.
 printf '\n\n_Reviewed by %s. Posted via pr-cross-review skill._\n' "$agent_label" >>"$comment_file"
+printf 'Reviewer model: %s\n' "$reviewer_model" >>"$comment_file"
+printf 'Reasoning effort: %s\n' "$reviewer_effort" >>"$comment_file"
 printf 'Reviewed commit: %s\n' "$reviewed_commit" >>"$comment_file"
 printf '%s\n' "$findings_line" >>"$comment_file"
 

@@ -151,3 +151,19 @@ The last non-empty line of the body must be
 are recorded in the provenance footer after `Reviewed commit:`. Missing or
 malformed counts prevent posting and exit 1 with this stderr message:
 `error: review body must end with "review-findings: must=<n> optional=<n>"`.
+
+The footer also records the model and reasoning effort the review wrapper
+launched the reviewer with (after `--model` / `--effort` and config are
+applied):
+
+```text
+_Reviewed by <Codex|Claude>. Posted via pr-cross-review skill._
+Reviewer model: <model>
+Reasoning effort: <effort>
+Reviewed commit: <sha>
+review-findings: must=<n> optional=<n>
+```
+
+Without these values from the wrapper (or with whitespace in them), posting
+exits 1 with
+`error: PR_CROSS_REVIEW_REVIEWER_MODEL and PR_CROSS_REVIEW_REVIEWER_EFFORT must be set without whitespace`.

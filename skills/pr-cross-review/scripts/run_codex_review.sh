@@ -107,7 +107,7 @@ repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
 prepare_review_context "$repo" "$pr_number" codex "$extra_review"
 fetch_review_context "$repo" "$pr_number"
 build_review_prompt "$pr_number" codex "$extra_instructions" "$sandbox"
-export_review_environment
+export_review_environment "$model" "$effort"
 
 # --json makes codex emit one JSONL event per progress step, so the growth of
 # the log is the heartbeat signal. The log is a temp file that is always

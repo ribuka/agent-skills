@@ -159,6 +159,7 @@ cygpath() {
 fake_reviewer() {
     printf 'prompt: %s\n' "$(cat)" >"$REVIEW_CAPTURE_FILE"
     printf 'reviewed-commit: %s\n' "$PR_CROSS_REVIEW_REVIEWED_COMMIT" >>"$REVIEW_CAPTURE_FILE"
+    printf 'reviewer-env: model=%s effort=%s\n' "$PR_CROSS_REVIEW_REVIEWER_MODEL" "$PR_CROSS_REVIEW_REVIEWER_EFFORT" >>"$REVIEW_CAPTURE_FILE"
     printf 'args: %s\n' "$*" >>"$REVIEW_CAPTURE_FILE"
     if [ -f "$REVIEW_OUTPUT_FILE" ]; then
         cat "$REVIEW_OUTPUT_FILE"
@@ -364,11 +365,17 @@ def test_history_parses_real_footer_counts_and_historical_reviews(tmp_path: Path
     if jq is None:
         pytest.skip("jq is needed to exercise the GitHub CLI filter (available in CI)")
     footer = f"_Reviewed by Claude. Posted via pr-cross-review skill._\nReviewed commit: {HEAD_COMMIT}"
+    reviewer_footer = (
+        "_Reviewed by Codex. Posted via pr-cross-review skill._\n"
+        f"Reviewer model: gpt-6.1-sol\nReasoning effort: medium\nReviewed commit: {HEAD_COMMIT}"
+    )
     comments = [
         {"id": 1, "html_url": "old", "body": "old review\n" + footer + "\n"},
         {"id": 2, "html_url": "new", "body": footer + "\nreview-findings: must=0 optional=4\n"},
         {"id": 3, "html_url": "ordinary", "body": "review-findings: must=0 optional=0"},
         {"id": 4, "html_url": "crlf", "body": (footer + "\nreview-findings: must=12 optional=3\n").replace("\n", "\r\n")},
+        {"id": 5, "html_url": "model", "body": reviewer_footer + "\nreview-findings: must=2 optional=1\n"},
+        {"id": 6, "html_url": "model-crlf", "body": (reviewer_footer + "\nreview-findings: must=0 optional=0\n").replace("\n", "\r\n")},
     ]
     fixtures = tmp_path / "comments.json"
     fixtures.write_text(json.dumps(comments), encoding="utf-8")
@@ -387,6 +394,8 @@ list_review_history owner/repo 123
         f"1\told\t{HEAD_COMMIT}\tClaude\tunknown",
         f"2\tnew\t{HEAD_COMMIT}\tClaude\tmust=0 optional=4",
         f"4\tcrlf\t{HEAD_COMMIT}\tClaude\tmust=12 optional=3",
+        f"5\tmodel\t{HEAD_COMMIT}\tCodex\tmust=2 optional=1",
+        f"6\tmodel-crlf\t{HEAD_COMMIT}\tCodex\tmust=0 optional=0",
     ]
 
 
@@ -863,11 +872,13 @@ def run_post_comment_script(
     *,
     body_arg: str | None = None,
     body: str = "review body\nreview-findings: must=1 optional=2\n",
+    reviewer_model: str | None = "opus",
+    reviewer_effort: str | None = "medium",
 ) -> subprocess.CompletedProcess[str]:
     """Run post_pr_comment.sh with a fake GitHub CLI.
 
     The assigned body file is tmp_path/body.md; body_arg overrides the path
-    passed to the script.
+    passed to the script. None for a reviewer value leaves it unset.
     """
     body_file = tmp_path / "body.md"
     body_file.write_text(body, encoding="utf-8", newline="\n")
@@ -881,6 +892,12 @@ def run_post_comment_script(
         environment.pop("PR_CROSS_REVIEW_REVIEWED_COMMIT", None)
     else:
         environment["PR_CROSS_REVIEW_REVIEWED_COMMIT"] = reviewed_commit
+    for name, value in (("PR_CROSS_REVIEW_REVIEWER_MODEL", reviewer_model),
+                        ("PR_CROSS_REVIEW_REVIEWER_EFFORT", reviewer_effort)):
+        if value is None:
+            environment.pop(name, None)
+        else:
+            environment[name] = value
 
     return subprocess.run(
         [find_bash(), "-c", POST_HARNESS],
@@ -894,13 +911,32 @@ def run_post_comment_script(
 
 
 def test_post_comment_records_reviewed_commit(tmp_path: Path) -> None:
-    """The wrapper's reviewed commit is appended to the review footer."""
+    """The wrapper's reviewer model, effort, and reviewed commit end the review footer."""
     result = run_post_comment_script(tmp_path, HEAD_COMMIT)
 
     assert result.returncode == 0, result.stderr
-    assert "_Reviewed by Claude. Posted via pr-cross-review skill._" in result.stdout
-    assert f"Reviewed commit: {HEAD_COMMIT}" in result.stdout
-    assert result.stdout.endswith(f"Reviewed commit: {HEAD_COMMIT}\nreview-findings: must=1 optional=2\n")
+    assert result.stdout.endswith(
+        "\n\n_Reviewed by Claude. Posted via pr-cross-review skill._\n"
+        "Reviewer model: opus\nReasoning effort: medium\n"
+        f"Reviewed commit: {HEAD_COMMIT}\nreview-findings: must=1 optional=2\n"
+    )
+
+
+@pytest.mark.parametrize(
+    ("reviewer_model", "reviewer_effort"),
+    [(None, "medium"), ("opus", None), ("", "medium"), ("opus", "high xhigh")],
+)
+def test_post_comment_requires_reviewer_model_and_effort(
+    tmp_path: Path, reviewer_model: str | None, reviewer_effort: str | None
+) -> None:
+    """Posting is rejected without the wrapper's reviewer model and effort."""
+    result = run_post_comment_script(
+        tmp_path, HEAD_COMMIT, reviewer_model=reviewer_model, reviewer_effort=reviewer_effort
+    )
+
+    assert result.returncode == 1
+    assert "PR_CROSS_REVIEW_REVIEWER_MODEL and PR_CROSS_REVIEW_REVIEWER_EFFORT must be set" in result.stderr
+    assert result.stdout == ""
 
 
 @pytest.mark.parametrize("reviewed_commit", [None, "not-a-sha"])
@@ -1054,6 +1090,7 @@ def test_local_config_overrides_claude_and_common_keys(tmp_path: Path, isolated_
 
     assert result.returncode == 0, result.stderr
     assert "--model local-model --effort high --permission-mode plan" in result.stdout
+    assert "reviewer-env: model=local-model effort=high\n" in result.stdout
     assert "Write the review comment in English." in result.stdout
     assert "review-count: 1/5\n" in result.stdout
     assert "drafts/pr-123-review-claude.md" in result.stdout
@@ -1070,6 +1107,7 @@ def test_local_config_overrides_codex_keys(tmp_path: Path, isolated_skill: Path)
         "--model local-codex -c model_reasoning_effort=low --sandbox workspace-write "
         "-c sandbox_workspace_write.network_access=false"
     ) in result.stdout
+    assert "reviewer-env: model=local-codex effort=low\n" in result.stdout
     assert "hard timeout: 900s, heartbeat (no-progress) timeout: 300s" in result.stderr
     assert "review-count: 1/3\n" in result.stdout
     assert "Write the review comment in Japanese." in result.stdout
@@ -1095,6 +1133,7 @@ def test_cli_options_override_local_config(
 
     assert result.returncode == 0, result.stderr
     assert expected in result.stdout
+    assert "reviewer-env: model=cli-model effort=low\n" in result.stdout
 
 
 @pytest.mark.parametrize("script_name", SCRIPT_NAMES)
