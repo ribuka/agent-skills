@@ -54,6 +54,26 @@ Common to both scripts:
 
 The body file is removed after a successful post and kept on failure.
 
+Before launching the reviewer, both scripts fetch the review context and put
+it in the prompt, so the reviewer does not look it up itself: the PR's title
+and body, its linked issues in the same repository (`closingIssuesReferences`),
+on a re-review the body of the latest cross-review (either agent), and the
+diff range with its `git diff --stat`. The first review's range starts at
+`git merge-base <baseRefOid> <headRefOid>`; when that fails, the script runs
+`git fetch --no-tags --quiet origin <baseRefName>` once and tries again. A
+re-review's range is `<previous reviewed commit>..<head>`. A stat git cannot
+compute is written as `(diff stat unavailable)`. A failed GitHub lookup
+prints `error: failed to fetch the review context for PR #<pr>`, and a merge
+base that is still missing prints `error: failed to find the merge base of
+<base> and <head>`; both exit 2 without launching the reviewer.
+
+The prompt reaches the reviewer through stdin (a temp file that is always
+removed), not the command line, so a long context cannot exceed the Windows
+command-line limit. The post command in the prompt is
+`bash '<post script>' <pr> '<body file>' <agent>`, except for Codex on Windows
+(`cygpath` available), whose PowerShell may not have Git Bash on its `PATH`:
+it gets `& '<absolute path of the bash running the script>' '<post script>' <pr> '<body file>' codex`.
+
 The reviewer's own stdout/stderr never reaches the script's output. It goes to
 a temp log that is always removed; on failure its last 40 lines go to stderr,
 each cut to 300 characters and marked `... [truncated <n> chars]` when cut.
@@ -77,6 +97,11 @@ Option of both review scripts:
 | `--approve-for-me` | - | Passed through to `codex exec` |
 
 The reviewer log's path is printed to stderr at start, so it can be tailed.
+
+Every run also passes `--disable memories --disable plugins --disable apps
+--disable computer_use --disable browser_use --disable image_generation
+-c mcp_servers={}`: the reviewer uses none of them, and each would add its
+instructions and tools to every request. No option or key changes this.
 
 ## run_claude_review.sh
 
@@ -106,7 +131,7 @@ It reports `review-latest-findings: none` without a review, or
 |------|---------|
 | 0 | Review posted (`review-posted: <url>`, `review-count: <count>/<max>`, then `review-findings: must=<n> optional=<n>` on stdout) |
 | 1 | Usage/config error, review limit reached (or `--extra-review` below the limit), no new commits since the last review, or the reviewer exited without posting |
-| 2 | GitHub lookup failed (PR head or comment history) |
+| 2 | GitHub lookup failed (PR head, comment history, or review context) or merge base not found |
 | 124 | Codex hard timeout |
 | 125 | Codex heartbeat timeout (hang suspected) |
 | 75 | The reviewer stopped on its usage limit (`reviewer-quota-exhausted: <agent>`, `reviewer-quota-detected-at: <time>`, and `reviewer-quota-reset: <reset-time>` on stdout) |
