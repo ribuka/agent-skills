@@ -69,13 +69,13 @@ def test_empty_scan_window_scans_the_whole_repository() -> None:
     assert "or the whole repository when it is empty" in text
     scope = _step(1)
     assert "with `SCAN_WINDOW_DAYS` empty and no `--since`, the hotspot is every file" in scope
-    assert "git ls-tree -r --name-only origin/<default-branch>" in scope
+    assert "git ls-tree -r --name-only <scan-ref>" in scope
 
 
 def test_scan_runs_in_a_temporary_worktree_outside_the_repository() -> None:
     scope = _step(1)
     for phrase in ("under the system temp directory",
-                   "git worktree add --detach <scan-dir>/checkout origin/<default-branch>",
+                   "git worktree add --detach <scan-dir>/checkout <scan-ref>",
                    "never in the repository"):
         assert phrase in scope
     assert "file in `<scan-dir>`" in _step(6)
@@ -86,6 +86,19 @@ def test_scan_runs_in_a_temporary_worktree_outside_the_repository() -> None:
     assert "`<scan-dir>/checkout`" in detection
     assert "tmp/" not in detection
     assert "tmp/" not in SKILL_MD.read_text(encoding="utf-8")
+
+
+def test_local_mode_skips_every_github_lookup() -> None:
+    scope = _step(1)
+    for phrase in ("`git remote`", "`gh auth status`",
+                   "`gh repo view --json nameWithOwner,defaultBranchRef`",
+                   "`<scan-ref>`, is `origin/<default-branch>`",
+                   "**Not on GitHub (local mode):** `<scan-ref>` is `HEAD`",
+                   "step 2, the pull request check in step 5, and steps 6 and 8"):
+        assert phrase in scope
+    assert scope.index("decide whether the repository is on GitHub") < scope.index(
+        "git worktree add")
+    assert "in local mode (step 1), skip this step" in _step(6)
 
 
 def test_referenced_files_exist() -> None:
@@ -149,8 +162,10 @@ def test_settings_are_resolved_by_the_script() -> None:
 
 def test_dedup_reads_records_respects_rejections_and_open_prs() -> None:
     loaded = _step(2)
-    for phrase in ("--state all", "body,comments", "record comment", "`NOT_PLANNED`"):
+    for phrase in ("gh api --paginate", "state=all", "never a capped list",
+                   "the marker in its body", "`not_planned`"):
         assert phrase in loaded
+    assert "--limit" not in loaded
     dedup = _step(5)
     for phrase in ("fingerprint", "compare by intent", "`gh pr list`"):
         assert phrase in dedup
@@ -159,8 +174,10 @@ def test_dedup_reads_records_respects_rejections_and_open_prs() -> None:
 def test_filing_is_capped_labelled_and_records_each_issue() -> None:
     filing = _step(6)
     for phrase in ("`MAX_ISSUES_PER_RUN`", "`CONFIRM_BEFORE_PUBLISH`", "`--dry-run`",
-                   "no GitHub remote", "gh label create",
+                   "local mode", "gh label create",
                    "gh issue edit <number> --add-label <ISSUE_LABEL>",
+                   "Append the fingerprint marker to its body",
+                   "gh issue edit <number> --body-file <file>",
                    "gh issue comment <number> --body-file <file>",
                    "or several, if it splits the work", "markdown file"):
         assert phrase in filing
@@ -192,9 +209,11 @@ def test_candidate_request_and_record_formats() -> None:
     for heading in ("## Problem", "## Evidence", "## Proposed change", "## Not doing"):
         assert heading in request
     assert "behavior must stay unchanged" in request
+    marker = candidate.split("\n## Fingerprint marker\n", 1)[1].split("\n## Record\n", 1)[0]
+    assert "<!-- detoxer fingerprint: <kind>:" in marker
+    assert "appended to the end of the issue body" in marker
     record = candidate.split("\n## Record\n", 1)[1].split("\n## Fingerprint\n", 1)[0]
-    assert "<!-- detoxer fingerprint: <kind>:" in record
-    for phrase in ("## Detoxer record", "Scanned: <default branch commit SHA>",
+    for phrase in ("## Detoxer record", "Fingerprint:", "Scanned: <default branch commit SHA>",
                    "Benefit:", "Cost:", "Risk:", "Score:"):
         assert phrase in record
     for kind in ("duplication", "complexity", "dead-code", "coupling",

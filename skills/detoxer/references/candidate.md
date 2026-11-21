@@ -1,9 +1,11 @@
 # Candidate request and record
 
-Each candidate produces two texts: the **request** handed to the
-refine-issue skill, which turns it into the issue body, and the **record**
-comment this skill posts on every issue created from it. The record keeps
-what refine-issue does not: the fingerprint, the evidence, and the score.
+Each candidate produces two texts and a marker: the **request** handed to
+the refine-issue skill, which turns it into the issue body; the
+**fingerprint marker** appended to the body of every issue created from it;
+and the **record** comment posted on each of those issues. The marker lets
+the next run match past issues from one paginated issue listing; the record
+keeps what refine-issue does not write: the evidence and the score.
 Keep the headings in English.
 
 ## Request
@@ -35,16 +37,24 @@ existing tests must keep passing.
 Alternatives considered and why not (e.g. "keep both copies").
 ```
 
+## Fingerprint marker
+
+One line appended to the end of the issue body, after refine-issue created
+the issue:
+
+```markdown
+<!-- detoxer fingerprint: <kind>:<path>[,<path>...]:<symbol-or-topic> -->
+```
+
 ## Record
 
 Posted with `gh issue comment <number> --body-file <file>` on each issue
 created from the candidate.
 
 ```markdown
-<!-- detoxer fingerprint: <kind>:<path>[,<path>...]:<symbol-or-topic> -->
-
 ## Detoxer record
 
+- Fingerprint: `<kind>:<path>[,<path>...]:<symbol-or-topic>`
 - Scanned: <default branch commit SHA>
 - Benefit: <1-3> - <reason>
 - Cost: <1-3> - <reason>

@@ -14,8 +14,8 @@ Codex automation).
 ## Rules
 
 - The scan and filing (steps 1-7) are read-only on the code: never edit,
-  format, or commit files. Their only writes are issues, labels, and issue
-  comments. Code changes happen only in step 8, and only when
+  format, or commit files. Their only writes are issues (including the
+  fingerprint marker appended to their bodies), labels, and issue comments. Code changes happen only in step 8, and only when
   `IMPLEMENT_FILED_ISSUES` is `true`.
 - File at most `MAX_ISSUES_PER_RUN` candidates per run. Fewer good issues
   beat many noisy ones; filing nothing is a valid outcome.
@@ -66,35 +66,43 @@ stop without scanning.
 
 ### 1. Fix the scope
 
-Fetch and resolve the default branch (`git fetch`,
-`gh repo view --json defaultBranchRef`). Scan the default branch's tip, not
-the current working tree:
+First decide whether the repository is on GitHub: it is when `git remote`
+prints at least one remote and both `gh auth status` and
+`gh repo view --json nameWithOwner,defaultBranchRef` succeed.
+
+- **On GitHub:** `git fetch origin <default-branch>`; the commit to scan,
+  `<scan-ref>`, is `origin/<default-branch>`.
+- **Not on GitHub (local mode):** `<scan-ref>` is `HEAD`. Skip every GitHub
+  lookup: step 2, the pull request check in step 5, and steps 6 and 8. Every
+  candidate goes to the report's unfiled candidates.
+
+Scan `<scan-ref>`, not the current working tree:
 
 - Create a scan directory `<scan-dir>` under the system temp directory
   (e.g. `detoxer-scan-<repo>-<yyyymmdd-HHMMSS>`) and, in it, a detached
-  worktree of the tip:
-  `git worktree add --detach <scan-dir>/checkout origin/<default-branch>`.
+  worktree: `git worktree add --detach <scan-dir>/checkout <scan-ref>`.
 - Run every detector and read every file in that worktree. Keep every
   temporary file of the run in `<scan-dir>`, never in the repository.
 
-List the hotspot files with
-`git log --name-only --since=... origin/<default-branch>` (or
-`<ref>..origin/<default-branch>`), dropping deleted, generated, vendored,
-and lock files. With `--full`, or with `SCAN_WINDOW_DAYS` empty and no
-`--since`, the hotspot is every file tracked on the default branch
-(`git ls-tree -r --name-only origin/<default-branch>`), with the same files
-dropped.
+List the hotspot files with `git log --name-only --since=... <scan-ref>`
+(or `<ref>..<scan-ref>`), dropping deleted, generated, vendored, and lock
+files. With `--full`, or with `SCAN_WINDOW_DAYS` empty and no `--since`,
+the hotspot is every file tracked at `<scan-ref>`
+(`git ls-tree -r --name-only <scan-ref>`), with the same files dropped.
 
 ### 2. Load what was already decided
 
+List every issue with the label, following every page (never a capped
+list; a missing old issue would be filed again):
+
 ```bash
-gh issue list --label <ISSUE_LABEL> --state all --limit 200 \
-  --json number,title,state,stateReason,body,comments
+gh api --paginate "repos/{owner}/{repo}/issues?labels=<ISSUE_LABEL>&state=all&per_page=100" \
+  --jq '.[] | select(.pull_request | not) | {number, title, state, state_reason, body}'
 ```
 
-Collect each issue's fingerprint (from its record comment, see
+Collect each issue's fingerprint (the marker in its body, see
 [candidate.md](references/candidate.md)) and its summary. Candidates
-matching an open issue, or a closed one with `stateReason` `NOT_PLANNED`,
+matching an open issue, or a closed one with `state_reason` `not_planned`,
 are skipped in step 5.
 
 ### 3. Detect
@@ -121,8 +129,8 @@ filed this run and goes to the report's unfiled candidates.
 
 ### 6. Refine and file
 
-With `--dry-run`, or when the repository has no GitHub remote, skip this
-step: every candidate goes to the report's unfiled candidates.
+With `--dry-run`, or in local mode (step 1), skip this step: every
+candidate goes to the report's unfiled candidates.
 
 Take the top `MAX_ISSUES_PER_RUN` candidates by score. For each, write the
 request and the record from [candidate.md](references/candidate.md), in the
@@ -138,8 +146,12 @@ language of the repository's recent issues. Then:
      creates the issue (or several, if it splits the work) and reports the
      issue URLs. If it saved a markdown file instead, delete that file and
      report the candidate as not filed.
-  2. For each created issue: `gh issue edit <number> --add-label <ISSUE_LABEL>`,
-     then post the record with `gh issue comment <number> --body-file <file>`.
+  2. For each created issue:
+     - `gh issue edit <number> --add-label <ISSUE_LABEL>`.
+     - Append the fingerprint marker to its body: save
+       `gh issue view <number> --json body --jq .body` to a file, add the
+       marker line at the end, and `gh issue edit <number> --body-file <file>`.
+     - Post the record: `gh issue comment <number> --body-file <file>`.
 
 Write every request and record to a file in `<scan-dir>` with your
 file-writing tool.
@@ -159,8 +171,7 @@ this order:
   filed, each with:
   - Why it was not filed: beyond `MAX_ISSUES_PER_RUN`, rejected at
     confirmation, waiting for an open pull request (its number),
-    refine-issue did not file it (its reason), or `--dry-run` / no GitHub
-    remote.
+    refine-issue did not file it (its reason), `--dry-run`, or local mode.
   - Title, fingerprint, and the benefit / cost / risk ratings with the
     score.
   - Evidence (paths and line ranges) and the proposed change in one or two
