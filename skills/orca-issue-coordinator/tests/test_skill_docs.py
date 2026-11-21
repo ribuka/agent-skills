@@ -781,8 +781,9 @@ def test_checkpoint_holds_resume_state() -> None:
                  "`pre-dispatch-check: running <dispatch-id> | done | skipped (<reason>) | disabled`",
                  "do not run the check again",
                  "find that dispatch with `list_workers.py` instead of starting a second worker",
-                 "`awaiting-issue-fix: #<n> ...`",
-                 "for removals the user chose for a `spec-gap` (step 6)"):
+                 "`awaiting-external-dependency: #<m> -> #<n> ...`",
+                 "for removals the user chose for a **Dependency outside the Run** (step 3)",
+                 "copy them as reported, never summarized"):
         assert item in section, item
 
 
@@ -1022,8 +1023,7 @@ def test_restated_checks_and_auto_decisions_do_not_go_to_the_user() -> None:
 
 PRE_DISPATCH_CHECK = SKILL_DIR / "references" / "pre-dispatch-check.md"
 PRE_DISPATCH_CHECK_INSTALLED = "~/.agents/skills/orca-issue-coordinator/references/pre-dispatch-check.md"
-REPORT_KINDS = ("functional-dependency", "ordering", "last", "distant-same-file", "implied-change",
-                "spec-gap")
+REPORT_KINDS = ("functional-dependency", "ordering", "last", "distant-same-file", "brief-note")
 
 
 def _flat_step(skill: str, start: str, end: str) -> str:
@@ -1096,21 +1096,47 @@ def test_last_issues_wait_for_every_other_merge() -> None:
     assert "the pre-dispatch check state" in step6
 
 
-def test_spec_gaps_stop_the_whole_run_and_offer_three_choices() -> None:
+def test_dependency_outside_the_run_holds_only_the_affected_tasks() -> None:
     skill = SKILL_MD.read_text(encoding="utf-8")
+    step3 = _flat_step(skill, "3. Create one Orchestration Run", "4. Before creating any Task")
+    assert ("A `functional-dependency` whose earlier Issue is not in the checkpoint's `issues:` "
+            "line is a **Dependency outside the Run**") in step3
+    outside = step3.split("**Dependency outside the Run:**", 1)[1].split("**Ordering:**", 1)[0]
+    for phrase in ("Hold the dependent Issue's Task, the Tasks that functionally depend on it or "
+                   "are ordered after it, and every **Last** Task",
+                   "Create and dispatch the other Tasks by the plan without waiting",
+                   "**Add #m to the Run:**", "handle it as an Issue added by the user (**Rules**)",
+                   "**Remove from the Run:**", "update the checkpoint's `issues:` line",
+                   "**Dispatch as is:**", "its brief states that `#m` is missing",
+                   "`awaiting-external-dependency: #<m> -> #<n> ...`"):
+        assert phrase in outside, phrase
+    step4 = _flat_step(skill, "4. Before creating any Task", "5. Represent")
+    assert ("Do not create the Tasks held by a **Dependency outside the Run** (step 3) until the "
+            "user replies; create the others") in step4
     step6 = _flat_step(skill, "6. Before the first dispatch", "## 2.")
-    gaps = step6.split("**Specification gaps:**", 1)[1]
-    for phrase in ("a change the Issue needs but does not state, with two or more fixes "
-                   "consistent with the Issue",
-                   "stop the whole Run", "dispatch nothing until the user replies",
-                   "**Fix the Issue first:**", "the Issue stays in the Run",
-                   "Never edit the Issue yourself", "`awaiting-issue-fix: #<n> ...`",
-                   "start a new pre-dispatch check worker (step 3)",
-                   "**Dispatch as is:**", "**Remove from the Run:**",
-                   "update the checkpoint's `issues:` line"):
-        assert phrase in gaps, phrase
+    assert ("A **Dependency outside the Run** holds only the Tasks step 3 names") in step6
     asking = " ".join(skill.split("## Asking the user", 1)[1].split("\n## ", 1)[0].split())
-    assert "it holds every dispatch until the user replies" in asking
+    assert ("several **Last** Issues (step 3): it holds every dispatch until the user replies. "
+            "A **Dependency outside the Run** (step 3) holds only the Tasks it names") in asking
+    ref = " ".join(PRE_DISPATCH_CHECK.read_text(encoding="utf-8").split())
+    dependency = _ref_definition(ref, "functional-dependency")
+    for phrase in ("The earlier Issue may be outside the Run",
+                   "still open (or its pull request is not merged)",
+                   "state in `evidence` that it is not in the Run",
+                   "Do not report a dependency on a closed Issue or a merged change"):
+        assert phrase in dependency, phrase
+
+
+def test_rechecks_after_adding_issues_spare_dispatched_tasks() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    rules = " ".join(skill.split("\n## Rules", 1)[1].split("\n## ", 1)[0].split())
+    for phrase in ("The user choosing **Add #m to the Run** (step 3) is such an instruction",
+                   "Apply new relations from that check only to Tasks not yet dispatched, by "
+                   "holding their dispatch (a created Task keeps its `--deps`)",
+                   "ask the user about a relation that would hold a Task already dispatched",
+                   "Add a new `brief-note` only to the briefs of Tasks not yet dispatched; never "
+                   "send it to a Task already dispatched"):
+        assert phrase in rules, phrase
 
 
 def test_pre_dispatch_check_reference_defines_report_and_read_only_rules() -> None:
@@ -1119,11 +1145,14 @@ def test_pre_dispatch_check_reference_defines_report_and_read_only_rules() -> No
                  "ordering: #<earlier> -> #<later> | evidence:",
                  "last: #<n> | evidence:",
                  "distant-same-file: #<a> #<b> | evidence:",
-                 "implied-change: #<n> | evidence: <path:line ...> | change:",
-                 "spec-gap: #<n> | evidence: <path:line ...> | gap:"):
+                 "brief-note: #<n> | evidence: <path:line ... or an Issue quote> | change:"):
         assert line in ref, line
-    for phrase in ("`worker_done`", "at most **60 lines**", "the single line `none`",
-                   "`unclear:`", "## Read only", "Change nothing",
+    for phrase in ("`worker_done`", "at most **60 lines**", "with no heading or summary line",
+                   "the single line `none`", "`unclear:`", "## Read only",
+                   "Change nothing in the shared worktree",
+                   "write it only outside the worktree (your scratchpad or the OS temporary "
+                   "directory)",
+                   "Never report a conditional finding",
                    "`git grep <pattern> origin/HEAD`", "do not read the working tree's files"):
         assert phrase in ref, phrase
 
@@ -1161,74 +1190,65 @@ def test_several_last_issues_are_ordered_by_the_user_before_tasks_exist() -> Non
 def test_issue_set_and_dag_are_settled_before_tasks_are_created() -> None:
     skill = SKILL_MD.read_text(encoding="utf-8")
     step4 = _flat_step(skill, "4. Before creating any Task", "5. Represent")
-    for phrase in ("settle every question that changes the Issue set or the DAG",
-                   "a `spec-gap` (step 6) and several **Last** Issues (step 3)",
-                   "create Tasks only from the Issue set and relations left after the user's reply",
-                   "Do not create the Tasks held by **Fix the Issue first** (step 6) until the "
-                   "pre-dispatch check after the fix is settled"):
+    for phrase in ("settle the question about several **Last** Issues (step 3)",
+                   "create Tasks only from the Issue set and relations left after the user's "
+                   "reply"):
         assert phrase in step4, phrase
-    step6 = _flat_step(skill, "6. Before the first dispatch", "## 2.")
-    gaps = step6.split("**Specification gaps:**", 1)[1]
-    for phrase in ("create no Task and dispatch nothing until the user replies (step 4)",
-                   "Do not create or dispatch its Task",
-                   "by holding their dispatch (a created Task keeps its `--deps`)",
-                   "Offer it only while none of those Issues has a Task",
-                   "offer only the other two choices for an Issue that has a Task"):
-        assert phrase in gaps, phrase
 
 
 def _ref_definition(ref: str, kind: str) -> str:
     return ref.split(f"- `{kind}`:", 1)[1].split(" - ", 1)[0]
 
 
-def test_pre_dispatch_check_splits_implied_changes_from_spec_gaps() -> None:
+def test_brief_note_covers_every_unstated_change_the_issue_needs() -> None:
     ref = " ".join(PRE_DISPATCH_CHECK.read_text(encoding="utf-8").split())
-    implied = _ref_definition(ref, "implied-change")
-    for phrase in ("still hard-code the old form of a behavior the Issue explicitly changes",
-                   "only one fix is consistent with the Issue",
-                   "a test asserts the old list of menu items",
-                   "the Issue lists one test import to change",
-                   "patch the same private function"):
-        assert phrase in implied, phrase
-    gap = _ref_definition(ref, "spec-gap")
-    for phrase in ("two or more fixes are consistent with the Issue",
+    note = _ref_definition(ref, "brief-note")
+    for phrase in ("a change the Issue does not state but needs for its goal",
+                   "however many fixes fit", "a test asserts the old list of menu items",
                    "renames a configuration key", "migrated or rejected",
-                   "When unsure whether only one fix fits, report `spec-gap`"):
-        assert phrase in gap, phrase
-    for phrase in ("monkeypatch", "import", "private function"):
-        assert phrase not in gap, phrase
+                   "When several fixes fit, list them in `change:`",
+                   "Report a change that touches what the Issue puts out of scope too"):
+        assert phrase in note, phrase
 
 
-def test_pre_dispatch_check_drops_implied_changes_after_distant_same_file() -> None:
+def test_pre_dispatch_check_drops_brief_notes_after_distant_same_file() -> None:
     ref = " ".join(PRE_DISPATCH_CHECK.read_text(encoding="utf-8").split())
     drop = ref.split("If the findings exceed 60 lines", 1)[1]
     assert "drop `distant-same-file` lines first" in drop
-    assert "then `implied-change` lines" in drop
-    assert drop.index("`distant-same-file` lines first") < drop.index("then `implied-change` lines")
-    assert "Never drop a `functional-dependency`, `ordering`, `last`, or `spec-gap` line" in drop
+    assert "then `brief-note` lines" in drop
+    assert drop.index("`distant-same-file` lines first") < drop.index("then `brief-note` lines")
+    assert "Never drop a `functional-dependency`, `ordering`, or `last` line" in drop
 
 
-def test_implied_changes_go_into_the_brief_without_stopping_the_run() -> None:
+def test_brief_notes_go_into_the_brief_without_stopping_the_run() -> None:
     skill = SKILL_MD.read_text(encoding="utf-8")
     step3 = _flat_step(skill, "3. Create one Orchestration Run", "4. Before creating any Task")
-    assert "`implied-change` → a change added to that Issue's brief (steps 6 and 7)" in step3
-    assert "Record `pre-dispatch-check: done` and the report lines in the checkpoint" in step3
+    assert "`brief-note` → a change added to that Issue's brief (steps 6 and 7)" in step3
+    assert "A `brief-note` alone never stops the Run or waits for approval" in step3
+    assert ("Record `pre-dispatch-check: done` and the report lines in the checkpoint, copied as "
+            "reported, never summarized") in step3
     step6 = _flat_step(skill, "6. Before the first dispatch", "## 2.")
-    plan = step6.split("**Specification gaps:**", 1)[0]
-    assert ("For each Issue with an `implied-change`, list each change that its brief adds "
-            "(step 7)") in plan
-    assert "An `implied-change` alone never stops the Run or waits for approval" in plan
-    exception = plan.split("Then start dispatching without waiting for approval,", 1)[1]
-    exception = exception.split("`spec-gap`.", 1)[0]
-    assert "unless step 3 requires asking for the order" in exception
-    assert "implied-change" not in exception
-    fix = step6.split("**Fix the Issue first:**", 1)[1].split("**Dispatch as is:**", 1)[0]
-    assert ("Add a new `implied-change` only to the briefs of Tasks not yet dispatched; never "
-            "send it to a Task already dispatched") in fix
+    assert ("For each Issue with a `brief-note`, list each change that its brief adds "
+            "(step 7)") in step6
+    exception = step6.split("Then start dispatching without waiting for approval,", 1)[1]
+    exception = exception.split("Dispatch independent tasks", 1)[0]
+    assert ("unless step 3 requires asking for the order (including several **Last** "
+            "Issues).") in exception
+    assert "brief-note" not in exception
     step7 = _flat_step(skill, "7. Instruct each worker", "8. Fill available")
-    assert ("For each `implied-change` the pre-dispatch check reported for the Issue, add the "
-            "change and tell the worker to make it as a consequence of the Issue's scope and to "
-            "state the change in the PR body") in step7
+    note = step7.split("For each `brief-note` the pre-dispatch check reported for the Issue", 1)[1]
+    note = note.split("Do not restate general token-saving rules", 1)[0]
+    for phrase in ("Make it as a consequence of the Issue's scope",
+                   "When several fixes fit, choose the one that fits the Issue's intent",
+                   "even when it touches what the Issue puts out of scope, if the Issue's goal "
+                   "needs it",
+                   "state in the PR body that it is outside the Issue's scope but needed for its "
+                   "goal, with the reason",
+                   "State in the PR body the change, the fix chosen, and why",
+                   "Ask the Coordinator only when every fix would change the Issue's scope, "
+                   "scale, threshold, or user-visible behavior",
+                   "answer it for that Task alone"):
+        assert phrase in note, phrase
 
 
 def _rebind(waiting: str) -> str:
