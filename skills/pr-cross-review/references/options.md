@@ -72,7 +72,14 @@ removed), not the command line, so a long context cannot exceed the Windows
 command-line limit. The post command in the prompt is
 `bash '<post script>' <pr> '<body file>' <agent>`, except for Codex on Windows
 (`cygpath` available), whose PowerShell may not have Git Bash on its `PATH`:
-it gets `& '<absolute path of the bash running the script>' '<post script>' <pr> '<body file>' codex`.
+it gets `& '<Git for Windows root>/bin/bash.exe' '<post script>' <pr> '<body file>' codex`.
+The root comes from `cygpath -m /`. The `bin/bash.exe` wrapper sets up PATH
+for commands such as `dirname`, which `usr/bin/bash.exe` can leave unavailable.
+If the wrapper is missing, the review script exits 1 before querying GitHub
+with `error: Git for Windows bash not found: <path>` on stderr.
+For this PowerShell command, the prompt tells Codex to request escalated
+permissions on the first attempt when its sandbox is other than
+`danger-full-access`.
 
 The reviewer's own stdout/stderr never reaches the script's output. It goes to
 a temp log that is always removed; on failure its last 40 lines go to stderr,
@@ -130,7 +137,7 @@ It reports `review-latest-findings: none` without a review, or
 | Code | Meaning |
 |------|---------|
 | 0 | Review posted (`review-posted: <url>`, `review-count: <count>/<max>`, then `review-findings: must=<n> optional=<n>` on stdout) |
-| 1 | Usage/config error, review limit reached (or `--extra-review` below the limit), no new commits since the last review, or the reviewer exited without posting |
+| 1 | Usage/config error, Git for Windows bash not found, review limit reached (or `--extra-review` below the limit), no new commits since the last review, or the reviewer exited without posting |
 | 2 | GitHub lookup failed (PR head, comment history, or review context) or merge base not found |
 | 124 | Codex hard timeout |
 | 125 | Codex heartbeat timeout (hang suspected) |
