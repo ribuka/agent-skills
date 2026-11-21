@@ -106,7 +106,7 @@ prepare_body_file "$pr_number" codex
 repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
 prepare_review_context "$repo" "$pr_number" codex "$extra_review"
 fetch_review_context "$repo" "$pr_number"
-build_review_prompt "$pr_number" codex "$extra_instructions"
+build_review_prompt "$pr_number" codex "$extra_instructions" "$sandbox"
 export_review_environment
 
 # --json makes codex emit one JSONL event per progress step, so the growth of

@@ -61,7 +61,10 @@ context_lookup() {
 
 gh() {
     case "$1 $2" in
-        "repo view") printf '%s\n' 'owner/repo' ;;
+        "repo view")
+            : >"$REVIEW_REPO_LOOKUP_FILE"
+            printf '%s\n' 'owner/repo'
+            ;;
         "pr view")
             case "$*" in
                 *"--json headRefOid "*) printf '%s\n' "$REVIEW_HEAD_COMMIT" ;;
@@ -145,7 +148,11 @@ cygpath() {
     if [ "$1" = "-m" ]; then
         shift
     fi
-    printf '%s\n' "$1"
+    if [ "$1" = / ]; then
+        printf '%s\n' "$REVIEW_FAKE_GIT_ROOT"
+    else
+        printf '%s\n' "$1"
+    fi
 }
 
 fake_reviewer() {
@@ -177,6 +184,15 @@ if [ "$REVIEW_FAKE_CYGPATH" = "true" ]; then
     export -f cygpath
 else
     unset -f cygpath
+    if [ "$REVIEW_FAKE_CYGPATH" = "false" ]; then
+        command() {
+            if [ "$*" = "-v cygpath" ]; then
+                return 1
+            fi
+            builtin command "$@"
+        }
+        export -f command
+    fi
 fi
 
 bash "$REVIEW_SCRIPT" 123 "$@"
@@ -203,7 +219,8 @@ def run_review_script(
     reviewer_exit_code: int = 0,
     existing_findings: str = "unknown",
     run_post: bool = False,
-    fake_cygpath: bool = False,
+    fake_cygpath: bool | None = None,
+    missing_git_bash: bool = False,
     context_fail: str = "",
     issue_refs: str = "",
     pr_body: str | None = None,
@@ -212,7 +229,15 @@ def run_review_script(
     pr_title: str = "T",
 ) -> subprocess.CompletedProcess[str]:
     """Run a review script with deterministic fake CLI and GitHub commands."""
-    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    git = shutil.which("git")
+    assert git is not None
+    subprocess.run([git, "init", "-q", str(tmp_path)], check=True)
+    git_root = tmp_path / "Git for Windows"
+    fake_bash = git_root / "bin" / "bash.exe"
+    if fake_cygpath and not missing_git_bash:
+        fake_bash.parent.mkdir(parents=True)
+        fake_bash.write_text('#!/usr/bin/env bash\nexec bash "$@"\n', encoding="utf-8", newline="\n")
+        fake_bash.chmod(0o755)
     temp_dir = tmp_path / "temp"
     temp_dir.mkdir(exist_ok=True)
     pr_body_file = tmp_path / "pr-body"
@@ -231,6 +256,7 @@ def run_review_script(
         "REVIEW_STATE_FILE": (tmp_path / "state").as_posix(),
         "REVIEW_CAPTURE_FILE": (tmp_path / "capture").as_posix(),
         "REVIEW_API_FILE": api_file.as_posix(),
+        "REVIEW_REPO_LOOKUP_FILE": (tmp_path / "repo-lookup").as_posix(),
         "REVIEW_OUTPUT_FILE": output_file.as_posix(),
         "REVIEW_POST_COMMENT": str(post_comment).lower(),
         "REVIEW_EXIT_CODE": str(reviewer_exit_code),
@@ -241,6 +267,7 @@ def run_review_script(
         "REVIEW_EXISTING_FINDINGS": existing_findings,
         "REVIEW_RUN_POST": str(run_post).lower(),
         "REVIEW_FAKE_CYGPATH": str(fake_cygpath).lower(),
+        "REVIEW_FAKE_GIT_ROOT": git_root.as_posix() + ("" if missing_git_bash else "/"),
         "REVIEW_CONTEXT_FAIL": context_fail,
         "REVIEW_PR_TITLE": pr_title,
         "REVIEW_PR_BODY_FILE": pr_body_file.as_posix(),
@@ -1293,11 +1320,6 @@ CODEX_DISABLED_FEATURES = (
 )
 
 
-def uses_powershell_post(script_name: str, fake_cygpath: bool) -> bool:
-    """Codex on Windows (cygpath available) gets the `&` form of the post command."""
-    return script_name == "run_codex_review.sh" and (fake_cygpath or shutil.which("cygpath") is not None)
-
-
 def reviewer_args(stdout: str) -> str:
     """Return the arguments the fake reviewer received."""
     args = re.search(r"^args: (.*)$", stdout, re.M)
@@ -1316,8 +1338,9 @@ def test_post_command_form_follows_reviewer_shell(
     match = POST_COMMAND_LINE.search(result.stdout)
     assert match is not None
     agent = "claude" if script_name == "run_claude_review.sh" else "codex"
-    if uses_powershell_post(script_name, fake_cygpath):
-        assert re.match(r"^& '[^']*bash(\.exe)?' '[^']*post_pr_comment\.sh' 123 '[^']*' codex$", match.group(1))
+    if script_name == "run_codex_review.sh" and fake_cygpath:
+        wrapper = (tmp_path / "Git for Windows" / "bin" / "bash.exe").as_posix()
+        assert re.fullmatch(rf"& '{re.escape(wrapper)}' '[^']*post_pr_comment\.sh' 123 '[^']*' codex", match.group(1))
     else:
         assert re.match(rf"^bash '[^']*post_pr_comment\.sh' 123 '[^']*' {agent}$", match.group(1))
 
@@ -1336,6 +1359,83 @@ def test_post_command_can_be_run_in_both_forms(
     assert "posted-body: review body\n" in result.stdout
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Requires Git for Windows")
+def test_post_command_prepares_git_path_in_powershell(tmp_path: Path) -> None:
+    """Run the generated wrapper from PowerShell without Git tools on PATH."""
+    powershell = shutil.which("pwsh") or shutil.which("powershell")
+    if powershell is None:
+        pytest.skip("PowerShell is required to run the Git for Windows wrapper")
+    cygpath = subprocess.run(
+        [find_bash(), "-c", "command -v cygpath"],
+        check=False, capture_output=True, text=True, encoding="utf-8",
+    )
+    if cygpath.returncode != 0:
+        pytest.skip("Git for Windows cygpath is required")
+
+    result = run_review_script(tmp_path, "run_codex_review.sh", post_comment=True)
+    assert result.returncode == 0, result.stderr
+    post_command = POST_COMMAND_LINE.search(result.stdout)
+    assert post_command is not None
+    runner = re.match(r"^& '[^']+/bin/bash\.exe'", post_command.group(1))
+    assert runner is not None
+    launched = subprocess.run(
+        [powershell, "-NoProfile", "-NonInteractive", "-Command",
+         f"{runner.group(0)} -c 'dirname /a/b'"],
+        env={**os.environ, "PATH": r"C:\Windows\System32;C:\Windows"},
+        check=False, capture_output=True, text=True, encoding="utf-8",
+    )
+    assert launched.returncode == 0, launched.stderr
+    assert launched.stdout.strip() == "/a"
+
+
+def test_post_command_rejects_missing_git_for_windows_bash(tmp_path: Path) -> None:
+    """Fail before any GitHub lookup if cygpath's root has no wrapper."""
+    result = run_review_script(
+        tmp_path, "run_codex_review.sh", post_comment=True, fake_cygpath=True,
+        missing_git_bash=True,
+    )
+    wrapper = (tmp_path / "Git for Windows" / "bin" / "bash.exe").as_posix()
+    assert result.returncode == 1
+    assert f"error: Git for Windows bash not found: {wrapper}\n" in result.stderr
+    assert "api-calls: 0\n" in result.stdout
+    assert not (tmp_path / "repo-lookup").exists()
+    assert "prompt:" not in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("script_name", "fake_cygpath", "sandbox", "expect_escalation"),
+    [
+        ("run_codex_review.sh", True, None, True),
+        ("run_codex_review.sh", True, "read-only", True),
+        ("run_codex_review.sh", True, "danger-full-access", False),
+        ("run_codex_review.sh", False, "workspace-write", False),
+        ("run_claude_review.sh", True, None, False),
+    ],
+)
+def test_post_command_requests_escalation_for_sandboxed_windows_codex(
+    tmp_path: Path, script_name: str, fake_cygpath: bool, sandbox: str | None,
+    expect_escalation: bool,
+) -> None:
+    """Only the PowerShell form for sandboxed Codex requires escalation."""
+    extra_args = ("--sandbox", sandbox) if sandbox is not None else ()
+    result = run_review_script(
+        tmp_path, script_name, post_comment=True, fake_cygpath=fake_cygpath,
+        extra_args=extra_args,
+    )
+    assert result.returncode == 0, result.stderr
+    instruction = (
+        "Run the post command outside the sandbox from the first attempt "
+        "(request escalated permissions): it needs network access and the GitHub "
+        "credentials, and it fails inside the sandbox."
+    )
+    if expect_escalation:
+        post_command = POST_COMMAND_LINE.search(result.stdout)
+        assert post_command is not None
+        assert result.stdout[post_command.end():].startswith(f"\n{instruction}\n")
+    else:
+        assert instruction not in result.stdout
+
+
 @pytest.mark.parametrize("script_name", SCRIPT_NAMES)
 def test_prompt_limits_reviewer_steps(tmp_path: Path, script_name: str) -> None:
     """The prompt rules out posting retries, re-fetching the context, and re-running the suite."""
@@ -1349,6 +1449,7 @@ def test_prompt_limits_reviewer_steps(tmp_path: Path, script_name: str) -> None:
         "do not read the pr-cross-review skill's files (SKILL.md, scripts, or config)",
         "do not list or search for tools",
         "Do not run the repository's test suite, linters, formatters, or type checkers",
+        "Do not mention in the review comment that you did not run them.",
         "Run a command only to reproduce a specific suspected defect",
         "instead of polling it repeatedly",
     ):

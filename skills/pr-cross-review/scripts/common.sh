@@ -397,17 +397,17 @@ prepare_body_file() {
 # set_post_runner <agent> -- sets REVIEW_POST_RUNNER, the start of the post
 # command the reviewer runs. Codex on Windows runs it in PowerShell, whose PATH
 # (from Codex's shell environment policy) may not include Git Bash, so it gets
-# the absolute path of the bash running this script, invoked with `&`. Every
+# Git for Windows' PATH-initializing bash wrapper, invoked with `&`. Every
 # other reviewer gets plain `bash`, which runs in both bash and PowerShell.
 set_post_runner() {
     local bash_path
+    local git_root
     local quoted
     REVIEW_POST_RUNNER="bash"
     if [ "$1" = "codex" ] && command -v cygpath >/dev/null 2>&1; then
-        bash_path=$BASH
-        if [[ "$bash_path" != *.exe ]] && [ -f "${bash_path}.exe" ]; then
-            bash_path="${bash_path}.exe"
-        fi
+        git_root=$(cygpath -m /)
+        bash_path="${git_root%/}/bin/bash.exe"
+        [ -f "$bash_path" ] || die "Git for Windows bash not found: ${bash_path}"
         quoted=$(quoted_native_path "$bash_path") || exit 1
         REVIEW_POST_RUNNER="& ${quoted}"
     fi
@@ -417,12 +417,13 @@ remove_body_file() {
     rm -f -- "$REVIEW_BODY_FILE"
 }
 
-# build_review_prompt <pr-number> <agent> <extra-instructions> -- sets REVIEW_PROMPT.
+# build_review_prompt <pr-number> <agent> <extra-instructions> [codex-sandbox] -- sets REVIEW_PROMPT.
 # Call it after fetch_review_context.
 build_review_prompt() {
     local pr_number=$1
     local agent=$2
     local extra_instructions=$3
+    local codex_sandbox=${4-}
     local body_file
     local post_command
 
@@ -434,7 +435,9 @@ build_review_prompt() {
     REVIEW_PROMPT+=" Read the diff with \`git diff ${REVIEW_DIFF_RANGE}\`."
     REVIEW_PROMPT+=" Read code outside the diff only as far as needed to verify a finding (such as callers and dependencies of the changed code); do not explore the rest of the repository."
     REVIEW_PROMPT+=" The review context at the end of this prompt is complete: do not fetch the PR, its comments, or its linked issues from GitHub, do not read the pr-cross-review skill's files (SKILL.md, scripts, or config), and do not list or search for tools."
-    REVIEW_PROMPT+=" Do not run the repository's test suite, linters, formatters, or type checkers; the author and CI run them. Run a command only to reproduce a specific suspected defect, and wait for a long-running command to finish instead of polling it repeatedly."
+    REVIEW_PROMPT+=" Do not run the repository's test suite, linters, formatters, or type checkers; the author and CI run them."
+    REVIEW_PROMPT+=" Do not mention in the review comment that you did not run them."
+    REVIEW_PROMPT+=" Run a command only to reproduce a specific suspected defect, and wait for a long-running command to finish instead of polling it repeatedly."
     REVIEW_PROMPT+=" Write the review comment in ${REVIEW_LANGUAGE}."
     REVIEW_PROMPT+=" Classify every finding as [must] or [optional], placed at the start of its heading. [must] means it must be fixed before merging: bugs or incorrect behavior, unmet Issue specifications or acceptance criteria, missing required tests, security or data-loss risks, and misleading instructions or documentation errors. [optional] means merging is acceptable without the change: wording, naming, organization, reducing duplication, extra tests beyond requirements, and improvements for future changes. Do not use P0-P3 or other severity labels. End the body with exactly one count line as its last non-empty line: review-findings: must=<n> optional=<n> (non-negative integers; both 0 when there are no findings). On re-review, count only unresolved must findings from the previous review and new findings in this diff; do not repeat previous optional suggestions that were not adopted."
 
@@ -442,6 +445,9 @@ build_review_prompt() {
     post_command="${REVIEW_POST_RUNNER} $(quoted_native_path "$post_script") ${pr_number} $(quoted_native_path "$REVIEW_BODY_FILE") ${agent}"
     REVIEW_PROMPT+=$'\n'"When the review is done, write the comment body to exactly this file (its directory already exists; do not write it anywhere else): ${body_file}"
     REVIEW_PROMPT+=$'\n'"Then post it with exactly this command (do not use \`gh pr comment\` directly): ${post_command}"
+    if [[ "$REVIEW_POST_RUNNER" == '& '* ]] && [ "$codex_sandbox" != "danger-full-access" ]; then
+        REVIEW_PROMPT+=$'\n'"Run the post command outside the sandbox from the first attempt (request escalated permissions): it needs network access and the GitHub credentials, and it fails inside the sandbox."
+    fi
     REVIEW_PROMPT+=$'\n'"Run the post command right after writing the file, in the same tool call when your tools allow it, and do not read the post script first. When the post succeeds, reply with only the comment URL."
     REVIEW_PROMPT+=$'\n\n'"${REVIEW_CONTEXT}"
 
