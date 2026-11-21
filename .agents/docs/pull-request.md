@@ -23,9 +23,9 @@
 - Create the required label if it does not exist.
 - **NEVER** create any other `model:*` label.
 
-## Optional information
+## Implementation information
 
-- Optionally add the following information to the pull request description:
+- **ALWAYS** end the pull request description with the following lines, after all other content and just before any attribution line:
   - `Implementation agent: <agent>`
   - `Implementation model: <exact model>`
   - `Reasoning effort: <reasoning effort>`
