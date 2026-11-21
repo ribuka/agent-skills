@@ -1107,6 +1107,10 @@ def test_dependency_outside_the_run_holds_only_the_affected_tasks() -> None:
                    "Create and dispatch the other Tasks by the plan without waiting",
                    "**Add #m to the Run:**", "handle it as an Issue added by the user (**Rules**)",
                    "**Remove from the Run:**", "update the checkpoint's `issues:` line",
+                   "Offer it only while none of those Issues has a Task",
+                   "hold the Tasks whose `--deps` list it",
+                   "offer only the other two choices for an Issue whose Task, or a dependent's "
+                   "Task, exists",
                    "**Dispatch as is:**", "its brief states that `#m` is missing",
                    "`awaiting-external-dependency: #<m> -> #<n> ...`"):
         assert phrase in outside, phrase

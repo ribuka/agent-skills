@@ -263,7 +263,12 @@ only after the user confirms.
        (**Rules**).
      - **Remove from the Run:** remove the dependent Issue and the Issues
        that functionally depend on it from the Run's Issue set, and update
-       the checkpoint's `issues:` line.
+       the checkpoint's `issues:` line. Offer it only while none of those
+       Issues has a Task; a created Task would stay unstarted and hold the
+       Tasks whose `--deps` list it (step 4). For a dependency found after
+       Tasks exist (a check after adding Issues, **Rules**), offer only the
+       other two choices for an Issue whose Task, or a dependent's Task,
+       exists.
      - **Dispatch as is:** dispatch the dependent Issue without `#m`; its
        brief states that `#m` is missing and which parts cannot be built
        without it.
