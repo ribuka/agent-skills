@@ -667,7 +667,7 @@ Use these checks in steps 12 and 14, against the current PR head:
     summary, the reasons for proposing an Issue, and the draft comment URL.
     Do not ask whether to file it.
 17. Mark only confirmed merged Issues as complete. Report the
-    outcome and PR URL for each Issue.
+    outcome and PR for each Issue.
     List any open Issues outside the fixed set that you noticed during the
     Run as outside this Run's scope, with their numbers and titles.
     Collect each Issue handoff's `follow-up candidates:` (as saved in the
@@ -932,13 +932,18 @@ Follow [Waiting](references/waiting.md) in both Claude Code and Codex
   reference (see **Quota control**).
 - Report to the user only when state changes (dispatch, worker_done, merge,
   blocker, question). Never post "no news yet" updates.
-- Keep reports short: Issue, PR URL, state, next step.
+- Keep reports short: Issue, PR, state, next step.
+- Write every Issue and PR in a report, in the text and in the table, as a
+  Markdown link whose text is only the number:
+  `[#358](https://github.com/<owner>/<repo>/issues/358)`,
+  `[#363](https://github.com/<owner>/<repo>/pull/363)`. Never write a bare
+  URL.
 - **Status table at milestones only:** after the first dispatch, after each
   merge, when asking the user or reporting a blocker, and at Run completion,
   end the report with one table covering every Issue in the Run, not only
   the one that changed. Other state changes get one line without a table.
   - Columns, in this order: `Issue`, `ワーカー` (dispatch ID and worktree),
-    `PR` (URL), `状態`, `次の手順`. Use `-` for an empty cell.
+    `PR`, `状態`, `次の手順`. Use `-` for an empty cell.
   - `状態` is exactly one of: `依存待ち`, `枠待ち`, `実装中`, `マージ準備中`,
     `CI 待ち`, `クォータ待ち`, `ブロック中`, `マージ済み`.
   - Put anything else worth telling (e.g. a change the pre-dispatch check
