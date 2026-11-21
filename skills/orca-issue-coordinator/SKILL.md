@@ -221,11 +221,14 @@ only after the user confirms.
      - Classify from its report alone. Each line maps to a relation below:
        `functional-dependency` → **Functional dependency**, `ordering` →
        **Ordering**, `last` → **Last**, `distant-same-file` → **Distant
-       parts of the same file only**, `implied-change` → a change added to
-       that Issue's brief (steps 6 and 7), and `spec-gap` → a specification
-       gap (step 6). `none` means no relation and no gap. Treat a relation the
-       report does not settle as an **Ordering**. Record
-       `pre-dispatch-check: done` and the report lines in the checkpoint.
+       parts of the same file only**, and `brief-note` → a change added to
+       that Issue's brief (steps 6 and 7). A `functional-dependency` whose
+       earlier Issue is not in the checkpoint's `issues:` line is a
+       **Dependency outside the Run**. `none` means no relation and no
+       change. Treat a relation the report does not settle as an
+       **Ordering**. Record `pre-dispatch-check: done` and the report lines
+       in the checkpoint, copied as reported, never summarized.
+     - A `brief-note` alone never stops the Run or waits for approval.
      - **If it fails:** a failed start follows the exit codes in **Starting
        workers**, and a worker that reports `worker-quota-paused:` follows
        the quota pause reference (**Quota control**). When its `worker_done`
@@ -249,6 +252,29 @@ only after the user confirms.
      a configuration, or data that the earlier PR adds or changes. Record it
      in the task DAG (step 5); dispatch the later Task only after the
      earlier PR is **merged**.
+   - **Dependency outside the Run:** a Task functionally depends on an open
+     Issue `#m` that is not in the Run (only the pre-dispatch check reports
+     it). Hold the dependent Issue's Task, the Tasks that functionally
+     depend on it or are ordered after it, and every **Last** Task: create
+     and dispatch none of them until the user replies. Create and dispatch
+     the other Tasks by the plan without waiting. Ask with the plan (step 6,
+     **Asking the user**) for one of:
+     - **Add #m to the Run:** handle it as an Issue added by the user
+       (**Rules**).
+     - **Remove from the Run:** remove the dependent Issue and the Issues
+       that functionally depend on it from the Run's Issue set, and update
+       the checkpoint's `issues:` line. Offer it only while none of those
+       Issues has a Task; a created Task would stay unstarted and hold the
+       Tasks whose `--deps` list it (step 4). For a dependency found after
+       Tasks exist (a check after adding Issues, **Rules**), offer only the
+       other two choices for an Issue whose Task, or a dependent's Task,
+       exists.
+     - **Dispatch as is:** dispatch the dependent Issue without `#m`; its
+       brief states that `#m` is missing and which parts cannot be built
+       without it.
+     Record it in the checkpoint as
+     `awaiting-external-dependency: #<m> -> #<n> ...` and remove it once the
+     user replies.
    - **Ordering:** no functional dependency, but the Tasks edit the same
      part of the same file (the Issue titles, existing PRs and branches, or
      the pre-dispatch check show the same step, section, or function), or
@@ -278,12 +304,11 @@ only after the user confirms.
      order"): follow it when it fits the dependencies. If it does not, name
      the Issues involved and the reason, and ask the user for the order
      before the first dispatch.
-4. Before creating any Task, settle every question that changes the Issue
-   set or the DAG: a `spec-gap` (step 6) and several **Last** Issues (step 3).
-   Ask them together with the plan (step 6), and create Tasks only from the
-   Issue set and relations left after the user's reply. Do not create the
-   Tasks held by **Fix the Issue first** (step 6) until the pre-dispatch
-   check after the fix is settled.
+4. Before creating any Task, settle the question about several **Last**
+   Issues (step 3): ask it together with the plan (step 6), and create Tasks
+   only from the Issue set and relations left after the user's reply. Do
+   not create the Tasks held by a **Dependency outside the Run** (step 3)
+   until the user replies; create the others.
    Plan one Task per Issue by default,
    and create each Task in exactly one way:
    - **Independent Task** (no dependencies): do not create it in advance.
@@ -335,39 +360,13 @@ only after the user confirms.
    the overlap is unclear). For each **Last** Issue, state its
    whole-repository criterion. For Tasks that edit the same file
    but run in parallel, state that decision and its reason (e.g. which
-   parts each edits). For each Issue with an `implied-change`, list each
-   change that its brief adds (step 7).
+   parts each edits). For each Issue with a `brief-note`, list each change
+   that its brief adds (step 7). For each **Dependency outside the Run**,
+   name both Issues, the Tasks it holds, and the three choices (step 3).
    Then start dispatching without waiting for approval,
    unless step 3 requires asking for the order (including several **Last**
-   Issues) or the pre-dispatch check reported a `spec-gap`.
-   An `implied-change` alone never stops the Run or waits for approval.
-   **Specification gaps:** when the pre-dispatch check reports any
-   `spec-gap` (a change the Issue needs but does not state, with two or
-   more fixes consistent with the Issue), stop the
-   whole Run: present every gap with the plan, and create no Task and
-   dispatch nothing until the user replies (step 4). For each Issue with a
-   gap, ask (**Asking the user**) for one of:
-   - **Fix the Issue first:** the Issue stays in the Run. Do not create or
-     dispatch its Task, the Tasks that functionally depend on it or are
-     ordered after it, or any **Last** Task until the user says it is fixed
-     and the pre-dispatch check after the fix is settled; create and
-     dispatch the others after the reply. Never edit the Issue yourself;
-     the user fixes it (e.g. with `refine-issue`). Record it in the
-     checkpoint as `awaiting-issue-fix: #<n> ...`. When the user says it is
-     fixed, start a new pre-dispatch check worker (step 3) for every Issue
-     of the Run not yet merged. Apply new relations only to Tasks not yet
-     dispatched, by holding their dispatch (a created Task keeps its
-     `--deps`); ask the user the same way about a new `spec-gap` or a
-     relation that would hold a Task already dispatched. Add a new
-     `implied-change` only to the briefs of Tasks not yet dispatched; never
-     send it to a Task already dispatched.
-   - **Dispatch as is:** keep the gap and dispatch by the plan.
-   - **Remove from the Run:** remove the Issue from the Run's Issue set
-     and update the checkpoint's `issues:` line. In this option, name the
-     Issues that functionally depend on it, which are removed with it.
-     Offer it only while none of those Issues has a Task; a created Task
-     would stay unstarted (step 4). For a `spec-gap` found after Tasks
-     exist, offer only the other two choices for an Issue that has a Task.
+   Issues). A **Dependency outside the Run** holds only the Tasks step 3
+   names.
    Dispatch independent tasks to separate worktrees, with at most
    **`MAX_IMPL_WORKERS` implementation workers running concurrently**.
    Merge-preparation workers do not count toward this limit; they have their
@@ -388,9 +387,17 @@ only after the user confirms.
    **Orchestration worker / Implementation** mode.
    - Provide the Issue number, scope, acceptance criteria, and dependencies.
      Tell the worker to read the Issue itself.
-   - For each `implied-change` the pre-dispatch check reported for the
-     Issue, add the change and tell the worker to make it as a consequence
-     of the Issue's scope and to state the change in the PR body.
+   - For each `brief-note` the pre-dispatch check reported for the Issue,
+     add the change and tell the worker:
+     - Make it as a consequence of the Issue's scope. When several fixes
+       fit, choose the one that fits the Issue's intent.
+     - Make it even when it touches what the Issue puts out of scope, if the
+       Issue's goal needs it, and state in the PR body that it is outside
+       the Issue's scope but needed for its goal, with the reason.
+     - State in the PR body the change, the fix chosen, and why.
+     - Ask the Coordinator only when every fix would change the Issue's
+       scope, scale, threshold, or user-visible behavior; answer it for that
+       Task alone (**Answering worker questions**, **Asking the user**).
    - Do not restate general token-saving rules in the brief: the worker
      loads them with `implement-review-merge` (its **Token budget**). Add
      only what the Issue requires, such as the E2E suite or the benchmark
@@ -891,8 +898,9 @@ Code Coordinators (blockers, decisions, model choices, or anything else).
   the quota (not while it is PAUSED_QUOTA or UNKNOWN). Only the affected
   PR and its functionally dependent Tasks wait; an ordered Task may start
   (step 5). The exception is a question before the first dispatch about a
-  failed pre-dispatch check or several **Last** Issues (step 3), or a
-  `spec-gap` (step 6): it holds every dispatch until the user replies.
+  failed pre-dispatch check or several **Last** Issues (step 3): it holds
+  every dispatch until the user replies. A **Dependency outside the Run**
+  (step 3) holds only the Tasks it names.
 - While a question is unanswered, end every later turn (including
   notification-only and wake-up turns) with a one-line reminder that names the
   pending question and the expected reply, instead of an empty or
@@ -971,6 +979,12 @@ Follow [Waiting](references/waiting.md) in both Claude Code and Codex
   `PRE_DISPATCH_CHECK: true`, a new pre-dispatch check worker for the added
   Issues and every Issue of the Run not yet merged) and step 5's DAG rules to
   those Issues, then update the checkpoint's `issues:` line before dispatch.
+  The user choosing **Add #m to the Run** (step 3) is such an instruction.
+  Apply new relations from that check only to Tasks not yet dispatched, by
+  holding their dispatch (a created Task keeps its `--deps`); ask the user
+  about a relation that would hold a Task already dispatched. Add a new
+  `brief-note` only to the briefs of Tasks not yet dispatched; never send
+  it to a Task already dispatched.
   Never treat silence as consent (e.g. "reply if you want to stop it").
 - Report Issue provenance only as verified facts: author account and
   creation time. Do not infer who requested or why someone created an Issue;
