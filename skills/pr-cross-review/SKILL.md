@@ -79,6 +79,10 @@ need to read the review comment.
   `config.local.conf` to get past the limit on a pull request; those files
   are the user's standing settings.
 - A reviewer cannot launch another review (nested runs are rejected).
+- The script fetches the PR, its linked issues, the previous review, and the
+  diff range for the reviewer, and tells it not to look them up again nor to
+  re-run the test suite or linters. A failed lookup exits 2 before the
+  reviewer starts (details in references/options.md).
 - The reviewer must post through `scripts/post_pr_comment.sh`, which adds the
   footer the scripts use to count reviews. Do not post review comments by hand
   with that footer.

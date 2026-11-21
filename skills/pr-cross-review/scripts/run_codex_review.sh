@@ -105,6 +105,7 @@ command -v codex >/dev/null 2>&1 || die "codex command not found in PATH"
 prepare_body_file "$pr_number" codex
 repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
 prepare_review_context "$repo" "$pr_number" codex "$extra_review"
+fetch_review_context "$repo" "$pr_number"
 build_review_prompt "$pr_number" codex "$extra_instructions"
 export_review_environment
 
@@ -112,14 +113,16 @@ export_review_environment
 # the log is the heartbeat signal. The log is a temp file that is always
 # removed; on failure its tail is printed to stderr for debugging.
 log_file=$(mktemp)
+prompt_file=$(mktemp)
 echo "info: codex reviewer log (removed on exit): ${log_file}" >&2
 echo "info: hard timeout: ${timeout_seconds}s, heartbeat (no-progress) timeout: ${heartbeat_timeout_seconds}s" >&2
 
 cleanup() {
     stop_reviewer
-    rm -f "$log_file"
+    rm -f "$log_file" "$prompt_file"
 }
 trap cleanup EXIT INT TERM
+write_prompt_file "$prompt_file"
 
 codex_args=(exec --json --model "$model" -c "model_reasoning_effort=${effort}" --sandbox "$sandbox")
 if [ "$sandbox" = "workspace-write" ]; then
@@ -128,8 +131,15 @@ fi
 if [ "$approve_for_me" = "true" ]; then
     codex_args+=(--approve-for-me)
 fi
+# The reviewer needs none of these: memories, plugins, apps (the GitHub
+# connector; the script fetches the PR context itself), computer use, the
+# browser, image generation, or any MCP server. Each would add its
+# instructions and tools to every request of the review.
+codex_args+=(--disable memories --disable plugins --disable apps --disable computer_use
+    --disable browser_use --disable image_generation -c "mcp_servers={}")
 
-start_reviewer codex "${codex_args[@]}" "$REVIEW_PROMPT" >"$log_file" 2>&1
+# `-` makes codex read the prompt from stdin (the prompt file).
+start_reviewer "$prompt_file" codex "${codex_args[@]}" - >"$log_file" 2>&1
 
 poll_interval_seconds=10
 start_time=$(date +%s)

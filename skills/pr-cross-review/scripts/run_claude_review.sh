@@ -73,20 +73,24 @@ command -v claude >/dev/null 2>&1 || die "claude command not found in PATH"
 prepare_body_file "$pr_number" claude
 repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
 prepare_review_context "$repo" "$pr_number" claude "$extra_review"
+fetch_review_context "$repo" "$pr_number"
 build_review_prompt "$pr_number" claude "$extra_instructions"
 export_review_environment
 
-# The reviewer's final reply repeats the posted review, so it is kept out of
-# this script's output: it goes to a temp log that is always removed, and its
-# tail is printed to stderr only on failure.
+# The reviewer's own output is kept out of this script's output: it goes to a
+# temp log that is always removed, and its tail is printed to stderr only on
+# failure.
 log_file=$(mktemp)
+prompt_file=$(mktemp)
 
 cleanup() {
     stop_reviewer
-    rm -f "$log_file"
+    rm -f "$log_file" "$prompt_file"
 }
 trap cleanup EXIT INT TERM
+write_prompt_file "$prompt_file"
 
-start_reviewer claude -p --model "$model" --effort "$effort" --permission-mode "$permission_mode" "$REVIEW_PROMPT" >"$log_file" 2>&1
+# Without a prompt argument, `claude -p` reads the prompt from stdin (the prompt file).
+start_reviewer "$prompt_file" claude -p --model "$model" --effort "$effort" --permission-mode "$permission_mode" >"$log_file" 2>&1
 
 finish_review "$repo" "$pr_number" claude "claude -p" "$log_file"
