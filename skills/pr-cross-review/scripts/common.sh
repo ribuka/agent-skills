@@ -156,13 +156,14 @@ review_agent_label() {
 
 # One line per cross-review: <id> TAB <url> TAB <sha> TAB <agent> TAB <findings>.
 # Findings are `must=<n> optional=<n>`, or `unknown` for historical comments.
-# Comments are recognised by the footer post_pr_comment.sh appends.
+# Comments are recognised by the footer post_pr_comment.sh appends; the
+# reviewer model and effort lines are absent from historical comments.
 list_review_history() {
     local repo=$1
     local pr_number=$2
     local jq_filter
 
-    jq_filter='.[] | (.body | try capture("_Reviewed by (?<agent>Codex|Claude)\\. Posted via pr-cross-review skill\\._\\r?\\nReviewed commit: (?<sha>[0-9a-fA-F]{40})(?:\\r?\\nreview-findings: (?<findings>must=[0-9]+ optional=[0-9]+))?\\r?\\n?$") catch empty) as $footer | [.id, .html_url, $footer.sha, $footer.agent, ($footer.findings // "unknown")] | @tsv'
+    jq_filter='.[] | (.body | try capture("_Reviewed by (?<agent>Codex|Claude)\\. Posted via pr-cross-review skill\\._\\r?\\n(?:Reviewer model: [^\\r\\n]+\\r?\\nReasoning effort: [^\\r\\n]+\\r?\\n)?Reviewed commit: (?<sha>[0-9a-fA-F]{40})(?:\\r?\\nreview-findings: (?<findings>must=[0-9]+ optional=[0-9]+))?\\r?\\n?$") catch empty) as $footer | [.id, .html_url, $footer.sha, $footer.agent, ($footer.findings // "unknown")] | @tsv'
     gh api --paginate "repos/${repo}/issues/${pr_number}/comments" --jq "$jq_filter"
 }
 
@@ -457,11 +458,15 @@ build_review_prompt() {
 }
 
 # Marks the environment the reviewer inherits: blocks nested reviews and tells
-# post_pr_comment.sh which commit was reviewed and where the body file must be.
+# post_pr_comment.sh which commit was reviewed, where the body file must be,
+# and which model and reasoning effort the reviewer runs with.
+# Usage: export_review_environment <model> <effort>
 export_review_environment() {
     export "${in_progress_variable}=1"
     export PR_CROSS_REVIEW_REVIEWED_COMMIT="$REVIEW_HEAD_COMMIT"
     export PR_CROSS_REVIEW_BODY_FILE="$REVIEW_BODY_FILE"
+    export PR_CROSS_REVIEW_REVIEWER_MODEL="$1"
+    export PR_CROSS_REVIEW_REVIEWER_EFFORT="$2"
 }
 
 # write_prompt_file <file> -- write REVIEW_PROMPT to the file the reviewer

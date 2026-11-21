@@ -75,7 +75,7 @@ repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
 prepare_review_context "$repo" "$pr_number" claude "$extra_review"
 fetch_review_context "$repo" "$pr_number"
 build_review_prompt "$pr_number" claude "$extra_instructions"
-export_review_environment
+export_review_environment "$model" "$effort"
 
 # The reviewer's own output is kept out of this script's output: it goes to a
 # temp log that is always removed, and its tail is printed to stderr only on

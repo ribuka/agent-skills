@@ -84,8 +84,10 @@ need to read the review comment.
   re-run the test suite or linters. A failed lookup exits 2 before the
   reviewer starts (details in references/options.md).
 - The reviewer must post through `scripts/post_pr_comment.sh`, which adds the
-  footer the scripts use to count reviews. Do not post review comments by hand
-  with that footer.
+  footer the scripts use to count reviews. The footer also records the
+  reviewer's model and reasoning effort (`Reviewer model:` and
+  `Reasoning effort:` lines). Do not post review comments by hand with that
+  footer.
 - Each finding heading must start with `[must]` (must fix before merging) or
   `[optional]` (safe to leave unadopted), without P0-P3 severity labels.
   The body's last non-empty line must be exactly
