@@ -79,15 +79,20 @@ def drafts_dir() -> Path:
 
 # --- private information check ----------------------------------------------
 
+# Boundaries use ASCII classes, not \b: \b treats Japanese as word characters, so
+# "連絡先taro@example.jpです" would not match.
+_BEFORE = r"(?<![A-Za-z0-9_])"
+_AFTER = r"(?![A-Za-z0-9_])"
 SECRET_PATTERNS = (
-    ("email address", re.compile(r"\b([A-Za-z0-9._%+-]+)@((?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,})\b")),
-    ("user home path", re.compile(r"(?i)\b[A-Z]:[\\/]+Users[\\/]+([^\\/\s\"'`<>|]+)")),
-    ("user home path", re.compile(r"(?<![\w.~:])/(?:Users|home)/([^/\s\"'`<>|]+)")),
+    ("email address", re.compile(r"(?<![A-Za-z0-9._%+-])([A-Za-z0-9._%+-]+)@"
+                                 r"((?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,})(?![A-Za-z0-9-])")),
+    ("user home path", re.compile(r"(?i)(?<![A-Za-z0-9])[A-Z]:[\\/]+Users[\\/]+([^\\/\s\"'`<>|]+)")),
+    ("user home path", re.compile(r"(?<![A-Za-z0-9_.~:])/(?:Users|home)/([^/\s\"'`<>|]+)")),
     ("40-hex token (shorten a commit SHA)", re.compile(r"(?<![0-9A-Fa-f])[0-9a-f]{40}(?![0-9A-Fa-f])")),
-    ("GitHub token", re.compile(r"\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{20,})")),
-    ("API key", re.compile(r"\bsk-[A-Za-z0-9_-]{20,}")),
-    ("AWS access key", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
-    ("Slack token", re.compile(r"\bxox[abprs]-[A-Za-z0-9-]{10,}")),
+    ("GitHub token", re.compile(_BEFORE + r"(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{20,})")),
+    ("API key", re.compile(r"(?<![A-Za-z0-9_-])sk-[A-Za-z0-9_-]{20,}")),
+    ("AWS access key", re.compile(_BEFORE + r"AKIA[0-9A-Z]{16}" + _AFTER)),
+    ("Slack token", re.compile(_BEFORE + r"xox[abprs]-[A-Za-z0-9-]{10,}")),
     ("private key", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")),
 )
 PLACEHOLDER_USERS = {"public", "default", "user", "username", "yourname", "you", "me", "name",
@@ -100,7 +105,7 @@ def private_words() -> list[str]:
     """PRIVATE_WORDS from the config, plus the name of the current user's home directory."""
     words = [w.strip() for w in load_config()["PRIVATE_WORDS"].split(",") if w.strip()]
     home = Path.home().name
-    if len(home) >= 3 and home.lower() not in PLACEHOLDER_USERS:
+    if home and home.lower() not in PLACEHOLDER_USERS:
         words.append(home)
     return words
 

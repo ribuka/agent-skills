@@ -207,6 +207,13 @@ def test_shipped_config_is_valid() -> None:
     ("書いた人: 山田太郎", "private word"),
     ("repo: ACME/tools", "private word"),
     ("~/alice-notes じゃなく alice のメモ", "private word"),
+    # Japanese right before or after: Python's \b would see no boundary here.
+    ("連絡先taro.yamada@gmail.comです", "email address"),
+    ("トークンghp_" + "A" * 36 + "です", "GitHub token"),
+    ("キーsk-" + "x" * 30 + "を使う", "API key"),
+    ("鍵AKIAABCDEFGHIJKLMNOPです", "AWS access key"),
+    ("場所はC:\\Users\\taro\\work", "user home path"),
+    ("場所は/home/taro/work", "user home path"),
 ])
 def test_private_info_is_detected(qp, text: str, kind: str) -> None:
     findings = qp.find_private_info(text, qp.private_words())
@@ -224,6 +231,13 @@ def test_private_info_is_detected(qp, text: str, kind: str) -> None:
 ])
 def test_ordinary_text_is_not_flagged(qp, text: str) -> None:
     assert qp.find_private_info(text, qp.private_words()) == []
+
+
+def test_short_home_directory_name_is_a_private_word(qp, monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(qp.Path, "home", classmethod(lambda cls: tmp_path / "li"))
+    assert "li" in qp.private_words()
+    assert qp.find_private_info("account: li", qp.private_words())
+    assert qp.find_private_info("link と list", qp.private_words()) == []
 
 
 def test_private_info_stops_create_update_and_publish(qp, tmp_path: Path, capsys) -> None:
