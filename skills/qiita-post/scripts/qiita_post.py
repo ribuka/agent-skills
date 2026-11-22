@@ -61,16 +61,92 @@ def load_config() -> dict[str, str]:
                 continue
             key, sep, value = line.partition("=")
             key, value = key.strip(), value.strip()
-            if not sep or key != "DRAFTS_DIR" or not value:
+            if not sep or key not in CONFIG_KEYS or (not value and key != "PRIVATE_WORDS"):
                 raise Failure(f"{path}:{number}: invalid line: {raw}")
             values[key] = value
-    if "DRAFTS_DIR" not in values:
-        raise Failure(f"DRAFTS_DIR is not set in {shared}")
+    for key in CONFIG_KEYS:
+        if key not in values:
+            raise Failure(f"{key} is not set in {shared}")
     return values
+
+
+CONFIG_KEYS = ("DRAFTS_DIR", "PRIVATE_WORDS")
 
 
 def drafts_dir() -> Path:
     return Path(os.path.expandvars(os.path.expanduser(load_config()["DRAFTS_DIR"])))
+
+
+# --- private information check ----------------------------------------------
+
+SECRET_PATTERNS = (
+    ("email address", re.compile(r"\b([A-Za-z0-9._%+-]+)@((?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,})\b")),
+    ("user home path", re.compile(r"(?i)\b[A-Z]:[\\/]+Users[\\/]+([^\\/\s\"'`<>|]+)")),
+    ("user home path", re.compile(r"(?<![\w.~:])/(?:Users|home)/([^/\s\"'`<>|]+)")),
+    ("40-hex token (shorten a commit SHA)", re.compile(r"(?<![0-9A-Fa-f])[0-9a-f]{40}(?![0-9A-Fa-f])")),
+    ("GitHub token", re.compile(r"\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{20,})")),
+    ("API key", re.compile(r"\bsk-[A-Za-z0-9_-]{20,}")),
+    ("AWS access key", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
+    ("Slack token", re.compile(r"\bxox[abprs]-[A-Za-z0-9-]{10,}")),
+    ("private key", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")),
+)
+PLACEHOLDER_USERS = {"public", "default", "user", "username", "yourname", "you", "me", "name",
+                     "example", "runner", "foo"}
+PLACEHOLDER_EMAIL_LOCALS = {"git"}
+EXAMPLE_DOMAIN = re.compile(r"(?i)(?:^|\.)(?:example\.(?:com|org|net)|[a-z0-9-]+\.(?:example|test|invalid))$")
+
+
+def private_words() -> list[str]:
+    """PRIVATE_WORDS from the config, plus the name of the current user's home directory."""
+    words = [w.strip() for w in load_config()["PRIVATE_WORDS"].split(",") if w.strip()]
+    home = Path.home().name
+    if len(home) >= 3 and home.lower() not in PLACEHOLDER_USERS:
+        words.append(home)
+    return words
+
+
+def is_placeholder(kind: str, match: re.Match) -> bool:
+    if kind == "email address":
+        return match.group(1).lower() in PLACEHOLDER_EMAIL_LOCALS or bool(EXAMPLE_DOMAIN.search(match.group(2)))
+    if kind == "user home path":
+        name = match.group(1)
+        return name[0] in "<%${*" or name.lower() in PLACEHOLDER_USERS
+    return False
+
+
+def mask(text: str) -> str:
+    return text[:3] + "***" if len(text) > 4 else "***"
+
+
+def word_pattern(word: str) -> re.Pattern:
+    """Match a word case-insensitively; ASCII words only as whole words."""
+    escaped = re.escape(word)
+    if word.isascii():
+        escaped = rf"(?<![A-Za-z0-9]){escaped}(?![A-Za-z0-9])"
+    return re.compile(escaped, re.IGNORECASE)
+
+
+def find_private_info(text: str, words: list[str]) -> list[str]:
+    """Return `line N: <kind> (<masked match>)` for each suspected piece of private information."""
+    checks = [*SECRET_PATTERNS, *(("private word", word_pattern(w)) for w in words)]
+    findings = []
+    for number, line in enumerate(text.split("\n"), 1):
+        for kind, pattern in checks:
+            for match in pattern.finditer(line):
+                if not is_placeholder(kind, match):
+                    findings.append(f"line {number}: {kind} ({mask(match.group(0))})")
+    return findings
+
+
+def check_private_info(title: str, tags: list[str], body: str) -> None:
+    """Stop before sending an article that looks like it contains private information."""
+    words = private_words()
+    findings = [f"title: {f.split(': ', 1)[1]}" for f in find_private_info(title, words)]
+    findings += [f"tags: {f.split(': ', 1)[1]}" for f in find_private_info(" ".join(tags), words)]
+    findings += [f"body {f}" for f in find_private_info(body, words)]
+    if findings:
+        raise Failure("the article looks like it contains private information; generalize or remove it: "
+                      + "; ".join(findings), "private-info", 5)
 
 
 # --- article file -----------------------------------------------------------
@@ -299,6 +375,7 @@ def cmd_create(path: Path) -> list[str]:
         raise Failure(f"{path} is already posted (id {meta['id']}); use update")
     if meta.get("private") is False:
         raise Failure(f"{path}: the first post is always private; remove `private: false`")
+    check_private_info(meta["title"], meta["tags"], body)
     item = api("POST", "/items", token(), {
         "title": meta["title"], "body": body, "tags": tag_payload(meta["tags"]),
         "private": True, "tweet": False,
@@ -313,6 +390,7 @@ def cmd_create(path: Path) -> list[str]:
 def cmd_update(path: Path) -> list[str]:
     meta, body = read_article(path)
     item_id = require_id(meta, path)
+    check_private_info(meta["title"], meta["tags"], body)
     access_token = token()
     remote = api("GET", f"/items/{item_id}", access_token)
     if remote["updated_at"] != meta.get("updated_at"):
@@ -339,6 +417,7 @@ def cmd_publish(path: Path) -> list[str]:
         sync_meta(meta, remote)
         write_article(path, meta, body)
         return [f"url: {remote['url']}", "private: false", "note: already public"]
+    check_private_info(remote["title"], [t["name"] for t in remote["tags"]], remote["body"])
     item = api("PATCH", f"/items/{item_id}", access_token, {
         "title": remote["title"], "body": remote["body"],
         "tags": [{"name": t["name"], "versions": t.get("versions", [])} for t in remote["tags"]],

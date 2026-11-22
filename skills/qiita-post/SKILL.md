@@ -43,6 +43,14 @@ Script: `uv run --no-project ~/.agents/skills/qiita-post/scripts/qiita_post.py <
    `error: out-of-sync` the local file has changes not yet posted: run
    `update`, let the user review, and wait for the request again.
 
+On `error: private-info`, the script found what looks like private information
+(an email address, a user's home path, a token, or a word from the user's
+private word list) and sent nothing. Generalize or remove each reported line
+and rerun. When a reported item is not private, rewrite it into a form that is
+not reported (e.g. shorten a commit SHA, use `example.com`); if that is
+impossible, tell the user, who decides whether to change their word list.
+Never edit the configuration to get past the check.
+
 On `error: no-token`, relay the message: the user runs `set-token` once in
 their own terminal (it prompts for the token, checks it against Qiita, and
 stores it in Windows Credential Manager). Then rerun the failed command.
