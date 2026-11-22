@@ -27,7 +27,7 @@ older version do not mix in:
 | `basis:` | Start |
 |----------|-------|
 | `commit <sha> <subject>` | Commit time of the newest first-parent commit at `HEAD` of the skill's checkout that changed the skill directory, `tests/` excluded. The installed skill is that checkout, so this is when the running version appeared. |
-| `uncommitted <path>` | The checkout has uncommitted or untracked changes in the skill directory newer than that commit; the start is the newest one's modification time. |
+| `uncommitted <path>` | The checkout has an uncommitted change in the skill directory newer than that commit. An edited file dates itself; a new, renamed, or deleted file is dated by its directory (for a deleted directory, the nearest existing parent), which is never earlier than the change. |
 | `mtime <path>` | The skill is not in a git checkout; the start is the newest modification time of its files, `tests/` excluded. |
 | `--since <value>` | Given explicitly: an ISO 8601 date or time, or a commit (its commit time). |
 

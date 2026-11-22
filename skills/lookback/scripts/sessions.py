@@ -9,9 +9,9 @@ Commands:
 
       The window starts when the skill took its current form: the commit time
       of the newest first-parent commit at HEAD of the skill's checkout that
-      changed the skill directory (tests/ excluded), or the newest
-      modification time of an uncommitted or untracked file in it, whichever
-      is later. Outside git, the newest modification time of a file in the
+      changed the skill directory (tests/ excluded), or the latest time an
+      uncommitted change in it (edit, new file, rename, or deletion) can have
+      happened, whichever is later. Outside git, the newest modification time of a file in the
       skill directory (tests/ excluded). --since <ref|date> replaces it.
 
       Output (exit 0), one `key: value` line each, then the sessions:
@@ -147,12 +147,44 @@ def fix_window(skill_dir: Path, since: str | None = None) -> Window:
         raise LookbackError(f"no commit at HEAD touches {rel}; pass --since")
     sha, committed, subject = line.split("\t", 2)
     start, basis = _parse_time(committed), f"commit {sha[:12]} {subject}"
-    status = _git(Path(repo), "status", "--porcelain", "--untracked-files=all", "--", *pathspec) or ""
-    for entry in status.splitlines():
-        path = Path(repo) / entry[3:].split(" -> ")[-1].strip('"')
-        if path.is_file() and _mtime(path) > start:
-            start, basis = _mtime(path), f"uncommitted {path}"
+    for path, changed in _uncommitted_changes(Path(repo), pathspec, skill_dir):
+        if changed > start:
+            start, basis = changed, f"uncommitted {path}"
     return Window(skill_dir, repo, start, basis)
+
+
+def _nearest_dir_mtime(path: Path, stop: Path) -> datetime:
+    """Return the modification time of the nearest existing directory above path."""
+    parent = path.parent
+    while not parent.is_dir() and parent != stop:
+        parent = parent.parent
+    return _mtime(parent if parent.is_dir() else stop)
+
+
+def _uncommitted_changes(repo: Path, pathspec: list[str], skill_dir: Path) -> Iterator[tuple[Path, datetime]]:
+    """Yield each uncommitted change in the skill with the latest time it can have happened.
+
+    A file's own mtime dates an edit. A deletion, or a file that appeared
+    (untracked, renamed, copied), also changes its directory, whose mtime is
+    then the bound; a deleted directory falls back to the nearest existing
+    ancestor. These bounds are never earlier than the change.
+    """
+    status = _git(repo, "status", "--porcelain=v1", "-z",
+                  "--untracked-files=all", "--", *pathspec) or ""
+    entries = iter(status.split("\0"))
+    for entry in entries:
+        if len(entry) < 4:
+            continue
+        code, path = entry[:2], repo / entry[3:]
+        times = []
+        if "R" in code or "C" in code:
+            old = repo / next(entries, "")
+            times.append(_nearest_dir_mtime(old, skill_dir))
+        if path.is_file():
+            times.append(_mtime(path))
+        if not path.is_file() or "?" in code or "R" in code or "C" in code:
+            times.append(_nearest_dir_mtime(path, skill_dir))
+        yield path, max(times)
 
 
 def _claude_text(content: object) -> str:

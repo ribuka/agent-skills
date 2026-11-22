@@ -77,6 +77,30 @@ def test_window_uncommitted_change_moves_start(repo: Path) -> None:
     assert window.since > datetime(2026, 11, 9, tzinfo=timezone.utc)
 
 
+def test_window_uncommitted_change_to_non_ascii_path(repo: Path) -> None:
+    doc = repo / "skills" / "demo" / "説明.md"
+    doc.write_text("a\n", encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-qm", "add doc", date="2026-11-06T00:00:00Z")
+    doc.write_text("b\n", encoding="utf-8")
+    window = sessions.fix_window(repo / "skills" / "demo")
+    assert window.basis == f"uncommitted {doc}"
+    assert window.since > datetime(2026, 11, 9, tzinfo=timezone.utc)
+
+
+@pytest.mark.parametrize("target", ["references/reference.md", "reference.md"])
+def test_window_uncommitted_deletion_moves_start(repo: Path, target: str) -> None:
+    doc = repo / "skills" / "demo" / target
+    doc.parent.mkdir(exist_ok=True)
+    doc.write_text("a\n", encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-qm", "add reference", date="2026-11-06T00:00:00Z")
+    shutil.rmtree(doc.parent) if doc.parent.name == "references" else doc.unlink()
+    window = sessions.fix_window(repo / "skills" / "demo")
+    assert window.basis == f"uncommitted {doc}"
+    assert window.since > datetime(2026, 11, 9, tzinfo=timezone.utc)
+
+
 def test_window_since_accepts_date_and_commit(repo: Path) -> None:
     skill_dir = repo / "skills" / "demo"
     assert sessions._iso(sessions.fix_window(skill_dir, "2026-10-01").since) == "2026-10-01T00:00:00Z"
