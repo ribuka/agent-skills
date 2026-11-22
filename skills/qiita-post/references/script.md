@@ -8,7 +8,7 @@ Run: `uv run --no-project ~/.agents/skills/qiita-post/scripts/qiita_post.py <com
 | `draft-path --slug <slug>` | Prints `path: <DRAFTS_DIR>/<YYYYMMDD>-<slug>.md` and creates the directory. Fails if the file exists. The slug is lowercase ASCII words joined by `-`. |
 | `create <file>` | `POST /api/v2/items` with `private: true` and `tweet: false`. Fails if the file already has an `id` or says `private: false`. |
 | `update <file>` | `PATCH` title, body, and tags, keeping the current visibility. Fails with `out-of-sync` if the article on Qiita changed since the file was last synced. |
-| `publish <file>` | Makes the article public with the content currently on Qiita. Fails with `out-of-sync` if the file differs from it. Already public: no change. |
+| `publish <file>` | Makes the article public with the content currently on Qiita. Fails with `out-of-sync` if the file differs from it (only line-ending style and trailing newlines are ignored), even when the article is already public. Already public with the same content: no change. |
 | `pull <file>` | Replaces the file's title, tags, and body with the article on Qiita. |
 
 After `create`, `update`, `publish`, and `pull`, the script writes `id`, `url`,

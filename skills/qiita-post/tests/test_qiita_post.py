@@ -139,6 +139,31 @@ def test_publish_uses_remote_content_and_requires_sync(qp, tmp_path: Path) -> No
     assert all(method == "GET" for method, _, _ in qp.fake.calls[calls:])
 
 
+@pytest.mark.parametrize("edit", [
+    lambda body: body.replace("本文", "    本文"),    # indented: becomes a code block
+    lambda body: body.replace("本文", "本文  "),      # trailing spaces: a line break
+])
+def test_publish_detects_whitespace_only_edits(qp, tmp_path: Path, edit) -> None:
+    path = article(tmp_path, NEW)
+    qp.main(["create", str(path)])
+    meta, body = qp.read_article(path)
+    qp.write_article(path, meta, edit(body))
+    assert qp.main(["publish", str(path)]) == 4
+    assert qp.fake.item["private"] is True and qp.fake.calls[-1][0] == "GET"
+
+
+def test_publish_on_public_item_keeps_remote_edits_safe(qp, tmp_path: Path) -> None:
+    path = article(tmp_path, NEW)
+    qp.main(["create", str(path)])
+    qp.main(["publish", str(path)])
+    synced = path.read_text(encoding="utf-8")
+    qp.fake.item.update(body="Qiita で編集\n", updated_at="2026-11-23T00:00:00+09:00")
+    assert qp.main(["publish", str(path)]) == 4
+    assert path.read_text(encoding="utf-8") == synced
+    assert qp.main(["update", str(path)]) == 4
+    assert qp.fake.item["body"] == "Qiita で編集\n"
+
+
 def test_renamed_tag_is_written_back_so_publish_matches(qp, tmp_path: Path) -> None:
     path = article(tmp_path, 'title: "t"\ntags: ["test"]')
     qp.main(["create", str(path)])

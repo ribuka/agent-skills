@@ -156,7 +156,8 @@ def tag_payload(names: list[str]) -> list[dict]:
 
 
 def normalize(text: str) -> str:
-    return "\n".join(line.rstrip() for line in text.replace("\r\n", "\n").strip().split("\n"))
+    """Ignore only line-ending style and trailing newlines; other whitespace can change Markdown."""
+    return text.replace("\r\n", "\n").rstrip("\n")
 
 
 def same_content(meta: dict[str, object], body: str, item: dict) -> bool:
@@ -331,13 +332,13 @@ def cmd_publish(path: Path) -> list[str]:
     item_id = require_id(meta, path)
     access_token = token()
     remote = api("GET", f"/items/{item_id}", access_token)
+    if not same_content(meta, body, remote):
+        raise out_of_sync(f"{path} differs from the article on Qiita; run update (and let the user "
+                          "review it) or pull before publishing")
     if remote["private"] is False:
         sync_meta(meta, remote)
         write_article(path, meta, body)
         return [f"url: {remote['url']}", "private: false", "note: already public"]
-    if not same_content(meta, body, remote):
-        raise out_of_sync(f"{path} differs from the article on Qiita; run update (and let the user "
-                          "review it) or pull before publishing")
     item = api("PATCH", f"/items/{item_id}", access_token, {
         "title": remote["title"], "body": remote["body"],
         "tags": [{"name": t["name"], "versions": t.get("versions", [])} for t in remote["tags"]],
