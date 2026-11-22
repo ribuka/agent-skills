@@ -40,10 +40,33 @@ tags: ["GitHubCopilot", "VSCode"]
   - `failed` (exit 1): fix the cause named in the reason.
   - `no-token` (exit 3): no stored token, or Qiita rejected it (401).
   - `out-of-sync` (exit 4): the file and the article on Qiita disagree.
+  - `private-info` (exit 5): the article looks like it contains private
+    information; nothing was sent. The reason lists each hit as
+    `title: ...`, `tags: ...`, or `body line N: <kind> (<masked text>)`.
+
+## Private information check
+
+`create` and `update` check the local title, tags, and body; `publish` checks
+the article on Qiita (it may have been edited there). They report:
+
+- email addresses, except `git@...` and example domains (`example.com`, `*.test`, ...);
+- user home paths (`C:\Users\<name>`, `/Users/<name>`, `/home/<name>`), except
+  placeholders such as `<name>`, `%USERNAME%`, `Public`, `you`;
+- 40-hex strings (the shape of a Qiita token, and of a full commit SHA),
+  GitHub tokens, `sk-` API keys, AWS access keys, Slack tokens, private keys;
+- words in `PRIVATE_WORDS`, and the name of the current user's home directory.
+  Matching ignores case; ASCII words match only as whole words.
 - Invalid CLI syntax exits 2.
 
 ## Configuration
 
 `DRAFTS_DIR` in this skill's `config.conf` (shipped as `~/Documents/qiita-post`);
 the git-ignored `config.local.conf` beside it overrides it (e.g. a OneDrive
-folder shared with a phone). `KEY=value` lines; blank and `#` lines are skipped.
+folder shared with a phone).
+
+`PRIVATE_WORDS`: comma-separated words that must never appear in an article
+(real name, account names, private repository or company names). Shipped
+empty; the user keeps the real list in `config.local.conf` so it never enters
+the repository.
+
+`KEY=value` lines; blank and `#` lines are skipped. Only `PRIVATE_WORDS` may be empty.

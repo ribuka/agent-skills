@@ -53,11 +53,18 @@ class FakeQiita:
 
 
 @pytest.fixture
-def qp(monkeypatch: pytest.MonkeyPatch):
+def qp(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     module = load_module()
     fake = FakeQiita()
     monkeypatch.setattr(module, "api", fake)
     monkeypatch.setattr(module, "read_token", lambda: "secret")
+    # Never depend on the user's real config.local.conf or home directory name.
+    config_dir = tmp_path / "skill"
+    config_dir.mkdir()
+    (config_dir / "config.conf").write_text(
+        f"DRAFTS_DIR={tmp_path / 'drafts'}\nPRIVATE_WORDS=山田太郎, acme\n", encoding="utf-8")
+    monkeypatch.setattr(module, "SKILL_DIR", config_dir)
+    monkeypatch.setattr(module.Path, "home", classmethod(lambda cls: tmp_path / "alice"))
     module.fake = fake
     return module
 
@@ -172,7 +179,7 @@ def test_renamed_tag_is_written_back_so_publish_matches(qp, tmp_path: Path) -> N
 
 
 def test_draft_path_uses_config(qp, tmp_path: Path, monkeypatch, capsys) -> None:
-    (tmp_path / "config.conf").write_text("DRAFTS_DIR=~/unused\n", encoding="utf-8")
+    (tmp_path / "config.conf").write_text("DRAFTS_DIR=~/unused\nPRIVATE_WORDS=\n", encoding="utf-8")
     (tmp_path / "config.local.conf").write_text(f"DRAFTS_DIR={tmp_path / 'drafts'}\n", encoding="utf-8")
     monkeypatch.setattr(qp, "SKILL_DIR", tmp_path)
     assert qp.main(["draft-path", "--slug", "copilot-permissions"]) == 0
@@ -182,5 +189,71 @@ def test_draft_path_uses_config(qp, tmp_path: Path, monkeypatch, capsys) -> None
     assert qp.main(["draft-path", "--slug", "Bad Slug"]) == 1
 
 
-def test_shipped_config_is_valid(qp) -> None:
-    assert qp.load_config()["DRAFTS_DIR"]
+def test_shipped_config_is_valid() -> None:
+    config = (SCRIPT.parents[1] / "config.conf").read_text(encoding="utf-8")
+    assert "DRAFTS_DIR=~/Documents/qiita-post" in config and "\nPRIVATE_WORDS=\n" in config
+
+
+@pytest.mark.parametrize("text, kind", [
+    ("連絡先は taro.yamada@gmail.com です", "email address"),
+    (r"C:\Users\taro\repos を開く", "user home path"),
+    ("cd /Users/taro/work", "user home path"),
+    ("cat /home/taro/.bashrc", "user home path"),
+    ("token: " + "0123456789abcdef" * 2 + "01234567", "40-hex token"),
+    ("GH_TOKEN=ghp_" + "A1b2C3d4E5" * 4, "GitHub token"),
+    ("key = sk-ant-" + "x" * 30, "API key"),
+    ("AKIAABCDEFGHIJKLMNOP", "AWS access key"),
+    ("-----BEGIN OPENSSH PRIVATE KEY-----", "private key"),
+    ("書いた人: 山田太郎", "private word"),
+    ("repo: ACME/tools", "private word"),
+    ("~/alice-notes じゃなく alice のメモ", "private word"),
+    # Japanese right before or after: Python's \b would see no boundary here.
+    ("連絡先taro.yamada@gmail.comです", "email address"),
+    ("トークンghp_" + "A" * 36 + "です", "GitHub token"),
+    ("キーsk-" + "x" * 30 + "を使う", "API key"),
+    ("鍵AKIAABCDEFGHIJKLMNOPです", "AWS access key"),
+    ("場所はC:\\Users\\taro\\work", "user home path"),
+    ("場所は/home/taro/work", "user home path"),
+])
+def test_private_info_is_detected(qp, text: str, kind: str) -> None:
+    findings = qp.find_private_info(text, qp.private_words())
+    assert findings and kind in findings[0]
+    assert "taro.yamada" not in findings[0] and "ghp_A1b2C3" not in findings[0]  # masked
+
+
+@pytest.mark.parametrize("text", [
+    "user@example.com と git@github.com:owner/repo.git",
+    r"%USERPROFILE%\.agents は C:\Users\<name>\.agents、C:\Users\Public も",
+    "~/.agents/skills と /Users/you/work",
+    "https://example.com/home/page",
+    "commit 2d1ec5b と `@types/node`",
+    "acmeco や pharmacy は別の語",
+])
+def test_ordinary_text_is_not_flagged(qp, text: str) -> None:
+    assert qp.find_private_info(text, qp.private_words()) == []
+
+
+def test_short_home_directory_name_is_a_private_word(qp, monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(qp.Path, "home", classmethod(lambda cls: tmp_path / "li"))
+    assert "li" in qp.private_words()
+    assert qp.find_private_info("account: li", qp.private_words())
+    assert qp.find_private_info("link と list", qp.private_words()) == []
+
+
+def test_private_info_stops_create_update_and_publish(qp, tmp_path: Path, capsys) -> None:
+    leaky = article(tmp_path, 'title: "acme の話"\ntags: ["Python"]')
+    assert qp.main(["create", str(leaky)]) == 5
+    assert "error: private-info: " in capsys.readouterr().out and qp.fake.calls == []
+
+    path = article(tmp_path, NEW)
+    qp.main(["create", str(path)])
+    meta, body = qp.read_article(path)
+    qp.write_article(path, meta, body + "\n連絡先 taro@corp.co.jp\n")
+    calls = len(qp.fake.calls)
+    assert qp.main(["update", str(path)]) == 5
+    assert len(qp.fake.calls) == calls
+
+    qp.fake.item["body"] = qp.fake.item["body"] + "C:/Users/taro/x\n"  # leaked via a Qiita edit
+    qp.main(["pull", str(path)])
+    assert qp.main(["publish", str(path)]) == 5
+    assert qp.fake.item["private"] is True
