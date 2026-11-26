@@ -8,6 +8,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -20,6 +21,7 @@ CHECKOUT = "/home/user/repos/agent-skills"
 ORCA = os.path.abspath("/opt/orca/bin/orca")
 AUTO_RELEASE = "orchestration.worker-auto-release.v1"
 HEAD_SHA = "1234567890abcdef1234567890abcdef12345678"
+DETACHED_AT = "2026-11-26 14:55:03 +0900"
 
 
 def load_module():
@@ -47,6 +49,7 @@ def cp(monkeypatch: pytest.MonkeyPatch):
         "fetch": (0, ""),
         "rev-list": (0, "0 0"),
         "status": (0, ""),
+        "reflog": (0, f"HEAD@{{{DETACHED_AT}}}"),
     }
     calls: list[list[str]] = []
 
@@ -136,10 +139,37 @@ def test_detached_skill_checkout_stops_with_restore_command(
     cp.responses["symbolic-ref"] = (1, "")
     assert cp.main(args()) == 1
     out = capsys.readouterr().out
-    assert f"STOP: the skill checkout {CHECKOUT} is detached at {HEAD_SHA};" in out
-    assert ("`uv run --no-project ~/.agents/skills/orca-issue-coordinator/scripts/local_main.py "
-            f"finish --frozen {HEAD_SHA} --repo {CHECKOUT}`") in out
+    stop = next(line for line in out.splitlines() if "is detached at" in line)
+    assert stop.startswith(f"STOP: the skill checkout {CHECKOUT} is detached at {HEAD_SHA} "
+                           f"(detached since {DETACHED_AT}). ")
+    assert "Another Coordinator Run may have pinned it and still be running" in stop
+    assert "a Run that has ended may have left it pinned" in stop
+    assert "wait for it to finish and run this skill again" in stop
+    assert stop.endswith(
+        "Only after the user confirms that no such Run is running, ask the user to restore it "
+        "with `uv run --no-project ~/.agents/skills/orca-issue-coordinator/scripts/local_main.py "
+        f"finish --frozen {HEAD_SHA} --repo {CHECKOUT}`")
+    assert "Stop and report this to the user. Do not work around it." in out
+    assert ["git", "-C", CHECKOUT, "reflog", "-1", "--format=%gd", "--date=iso",
+            "HEAD"] in cp.calls
     assert not any(cmd[3] == "fetch" for cmd in cp.calls if cmd[0] == "git")
+
+
+@pytest.mark.parametrize("reflog", [
+    (128, "fatal: your current branch appears to be broken"),
+    (0, ""),
+    (0, "HEAD@{0}x"),
+])
+def test_detached_skill_checkout_stops_without_time_when_reflog_unavailable(
+        cp, capsys: pytest.CaptureFixture[str], reflog: tuple[int, str]) -> None:
+    cp.responses["symbolic-ref"] = (1, "")
+    cp.responses["reflog"] = reflog
+    assert cp.main(args()) == 1
+    out = capsys.readouterr().out
+    assert (f"STOP: the skill checkout {CHECKOUT} is detached at {HEAD_SHA}. Another Coordinator "
+            "Run may have pinned it and still be running") in out
+    assert "detached since" not in out
+    assert f"finish --frozen {HEAD_SHA} --repo {CHECKOUT}`" in out
 
 
 def test_skill_checkout_on_other_branch_stops(cp, capsys: pytest.CaptureFixture[str]) -> None:
@@ -296,7 +326,10 @@ def test_real_checkout_compares_with_fetched_main(tmp_path: Path,
     git(checkout, "merge", "-q", "--ff-only", "origin/main")
     assert module.check_skill_checkout()[1] is None
     git(checkout, "switch", "-q", "--detach")
-    assert "is detached at " in module.check_skill_checkout()[1]
+    # A real reflog gives the time of the detaching checkout in the message.
+    assert re.search(r"is detached at [0-9a-f]{40} \(detached since "
+                     r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d [+-]\d{4}\)\. ",
+                     module.check_skill_checkout()[1])
     git(checkout, "switch", "-q", "-c", "topic")
     assert "is on branch `topic`, not `main`" in module.check_skill_checkout()[1]
     git(checkout, "switch", "-q", "main")
