@@ -31,7 +31,7 @@ skill's `SKILL.md` says: the value of `ORCA_CLI_COMMAND` if set, otherwise
 run:
 
 ```bash
-uv run <skill-dir>/scripts/check_preconditions.py --orca <selected-executable>
+uv run --no-project <skill-dir>/scripts/check_preconditions.py --orca <selected-executable>
 ```
 
 It verifies that this conversation runs inside an Orca terminal, that the
@@ -95,7 +95,7 @@ If the user explicitly asks to run the Issues serially (one at a time), pass
 `--serial`:
 
 ```bash
-uv run <skill-dir>/scripts/resolve_config.py --agent <agent> [user flags]
+uv run --no-project <skill-dir>/scripts/resolve_config.py --agent <agent> [user flags]
 ```
 
 It prints the agent, the `--model` / `--effort` pair for each phase, the
