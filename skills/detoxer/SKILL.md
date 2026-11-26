@@ -38,6 +38,21 @@ The hotspot narrows where problems are looked for, not what they are
 compared against: duplication between a hotspot file and an unchanged file
 counts.
 
+**Filing after a dry run:** when, in the same session, the user asks to
+file the candidates of a `--dry-run` report (step 7), file them without
+re-scanning. Run `git fetch origin <default-branch>` and compare
+`origin/<default-branch>` with the report's Scope Commit (the scanned
+commit). If they differ, do not use the reported candidates: tell the user
+in one line and run again from step 1 without `--dry-run`. If they are the
+same, create a new `<scan-dir>` and a detached worktree of the scanned
+commit as in step 1 (the dry run's was deleted in step 7), and redo step 2
+and step 5. Do not redo step 3 or step 4: use the reported candidates and
+their scores as they are. Then continue with step 6, step 7, and step 8 as
+usual; their `--dry-run` skips do not apply to this follow-up. File the
+candidates the user names, or, if none are named, the top
+`MAX_ISSUES_PER_RUN` by score as in step 6. In local mode there is nothing
+to file to: the candidates stay unfiled.
+
 ## Configuration
 
 This skill's `config.conf` holds every setting's default; an optional,

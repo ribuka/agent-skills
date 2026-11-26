@@ -217,6 +217,25 @@ def test_dry_run_skips_filing_and_implementing() -> None:
     assert "Skip this step with `--dry-run`" in _step(8)
 
 
+def test_filing_after_a_dry_run_reuses_the_reported_candidates() -> None:
+    inputs = _flat(SKILL_MD).split("## Inputs", 1)[1].split("## Configuration", 1)[0]
+    follow_up = inputs.split("**Filing after a dry run:**", 1)[1]
+    for phrase in ("in the same session", "without re-scanning",
+                   "git fetch origin <default-branch>",
+                   "compare `origin/<default-branch>` with the report's Scope Commit",
+                   "If they differ, do not use the reported candidates",
+                   "run again from step 1 without `--dry-run`",
+                   "create a new `<scan-dir>`",
+                   "detached worktree of the scanned commit",
+                   "redo step 2 and step 5",
+                   "Do not redo step 3 or step 4",
+                   "their `--dry-run` skips do not apply to this follow-up",
+                   "the top `MAX_ISSUES_PER_RUN` by score",
+                   "In local mode there is nothing to file to"):
+        assert phrase in follow_up
+    assert follow_up.index("If they differ") < follow_up.index("create a new `<scan-dir>`")
+
+
 def test_candidate_request_and_record_formats() -> None:
     candidate = CANDIDATE.read_text(encoding="utf-8")
     request = candidate.split("\n## Request\n", 1)[1].split("\n## Record\n", 1)[0]
