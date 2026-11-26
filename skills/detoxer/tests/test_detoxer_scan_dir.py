@@ -177,6 +177,60 @@ def test_remove_still_deletes_when_worktree_remove_fails(
     assert "detoxer-scan-" not in _worktrees(repo)
 
 
+def test_remove_still_deletes_when_worktree_remove_times_out(
+        repo: Path, temp_root: Path, capsys: pytest.CaptureFixture,
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    scan = _create(capsys)["scan_dir"]
+    real_git = scan_dir._git
+
+    def hanging_remove(git: str, *args: str, cwd: str | None = None):
+        if args[:2] == ("worktree", "remove"):
+            raise subprocess.TimeoutExpired([git, *args], scan_dir.TIMEOUT_SECONDS)
+        return real_git(git, *args, cwd=cwd)
+
+    monkeypatch.setattr(scan_dir, "_git", hanging_remove)
+    code, out, err = _run(capsys, "remove", scan)
+    assert (code, out) == (0, f"removed: {scan}\n")
+    assert "warning: git worktree remove failed" in err
+    assert not os.path.lexists(scan)
+    assert "detoxer-scan-" not in _worktrees(repo)
+
+
+def test_remove_reports_failure_when_prune_times_out(
+        repo: Path, temp_root: Path, capsys: pytest.CaptureFixture,
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    scan = _create(capsys)["scan_dir"]
+    real_git = scan_dir._git
+
+    def hanging_prune(git: str, *args: str, cwd: str | None = None):
+        if args[:2] == ("worktree", "prune"):
+            raise subprocess.TimeoutExpired([git, *args], scan_dir.TIMEOUT_SECONDS)
+        return real_git(git, *args, cwd=cwd)
+
+    monkeypatch.setattr(scan_dir, "_git", hanging_prune)
+    code, out, err = _run(capsys, "remove", scan)
+    assert (code, out) == (1, f"failed: {scan}\n")
+    assert err.startswith("error: git worktree prune failed")
+    assert not os.path.lexists(scan)
+
+
+def test_create_cleans_up_when_worktree_add_times_out(
+        repo: Path, temp_root: Path, capsys: pytest.CaptureFixture,
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    real_git = scan_dir._git
+
+    def hanging_add(git: str, *args: str, cwd: str | None = None):
+        if args[:2] == ("worktree", "add"):
+            raise subprocess.TimeoutExpired([git, *args], scan_dir.TIMEOUT_SECONDS)
+        return real_git(git, *args, cwd=cwd)
+
+    monkeypatch.setattr(scan_dir, "_git", hanging_add)
+    code, out, err = _run(capsys, "create", "--ref", "HEAD")
+    assert (code, out) == (1, "")
+    assert err.startswith("error: ")
+    assert list(temp_root.iterdir()) == []
+
+
 def test_remove_reports_failure_when_something_is_left(
         repo: Path, temp_root: Path, capsys: pytest.CaptureFixture,
         monkeypatch: pytest.MonkeyPatch) -> None:

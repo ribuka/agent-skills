@@ -107,7 +107,10 @@ def create(ref: str) -> tuple[str, str, str]:
             raise ScanDirError(f"cannot read the worktree's HEAD: {_git_error(head)}")
     except (ScanDirError, OSError, subprocess.TimeoutExpired):
         _rmtree(scan_dir)
-        _git(git, "worktree", "prune")
+        try:
+            _git(git, "worktree", "prune")
+        except (OSError, subprocess.TimeoutExpired):
+            pass
         raise
     return scan_dir, checkout, head.stdout.strip()
 
@@ -144,18 +147,24 @@ def remove(target: str) -> tuple[int, str, str | None]:
         if git is None:
             notes.append("git not found on PATH; the worktree registration may remain")
         else:
-            removed = _git(git, "worktree", "remove", "--force", checkout)
-            if removed.returncode != 0:
-                print(f"warning: git worktree remove failed: {_git_error(removed)}",
-                      file=sys.stderr)
+            try:
+                removed = _git(git, "worktree", "remove", "--force", checkout)
+                failure = _git_error(removed) if removed.returncode != 0 else None
+            except (OSError, subprocess.TimeoutExpired) as error:
+                failure = str(error)
+            if failure is not None:
+                print(f"warning: git worktree remove failed: {failure}", file=sys.stderr)
     try:
         _rmtree(target)
     except OSError as error:
         notes.insert(0, str(error))
     if had_checkout and git is not None:
-        pruned = _git(git, "worktree", "prune")
-        if pruned.returncode != 0:
-            notes.append(f"git worktree prune failed: {_git_error(pruned)}")
+        try:
+            pruned = _git(git, "worktree", "prune")
+            if pruned.returncode != 0:
+                notes.append(f"git worktree prune failed: {_git_error(pruned)}")
+        except (OSError, subprocess.TimeoutExpired) as error:
+            notes.append(f"git worktree prune failed: {error}")
     if notes:
         return 1, "failed", "; ".join(notes)
     return 0, "removed", None
@@ -180,10 +189,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"checkout: {checkout}")
         print(f"commit: {commit}")
         return 0
-    try:
-        code, status, reason = remove(args.scan_dir)
-    except subprocess.TimeoutExpired as error:
-        code, status, reason = 1, "failed", str(error)
+    code, status, reason = remove(args.scan_dir)
     print(f"{status}: {args.scan_dir}")
     if reason is not None:
         print(f"error: {reason}", file=sys.stderr)
