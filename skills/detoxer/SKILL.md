@@ -102,7 +102,9 @@ Scan `<scan-ref>`, not the current working tree:
   every later call, write the printed paths literally; never keep them in a
   shell variable or another file.
 - Run every detector and read every file in that worktree. Keep every
-  temporary file of the run in `<scan-dir>`, never in the repository.
+  temporary file of the run in `<scan-dir>`, never in the repository. The
+  one exception is the issue body file that refine-issue writes and deletes
+  by its own steps in step 6.
 
 List the hotspot files with `git log --name-only --since=... <scan-ref>`
 (or `<ref>..<scan-ref>`), dropping deleted, generated, vendored, and lock
@@ -165,8 +167,11 @@ language of the repository's recent issues. Then:
 - Ensure the label exists:
   `gh label create <ISSUE_LABEL> --description "Found by detoxer" --force`.
 - For each candidate, highest score first:
-  1. Run the refine-issue skill on the request with `--no-interview`. It
-     creates the issue (or several, if it splits the work) and reports the
+  1. Run the refine-issue skill on the request with `--no-interview`, from
+     this session's repository working directory, not from `<scan-dir>`.
+     Leave where the issue body file goes, and its deletion, to
+     refine-issue's own steps; never move it into or keep it in
+     `<scan-dir>`. It creates the issue (or several, if it splits the work) and reports the
      issue URLs. If it saved a markdown file instead, delete that file and
      report the candidate as not filed.
   2. For each created issue:

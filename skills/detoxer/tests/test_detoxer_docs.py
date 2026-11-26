@@ -133,6 +133,19 @@ def test_every_candidate_is_refined_at_filing_without_interview() -> None:
         assert "refine-issue skill" not in _step(number)
 
 
+def test_refine_issue_body_file_is_the_only_temporary_file_exception() -> None:
+    assert ("Keep every temporary file of the run in `<scan-dir>`, never in the "
+            "repository. The one exception is the issue body file that refine-issue "
+            "writes and deletes by its own steps in step 6.") in _step(1)
+    filing = _step(6)
+    for phrase in ("from this session's repository working directory, not from `<scan-dir>`",
+                   "Leave where the issue body file goes, and its deletion, to "
+                   "refine-issue's own steps",
+                   "never move it into or keep it in `<scan-dir>`",
+                   "Write every request and record to a file in `<scan-dir>`"):
+        assert phrase in filing
+
+
 def test_implementation_modes() -> None:
     implement = _step(8)
     assert "same-session" not in SKILL_MD.read_text(encoding="utf-8")
