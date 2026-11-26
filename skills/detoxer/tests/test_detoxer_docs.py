@@ -76,13 +76,25 @@ def test_empty_scan_window_scans_the_whole_repository() -> None:
 def test_scan_runs_in_a_temporary_worktree_outside_the_repository() -> None:
     scope = _step(1)
     for phrase in ("under the system temp directory",
-                   "git worktree add --detach <scan-dir>/checkout <scan-ref>",
-                   "never in the repository"):
+                   "`uv run --no-project ~/.agents/skills/detoxer/scripts/scan_dir.py "
+                   "create --ref <scan-ref>`",
+                   "`scan_dir: <path>`", "`checkout: <path>`", "`commit: <sha>`", "Exit 1",
+                   "never keep them in a shell variable or another file",
+                   "Keep every temporary file of the run in `<scan-dir>`, "
+                   "never in the repository."):
         assert phrase in scope
+    assert "git worktree add" not in scope
     assert "file in `<scan-dir>`" in _step(6)
     report = _step(7)
-    assert report.index("git worktree remove --force <scan-dir>/checkout") < report.index(
-        "Write the report in your final response")
+    remove = ("`uv run --no-project ~/.agents/skills/detoxer/scripts/scan_dir.py "
+              "remove <scan-dir>`")
+    assert report.index(remove) < report.index("Write the report in your final response")
+    for phrase in ("on every path through steps 1-6 (including errors)",
+                   "never from inside `<scan-dir>`", "never delete them yourself",
+                   "exit 1", "2 (`refused:`", "still write the report"):
+        assert phrase in report
+    for command in ("rm ", "rmdir", "Remove-Item", "git worktree remove"):
+        assert command not in report
     detection = _flat(SKILL_DIR / "references" / "detection.md")
     assert "`<scan-dir>/checkout`" in detection
     assert "tmp/" not in detection
@@ -98,7 +110,7 @@ def test_local_mode_skips_every_github_lookup() -> None:
                    "step 2, the pull request check in step 5, and steps 6 and 8"):
         assert phrase in scope
     assert scope.index("decide whether the repository is on GitHub") < scope.index(
-        "git worktree add")
+        "scan_dir.py create")
     assert "in local mode (step 1), skip this step" in _step(6)
 
 

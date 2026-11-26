@@ -93,9 +93,14 @@ prints at least one remote and both `gh auth status` and
 
 Scan `<scan-ref>`, not the current working tree:
 
-- Create a scan directory `<scan-dir>` under the system temp directory
-  (e.g. `detoxer-scan-<repo>-<yyyymmdd-HHMMSS>`) and, in it, a detached
-  worktree: `git worktree add --detach <scan-dir>/checkout <scan-ref>`.
+- From the repository's working directory, create the scan directory under
+  the system temp directory and, in it, a detached worktree of `<scan-ref>`:
+  `uv run --no-project ~/.agents/skills/detoxer/scripts/scan_dir.py create --ref <scan-ref>`.
+  It prints `scan_dir: <path>` (`<scan-dir>`), `checkout: <path>`
+  (`<scan-dir>/checkout`), and `commit: <sha>` (the scanned commit). Exit 1
+  (`error: ...` on stderr) leaves nothing behind; stop and report it. In
+  every later call, write the printed paths literally; never keep them in a
+  shell variable or another file.
 - Run every detector and read every file in that worktree. Keep every
   temporary file of the run in `<scan-dir>`, never in the repository.
 
@@ -176,8 +181,13 @@ file-writing tool.
 
 ### 7. Report the scan
 
-First clean up: `git worktree remove --force <scan-dir>/checkout`, then
-delete `<scan-dir>` (on every path through steps 1-6, including errors).
+First clean up, on every path through steps 1-6 (including errors), from
+the repository's working directory (never from inside `<scan-dir>`):
+`uv run --no-project ~/.agents/skills/detoxer/scripts/scan_dir.py remove <scan-dir>`.
+It removes the worktree and `<scan-dir>` in one call; never delete them
+yourself. Exit 0 prints `removed:` or `absent:`. On exit 1 (`failed:`,
+something is left) or 2 (`refused:`, nothing was deleted), put the line and
+its `error:` reason in the report and still write the report.
 
 Write the report in your final response, so it stays in the session log:
 the session log is the only place unfiled candidates are kept. Use the
