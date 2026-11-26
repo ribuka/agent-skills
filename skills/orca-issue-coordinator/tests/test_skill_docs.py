@@ -463,6 +463,17 @@ def test_docs_do_not_name_quota_guard_storage_paths() -> None:
             assert path not in text, (doc.name, path)
 
 
+def test_script_calls_use_uv_run_no_project() -> None:
+    called = 0
+    for doc in [SKILL_MD, *(SKILL_DIR / "references").glob("*.md")]:
+        text = doc.read_text(encoding="utf-8")
+        called += len(re.findall(
+            r"uv run --no-project\s+(?:<skill-dir>/scripts/|~/\.agents/skills/)", text))
+        bare = re.findall(r"uv run\s+(?:<skill-dir>/scripts/|~/\.agents/skills/)\S*", text)
+        assert bare == [], (doc.name, bare)
+    assert called > 0
+
+
 def test_preconditions_take_orca_and_update_prompt_stops_dispatch() -> None:
     skill = SKILL_MD.read_text(encoding="utf-8")
     assert "check_preconditions.py --orca <selected-executable>" in skill
