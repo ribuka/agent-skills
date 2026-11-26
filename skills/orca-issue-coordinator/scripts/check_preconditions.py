@@ -15,8 +15,11 @@ Checks:
      branch `main` and matches `origin/main`: it is neither behind it nor
      carrying commits that are not on it, and its skills have no uncommitted
      changes, so the Coordinator and its workers run the latest skills. A
-     detached HEAD may be a pin a previous Run left behind; the failure shows
-     the `local_main.py finish` command that restores it.
+     detached HEAD may be the pin of another Coordinator Run that is still
+     running, or a pin an ended Run left behind; the failure shows when HEAD
+     was detached (from the HEAD reflog, when available), says to wait for a
+     running Run to finish, and gives the `local_main.py finish` command that
+     restores it only for when the user confirms that no such Run is running.
 
 Exit status: 0 when every check passes, 1 when any check fails. On failure the
 Coordinator must stop and report to the user; it must not work around it.
@@ -27,6 +30,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -38,6 +42,8 @@ AUTO_RELEASE_CAPABILITY = "orchestration.worker-auto-release.v1"
 SKILL_DIR = Path(__file__).resolve().parents[1]
 # An explicit refspec updates origin/main whatever remote.origin.fetch says.
 MAIN_REFSPEC = "+refs/heads/main:refs/remotes/origin/main"
+# `git reflog --format=%gd --date=iso` prints the selector as HEAD@{<time>}.
+REFLOG_TIME = re.compile(r"HEAD@\{(.+)\}")
 
 
 def run_split(cmd: list[str]) -> tuple[int, str, str]:
@@ -126,10 +132,25 @@ def check_checkout_branch(checkout: str) -> str | None:
     if code != 0:
         return f"`git rev-parse HEAD` failed in the skill checkout {checkout} (exit {code}): {out}"
     sha = out.splitlines()[-1].strip()
-    return (f"the skill checkout {checkout} is detached at {sha}; a previous Run may have left "
-            "it pinned. Ask the user to restore it with `uv run --no-project "
-            "~/.agents/skills/orca-issue-coordinator/scripts/local_main.py finish "
-            f"--frozen {sha} --repo {checkout}`")
+    since = detached_since(checkout)
+    since_text = f" (detached since {since})" if since else ""
+    return (f"the skill checkout {checkout} is detached at {sha}{since_text}. Another "
+            "Coordinator Run may have pinned it and still be running, or a Run that has ended "
+            "may have left it pinned. If a Coordinator Run that uses this skill checkout is "
+            "still running, wait for it to finish and run this skill again. Only after the user "
+            "confirms that no such Run is running, ask the user to restore it with "
+            "`uv run --no-project ~/.agents/skills/orca-issue-coordinator/scripts/local_main.py "
+            f"finish --frozen {sha} --repo {checkout}`")
+
+
+def detached_since(checkout: str) -> str | None:
+    """Return the time of the latest HEAD reflog entry, or None when it cannot be read."""
+    # %gd with --date=iso gives the reflog entry's time; %cd would be the commit's date.
+    code, out = run(["git", "-C", checkout, "reflog", "-1", "--format=%gd", "--date=iso", "HEAD"])
+    if code != 0:
+        return None
+    match = REFLOG_TIME.fullmatch(out.strip())
+    return match.group(1) if match else None
 
 
 def check_skill_checkout() -> tuple[str | None, str | None]:
