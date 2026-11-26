@@ -932,7 +932,8 @@ def test_execution_order_rules_live_in_plan_and_dispatch() -> None:
     assert "not their order" in dispatch_section
     assert "if #1 depends on #3, #3's PR is merged before\n     #1 starts" in dispatch_section
     assert "**Explicit order**" in dispatch_section
-    assert "ask the user for the order\n     before the first dispatch" in dispatch_section
+    assert "ask the user for the order before the first dispatch" in " ".join(
+        dispatch_section.split())
     assert "unless step 3 requires asking for the order" in dispatch_section
     assert "only then\n   dispatch the next Issue" in dispatch_section
 
@@ -1131,7 +1132,8 @@ def test_dependency_outside_the_run_holds_only_the_affected_tasks() -> None:
     step6 = _flat_step(skill, "6. Before the first dispatch", "## 2.")
     assert ("A **Dependency outside the Run** holds only the Tasks step 3 names") in step6
     asking = " ".join(skill.split("## Asking the user", 1)[1].split("\n## ", 1)[0].split())
-    assert ("several **Last** Issues (step 3): it holds every dispatch until the user replies. "
+    assert ("about the order of several **Last** Issues that no **Explicit order** sets "
+            "(step 3): it holds every dispatch until the user replies. "
             "A **Dependency outside the Run** (step 3) holds only the Tasks it names") in asking
     ref = " ".join(PRE_DISPATCH_CHECK.read_text(encoding="utf-8").split())
     dependency = _ref_definition(ref, "functional-dependency")
@@ -1192,20 +1194,25 @@ def test_several_last_issues_are_ordered_by_the_user_before_tasks_exist() -> Non
     skill = SKILL_MD.read_text(encoding="utf-8")
     step3 = _flat_step(skill, "3. Create one Orchestration Run", "4. Before creating any Task")
     last = step3.split("**Several Last Issues**", 1)[1]
+    last = last.split("Then decide the execution order", 1)[0]
     for phrase in ("making each depend on the others would leave none startable",
-                   "before creating any Task, ask the user", "which to remove from the Run",
-                   "Each later **Last** Issue then also depends on the earlier ones"):
+                   "each later **Last** Issue then also depends on the earlier ones",
+                   "When an **Explicit order** (below) sets the order among them, follow it "
+                   "without asking",
+                   "Otherwise, before creating any Task, ask the user",
+                   "which to remove from the Run"):
         assert phrase in last, phrase
     step5 = _flat_step(skill, "5. Represent only functional dependencies", "6. Before")
     assert "except the **Last** Tasks ordered after it" in step5
     asking = " ".join(skill.split("## Asking the user", 1)[1].split("\n## ", 1)[0].split())
-    assert "several **Last** Issues (step 3)" in asking
+    assert "several **Last** Issues that no **Explicit order** sets (step 3)" in asking
 
 
 def test_issue_set_and_dag_are_settled_before_tasks_are_created() -> None:
     skill = SKILL_MD.read_text(encoding="utf-8")
     step4 = _flat_step(skill, "4. Before creating any Task", "5. Represent")
-    for phrase in ("settle the question about several **Last** Issues (step 3)",
+    for phrase in ("settle the question about several **Last** Issues when step 3 still asks "
+                   "it (no **Explicit order** sets their order)",
                    "create Tasks only from the Issue set and relations left after the user's "
                    "reply"):
         assert phrase in step4, phrase
@@ -1247,11 +1254,15 @@ def test_brief_notes_go_into_the_brief_without_stopping_the_run() -> None:
             "(step 7)") in step6
     exception = step6.split("Then start dispatching without waiting for approval,", 1)[1]
     exception = exception.split("Dispatch independent tasks", 1)[0]
-    assert ("unless step 3 requires asking for the order (including several **Last** "
-            "Issues).") in exception
+    assert ("unless step 3 requires asking for the order: an **Explicit order** that breaks a "
+            "functional dependency, or several **Last** Issues whose order no **Explicit "
+            "order** sets.") in exception
     assert "brief-note" not in exception
     step7 = _flat_step(skill, "7. Instruct each worker", "8. Fill available")
-    note = step7.split("For each `brief-note` the pre-dispatch check reported for the Issue", 1)[1]
+    note = step7.split("For each `brief-note` the pre-dispatch check reported for the Issue, "
+                       "and each change step 3 adds to its brief because an **Explicit order** "
+                       "places it after an Issue that stopped being **Last**, add the change and "
+                       "tell the worker:", 1)[1]
     note = note.split("Do not restate general token-saving rules", 1)[0]
     for phrase in ("Make it as a consequence of the Issue's scope",
                    "When several fixes fit, choose the one that fits the Issue's intent",
@@ -1264,6 +1275,65 @@ def test_brief_notes_go_into_the_brief_without_stopping_the_run() -> None:
                    "scale, threshold, or user-visible behavior",
                    "answer it for that Task alone"):
         assert phrase in note, phrase
+
+
+def _explicit_order(skill: str) -> str:
+    step3 = _flat_step(skill, "3. Create one Orchestration Run", "4. Before creating any Task")
+    return step3.split("- **Explicit order**", 1)[1]
+
+
+def test_explicit_order_takes_precedence_over_ordering_and_last() -> None:
+    explicit = _explicit_order(SKILL_MD.read_text(encoding="utf-8"))
+    for phrase in ('one Issue named last, such as "#15 last"',
+                   "it takes precedence over the **Ordering** and **Last** relations that the "
+                   "pre-dispatch check or you found; follow it without asking",
+                   "only when the order places an Issue before an Issue whose PR it relies on, "
+                   "name the Issues involved and the reason, and ask the user for the order "
+                   "before the first dispatch",
+                   "the two Tasks still never run at the same time (step 5); only which one "
+                   "runs first follows the user's order"):
+        assert phrase in explicit, phrase
+
+
+def test_explicit_order_before_a_last_issue_adds_the_change_to_later_briefs() -> None:
+    explicit = _explicit_order(SKILL_MD.read_text(encoding="utf-8"))
+    last = explicit.split("- **Last:**", 1)[1].split("- **One Issue named last:**", 1)[0]
+    for phrase in ("a **Last** Issue stops being **Last** only when the order places an Issue "
+                   "that is not **Last** after it",
+                   "it then gets no `--deps` for being **Last** (its functional dependencies "
+                   "stay)",
+                   "A **Last** Issue followed only by **Last** Issues, including the one the "
+                   "user named last, stays **Last** and depends on the earlier **Last** Issues "
+                   "(step 5)",
+                   "To each Issue placed after an Issue that stopped being **Last**, add to its "
+                   "brief the change that keeps that Issue's whole-repository criterion from "
+                   "breaking",
+                   "written like a `brief-note` and with the same instructions to the worker "
+                   "(step 7)"):
+        assert phrase in last, phrase
+
+
+def test_explicit_order_that_sets_the_last_order_skips_the_question() -> None:
+    explicit = _explicit_order(SKILL_MD.read_text(encoding="utf-8"))
+    for phrase in ("when the user names one Issue last and sets no other order, place the other "
+                   "Issues the check judged **Last** just before it, in the order the check "
+                   "reported them; the named Issue is the final **Last** Issue",
+                   "when the order sets the order among the **Last** Issues (an order over all "
+                   "of them, or one Issue named last), do not ask the **Several Last Issues** "
+                   "question; ask it only when the order leaves that order open"):
+        assert phrase in explicit, phrase
+
+
+def test_plan_reports_each_relation_the_explicit_order_overrode() -> None:
+    skill = SKILL_MD.read_text(encoding="utf-8")
+    step6 = _flat_step(skill, "6. Before the first dispatch", "## 2.")
+    for phrase in ("For each relation where the user's **Explicit order** took precedence "
+                   "(step 3), state in one line the check's finding (`ordering:` or `last:`) "
+                   "and the user's order",
+                   "for each Issue whose brief gains a change from it, list each change as for "
+                   "a `brief-note`",
+                   "Then start dispatching without waiting for approval"):
+        assert phrase in step6, phrase
 
 
 def _rebind(waiting: str) -> str:

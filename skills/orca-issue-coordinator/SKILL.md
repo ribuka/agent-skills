@@ -289,10 +289,12 @@ only after the user confirms.
      DAG as a functional dependency on every other Task of the Run (step 5);
      dispatch it only after every other PR is **merged**. If any other Task
      stops, it waits too. **Several Last Issues** cannot all be last, and
-     making each depend on the others would leave none startable: before
-     creating any Task, ask the user (**Asking the user**) for the order in
-     which they run, or which to remove from the Run. Each later **Last**
-     Issue then also depends on the earlier ones.
+     making each depend on the others would leave none startable: they run
+     in an order, and each later **Last** Issue then also depends on the
+     earlier ones. When an **Explicit order** (below) sets the order among
+     them, follow it without asking. Otherwise, before creating any Task,
+     ask the user (**Asking the user**) for the order in which they run, or
+     which to remove from the Run.
 
    Then decide the execution order:
    - **Listed Issues** (e.g. "#1,2,3,4 serially"): the list sets which Issues
@@ -301,11 +303,36 @@ only after the user confirms.
      fits them. For example, if #1 depends on #3, #3's PR is merged before
      #1 starts.
    - **Explicit order** (e.g. "#1 → #2 → #3 → #4 serially", "in this
-     order"): follow it when it fits the dependencies. If it does not, name
-     the Issues involved and the reason, and ask the user for the order
-     before the first dispatch.
+     order", or one Issue named last, such as "#15 last"): it takes
+     precedence over the **Ordering** and **Last** relations that the
+     pre-dispatch check or you found; follow it without asking.
+     - **Functional dependency:** only when the order places an Issue
+       before an Issue whose PR it relies on, name the Issues involved and
+       the reason, and ask the user for the order before the first dispatch.
+     - **Ordering:** the two Tasks still never run at the same time
+       (step 5); only which one runs first follows the user's order.
+     - **Last:** a **Last** Issue stops being **Last** only when the order
+       places an Issue that is not **Last** after it; it then gets no
+       `--deps` for being **Last** (its functional dependencies stay). A
+       **Last** Issue followed only by **Last** Issues, including the one
+       the user named last, stays **Last** and depends on the earlier
+       **Last** Issues (step 5). To each Issue placed after an Issue that
+       stopped being **Last**, add to its brief the change that keeps that
+       Issue's whole-repository criterion from breaking (e.g. "write it
+       with `lightgbm`, never the old name `hist_gradient_boosting`"),
+       written like a `brief-note` and with the same instructions to the
+       worker (step 7).
+     - **One Issue named last:** when the user names one Issue last and
+       sets no other order, place the other Issues the check judged
+       **Last** just before it, in the order the check reported them; the
+       named Issue is the final **Last** Issue.
+     - **Several Last Issues:** when the order sets the order among the
+       **Last** Issues (an order over all of them, or one Issue named last),
+       do not ask the **Several Last Issues** question; ask it only when the
+       order leaves that order open.
 4. Before creating any Task, settle the question about several **Last**
-   Issues (step 3): ask it together with the plan (step 6), and create Tasks
+   Issues when step 3 still asks it (no **Explicit order** sets their
+   order): ask it together with the plan (step 6), and create Tasks
    only from the Issue set and relations left after the user's reply. Do
    not create the Tasks held by a **Dependency outside the Run** (step 3)
    until the user replies; create the others.
@@ -361,12 +388,17 @@ only after the user confirms.
    whole-repository criterion. For Tasks that edit the same file
    but run in parallel, state that decision and its reason (e.g. which
    parts each edits). For each Issue with a `brief-note`, list each change
-   that its brief adds (step 7). For each **Dependency outside the Run**,
+   that its brief adds (step 7). For each relation where the user's
+   **Explicit order** took precedence (step 3), state in one line the
+   check's finding (`ordering:` or `last:`) and the user's order; for each
+   Issue whose brief gains a change from it, list each change as for a
+   `brief-note`. For each **Dependency outside the Run**,
    name both Issues, the Tasks it holds, and the three choices (step 3).
    Then start dispatching without waiting for approval,
-   unless step 3 requires asking for the order (including several **Last**
-   Issues). A **Dependency outside the Run** holds only the Tasks step 3
-   names.
+   unless step 3 requires asking for the order: an **Explicit order** that
+   breaks a functional dependency, or several **Last** Issues whose order no
+   **Explicit order** sets. A **Dependency outside the Run** holds only the
+   Tasks step 3 names.
    Dispatch independent tasks to separate worktrees, with at most
    **`MAX_IMPL_WORKERS` implementation workers running concurrently**.
    Merge-preparation workers do not count toward this limit; they have their
@@ -388,7 +420,9 @@ only after the user confirms.
    - Provide the Issue number, scope, acceptance criteria, and dependencies.
      Tell the worker to read the Issue itself.
    - For each `brief-note` the pre-dispatch check reported for the Issue,
-     add the change and tell the worker:
+     and each change step 3 adds to its brief because an **Explicit order**
+     places it after an Issue that stopped being **Last**, add the change and
+     tell the worker:
      - Make it as a consequence of the Issue's scope. When several fixes
        fit, choose the one that fits the Issue's intent.
      - Make it even when it touches what the Issue puts out of scope, if the
@@ -898,8 +932,9 @@ Code Coordinators (blockers, decisions, model choices, or anything else).
   the quota (not while it is PAUSED_QUOTA or UNKNOWN). Only the affected
   PR and its functionally dependent Tasks wait; an ordered Task may start
   (step 5). The exception is a question before the first dispatch about a
-  failed pre-dispatch check or several **Last** Issues (step 3): it holds
-  every dispatch until the user replies. A **Dependency outside the Run**
+  failed pre-dispatch check, or about the order of several **Last** Issues
+  that no **Explicit order** sets (step 3): it holds every dispatch until
+  the user replies. A **Dependency outside the Run**
   (step 3) holds only the Tasks it names.
 - While a question is unanswered, end every later turn (including
   notification-only and wake-up turns) with a one-line reminder that names the
